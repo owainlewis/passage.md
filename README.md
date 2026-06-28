@@ -1,8 +1,14 @@
 # passage.md
 
-A Markdown notepad for agents and humans.
+A hosted Markdown workspace for humans and agents.
 
-`passage.md` is a minimal Markdown writing app with a CLI-first workflow.
+`passage.md` is a calm browser place to write Markdown, save it online, share it by URL, and let agents work with the same documents through raw Markdown, CLI, and API workflows.
+
+It is not trying to be a local Markdown editor, a personal knowledge base, or a heavy team workspace.
+
+The problem is file wrangling.
+
+Local Markdown files are fine until the document needs to move between your laptop, your phone, another person, and an agent.
 
 Anonymous users can write transient docs in the browser.
 
@@ -12,11 +18,19 @@ Pro users can save unlimited docs with fair use, sync, export, share, customize 
 
 ## Product
 
-The product reference is GitHub Gist with a better writing surface.
+The product reference is Google Docs, Notion, and GitHub Gist, but stripped down to plain Markdown.
 
-The visual reference is iA Writer-style minimalism.
+Google Docs is too rich for Markdown.
 
-The technical wedge is agent usefulness.
+Notion is too heavy for a simple document.
+
+GitHub Gists are useful, but they are developer plumbing, not a calm writing surface.
+
+Passage is browser-first, URL-native Markdown.
+
+The visual reference is calm minimalism without becoming a local-file writing app.
+
+The technical wedge is agent usefulness without copy-paste, sync folders, or repo setup.
 
 Every saved doc is plain Markdown, private by default, and addressable through web, CLI, and API.
 
@@ -26,7 +40,12 @@ Every saved doc is plain Markdown, private by default, and addressable through w
 - [Architecture](docs/architecture.md)
 - [Project board](https://github.com/users/owainlewis/projects/14)
 - [Goal prompts](docs/goal-prompts.md)
-- [Local MVP demo goal](docs/local-mvp-demo-goal.md)
+
+GitHub Issues and project board 14 are the source of truth for roadmap, phase order, issue scope, acceptance criteria, dependencies, verification, and status.
+
+Local docs are product and architecture notes only.
+
+If local docs conflict with a GitHub issue, the GitHub issue wins.
 
 ## Local Development
 
@@ -42,16 +61,6 @@ Install dependencies:
 ```sh
 npm install
 ```
-
-Run the web app:
-
-```sh
-npm run dev:web
-```
-
-The app runs at `http://localhost:3000` by default.
-
-If that port is busy, Next.js prints the alternate local URL.
 
 Create a local database:
 
@@ -69,14 +78,19 @@ go run ./server/cmd/passage migrate
 Build the static web app and run the Go server:
 
 ```sh
-npm run build:web
 export SESSION_SECRET='dev-session-secret-change-me'
-STATIC_DIR=apps/web/out go run ./server/cmd/passage serve
+npm run dev
 ```
 
 The Go server runs at `http://localhost:8080` by default and serves `/api/health`.
 
+`DATABASE_URL` is required for `serve` so local runs use the same Postgres-backed path as production.
+
 `SESSION_SECRET` must be set explicitly when `APP_ENV=production`.
+
+For frontend-only UI iteration, `npm run dev:web` starts Next.js at `http://localhost:3000`.
+
+That mode is not the local acceptance path because it does not run the Go API or Postgres.
 
 Run lint:
 
@@ -103,18 +117,6 @@ Build the production container:
 docker build -t passage-md .
 ```
 
-## Phases
-
-Phase 1 gets the server-backed local app running with auth, saved docs, sharing, and raw Markdown URLs.
-
-Phase 2 deploys the server-backed app to GCP.
-
-Phase 3 adds email auth flows.
-
-Phase 4 adds payments and the public paid tier.
-
 ## Repository Status
-
-The anonymous browser editor foundation is built.
 
 The implementation plan lives on the [GitHub project board](https://github.com/users/owainlewis/projects/14), which is the source of truth for issues.

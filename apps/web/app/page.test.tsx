@@ -18,7 +18,7 @@ describe("Landing", () => {
   it("renders the hero and a call to action", () => {
     render(<Landing />);
 
-    expect(screen.getByText("Minimalist writing for agents and humans")).toBeInTheDocument();
+    expect(screen.getByText("Hosted Markdown for humans and agents")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
   });
 });

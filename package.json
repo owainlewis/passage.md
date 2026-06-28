@@ -6,6 +6,7 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "npm run build:web && STATIC_DIR=apps/web/out go run ./server/cmd/passage serve",
     "dev:web": "npm run dev -w @passage/web",
     "build:web": "npm run build -w @passage/web",
     "lint": "npm run lint -w @passage/web",

@@ -84,11 +84,19 @@ It is not the whole business, but it is a real asset.
 
 ## Why This Is Not Deluded
 
-Building another Markdown app sounds bad if the pitch is just "another Markdown app."
+Building another Markdown app sounds bad if the pitch is just "another local Markdown editor."
 
 That is not the pitch.
 
-The pitch is a small, excellent tool for a specific workflow.
+The pitch is hosted Markdown for a specific workflow.
+
+Write in the browser.
+
+Keep docs online.
+
+Share by URL.
+
+Let agents read and work with the same Markdown.
 
 Many product categories are crowded.
 
@@ -96,7 +104,7 @@ Todo apps are crowded.
 
 Calendar apps are crowded.
 
-Writing apps are crowded.
+Online docs are crowded.
 
 People still pay for specific products when they like the feel, trust the maker, and use the product often.
 
@@ -106,11 +114,11 @@ It is one of many todo apps.
 
 It still works because it has a clear point of view and people like using it.
 
-Passage.md should follow that kind of logic.
+Passage.md should follow that kind of logic, but its competitive set is Google Docs, Notion, and GitHub Gists more than local writing apps.
 
 It should not try to win by having the most features.
 
-It should win by being the nicest small tool for a specific job.
+It should win by being the nicest small tool for hosted Markdown that humans and agents can share.
 
 ## Passage.md
 
@@ -119,21 +127,32 @@ Passage.md is the first product.
 The short description is:
 
 ```txt
-The nicest place to write Markdown that agents can also use.
+Hosted Markdown for humans and agents.
 ```
 
-The product is a calm Markdown notepad for humans and agents.
+The product is a calm browser Markdown workspace for humans and agents.
 
-The human side is a beautiful browser writing surface.
+The human side is a beautiful browser writing surface with online docs that are easy to share.
 
 The agent side is saved docs, raw `.md` URLs, a CLI, and an API.
 
 The first job is simple:
 
 ```txt
-Write Markdown beautifully.
-Then let agents use it reliably.
+Write Markdown in the browser.
+Share it online.
+Let agents use it reliably.
 ```
+
+Passage.md is not competing with local-first Markdown tools on local ownership.
+
+Local files are part of the problem this product avoids.
+
+The sharper alternatives are:
+
+- Google Docs when the user wants an online document but not rich-text clutter.
+- Notion when the user wants a hosted workspace but not databases and heavy structure.
+- GitHub Gists when the user wants raw text online but also wants a calm place to write.
 
 It should not become a full knowledge base.
 
@@ -158,7 +177,6 @@ Anonymous use should be:
 - Markdown preview.
 - Copy Markdown.
 - Anonymous fragment share links.
-- Local CLI helpers such as opening or previewing a local Markdown file in the browser.
 
 Free accounts should be:
 
@@ -191,13 +209,9 @@ The CLI and agent skill can be free to install.
 
 Hosted CLI actions should work on the free tier within the 5 doc limit.
 
-Free CLI actions should stay local.
+The CLI should primarily operate on hosted Passage docs, not local Markdown files.
 
-For example, `passage open notes.md` can open a local Markdown file in the browser without uploading it.
-
-For example, `passage preview notes.md` can open a local Markdown file directly in preview mode.
-
-That makes the tool useful before login.
+That keeps the product focused on online documents that humans and agents can both reach.
 
 The product story is:
 

@@ -5,6 +5,14 @@
 default:
     @just --list
 
-# Start the web app dev server
+# Run database migrations
+migrate:
+    go run ./server/cmd/passage migrate
+
+# Start the full local app with the Go server and Postgres
 dev:
+    npm run dev
+
+# Start the frontend-only Next dev server
+dev-web:
     npm run dev:web
