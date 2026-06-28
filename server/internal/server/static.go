@@ -22,7 +22,7 @@ func StaticHandler(content fs.FS) http.Handler {
 		}
 
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-		if name == "." {
+		if name == "." || name == "" {
 			name = "index.html"
 		}
 		if !strings.HasSuffix(name, "/") {
@@ -39,6 +39,10 @@ func StaticHandler(content fs.FS) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		} else if ok {
+			if path.Ext(name) == ".html" {
+				serveFile(w, r, content, name)
+				return
+			}
 			files.ServeHTTP(w, r)
 			return
 		}
