@@ -327,4 +327,82 @@ describe("Write (editor)", () => {
       )
     );
   });
+
+  it("creates a server share link for a signed-in document", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+    const token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
+          status: 200
+        });
+      }
+      if (url === "/api/v1/docs/doc-1/share" && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ token, htmlPath: `/d/${token}`, markdownPath: `/d/${token}.md` }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`http://localhost:3000/d/${token}`));
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
+      method: "POST",
+      credentials: "include"
+    });
+    expect(await screen.findByRole("button", { name: "Unshare" })).toBeInTheDocument();
+  });
+
+  it("unshares a signed-in document", async () => {
+    const token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft", shareToken: token }] }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs/doc-1/share" && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    const unshare = await screen.findByRole("button", { name: "Unshare" });
+    fireEvent.click(unshare);
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Unshare" })).not.toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
+      method: "DELETE",
+      credentials: "include"
+    });
+  });
 });

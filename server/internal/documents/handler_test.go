@@ -108,10 +108,85 @@ func TestHandlerReturnsNotFoundForMalformedDocumentID(t *testing.T) {
 	}
 }
 
+func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
+	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	store := &fakeStore{shareToken: &token}
+	handler := NewHandler(store)
+	user := auth.User{ID: "user-1"}
+
+	share := httptest.NewRecorder()
+	shareReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs/11111111-1111-1111-1111-111111111111/share", nil)
+	shareReq.Header.Set("Origin", "http://passage.test")
+	shareReq.SetPathValue("id", "11111111-1111-1111-1111-111111111111")
+	handler.Share(share, shareReq, user)
+
+	if share.Code != http.StatusOK {
+		t.Fatalf("share status = %d, body = %s", share.Code, share.Body.String())
+	}
+	if !strings.Contains(share.Body.String(), `"/d/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md"`) {
+		t.Fatalf("share body = %s", share.Body.String())
+	}
+
+	unshare := httptest.NewRecorder()
+	unshareReq := httptest.NewRequest(http.MethodDelete, "http://passage.test/api/v1/docs/11111111-1111-1111-1111-111111111111/share", nil)
+	unshareReq.Header.Set("Origin", "http://passage.test")
+	unshareReq.SetPathValue("id", "11111111-1111-1111-1111-111111111111")
+	handler.Unshare(unshare, unshareReq, user)
+
+	if unshare.Code != http.StatusNoContent {
+		t.Fatalf("unshare status = %d, body = %s", unshare.Code, unshare.Body.String())
+	}
+}
+
+func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
+	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	store := &fakeStore{
+		shareToken: &token,
+		publicDoc: Document{
+			ID:         "11111111-1111-1111-1111-111111111111",
+			Title:      "Shared",
+			Body:       "# Shared\n\n<script>alert(1)</script>\n\nBody.",
+			ShareToken: &token,
+		},
+	}
+	handler := NewHandler(store)
+
+	html := httptest.NewRecorder()
+	htmlReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+token, nil)
+	htmlReq.SetPathValue("token", token)
+	handler.Public(html, htmlReq)
+
+	if html.Code != http.StatusOK {
+		t.Fatalf("html status = %d, body = %s", html.Code, html.Body.String())
+	}
+	if !strings.Contains(html.Body.String(), "<h1>Shared</h1>") {
+		t.Fatalf("html body = %s", html.Body.String())
+	}
+	if strings.Contains(html.Body.String(), "<script>") {
+		t.Fatalf("html contains unsanitized script: %s", html.Body.String())
+	}
+	assertPublicSecurityHeaders(t, html)
+
+	raw := httptest.NewRecorder()
+	rawReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+token+".md", nil)
+	rawReq.SetPathValue("token", token+".md")
+	handler.Public(raw, rawReq)
+
+	if raw.Code != http.StatusOK {
+		t.Fatalf("raw status = %d, body = %s", raw.Code, raw.Body.String())
+	}
+	if got := raw.Body.String(); got != store.publicDoc.Body {
+		t.Fatalf("raw body = %q, want %q", got, store.publicDoc.Body)
+	}
+	assertPublicSecurityHeaders(t, raw)
+}
+
 type fakeStore struct {
-	ownerID string
-	body    string
-	getErr  error
+	ownerID    string
+	body       string
+	getErr     error
+	shareToken *string
+	publicDoc  Document
 }
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {
@@ -142,4 +217,34 @@ func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, body 
 func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) error {
 	s.ownerID = ownerID
 	return nil
+}
+
+func (s *fakeStore) Share(ctx context.Context, ownerID string, id string) (Document, error) {
+	s.ownerID = ownerID
+	return Document{ID: id, Body: "# One", ShareToken: s.shareToken}, nil
+}
+
+func (s *fakeStore) Unshare(ctx context.Context, ownerID string, id string) error {
+	s.ownerID = ownerID
+	return nil
+}
+
+func (s *fakeStore) GetPublic(ctx context.Context, token string) (Document, error) {
+	if s.publicDoc.ID == "" {
+		return Document{}, ErrNotFound
+	}
+	return s.publicDoc, nil
+}
+
+func assertPublicSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q", got)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q", got)
+	}
 }
