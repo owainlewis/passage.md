@@ -22,7 +22,7 @@ Clients should ignore unknown fields.
 
 Existing browser session behavior is preserved.
 
-API token bearer auth is planned separately and will authenticate as the same user identity used by these document routes.
+API token bearer auth authenticates as the same user identity used by these document routes.
 
 ## Authentication
 
@@ -36,6 +36,12 @@ Future CLI auth will use:
 Authorization: Bearer <api-token>
 ```
 
+API tokens are created, listed, and revoked through session-authenticated account endpoints.
+
+API tokens grant full document API access for the owning user.
+
+They do not grant token management access.
+
 Anonymous requests to saved document routes return:
 
 ```http
@@ -48,6 +54,91 @@ Content-Type: application/json
 ```
 
 Public share routes do not require authentication.
+
+## API Tokens
+
+Token management routes require a signed-in browser session.
+
+Bearer tokens are not accepted for token management routes.
+
+### List API Tokens
+
+```http
+GET /api/v1/api-tokens
+```
+
+Response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "tokens": [
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "Laptop",
+      "lastUsedAt": "2026-06-28T12:10:00Z",
+      "createdAt": "2026-06-28T12:00:00Z"
+    }
+  ]
+}
+```
+
+Revoked tokens are excluded.
+
+The plaintext token value is never returned by this route.
+
+### Create API Token
+
+```http
+POST /api/v1/api-tokens
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{"name":"Laptop"}
+```
+
+Response:
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "psg_exampleplaintexttoken",
+  "apiToken": {
+    "id": "22222222-2222-2222-2222-222222222222",
+    "name": "Laptop",
+    "createdAt": "2026-06-28T12:00:00Z"
+  }
+}
+```
+
+The `token` value is shown once.
+
+After this response, only hashed token material is stored.
+
+### Revoke API Token
+
+```http
+DELETE /api/v1/api-tokens/{id}
+```
+
+Response:
+
+```http
+HTTP/1.1 204 No Content
+```
+
+After revoke, requests using the old bearer token return `401`.
 
 ## JSON Rules
 
@@ -373,7 +464,7 @@ Missing, malformed, revoked, or archived shares return `404`.
 
 Pagination is deferred.
 
-API token endpoints are defined in a separate issue.
+API token UI is defined in a separate issue.
 
 Search is deferred.
 

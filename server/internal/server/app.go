@@ -45,6 +45,9 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/register", a.register)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
+	mux.HandleFunc("GET /api/v1/api-tokens", a.listAPITokens)
+	mux.HandleFunc("POST /api/v1/api-tokens", a.createAPIToken)
+	mux.HandleFunc("DELETE /api/v1/api-tokens/{id}", a.revokeAPIToken)
 	mux.HandleFunc("GET /api/v1/docs", a.listDocs)
 	mux.HandleFunc("POST /api/v1/docs", a.createDoc)
 	mux.HandleFunc("GET /api/v1/docs/{id}", a.getDoc)
@@ -112,6 +115,27 @@ func (a *App) requireAuthService(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+func (a *App) listAPITokens(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.RequireSessionUser(a.auth.ListAPITokens)(w, r)
+}
+
+func (a *App) createAPIToken(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.RequireSessionUser(a.auth.CreateAPIToken)(w, r)
+}
+
+func (a *App) revokeAPIToken(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.RequireSessionUser(a.auth.RevokeAPIToken)(w, r)
 }
 
 func (a *App) listDocs(w http.ResponseWriter, r *http.Request) {

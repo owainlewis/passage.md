@@ -37,12 +37,23 @@ type UserWithPassword struct {
 	PasswordHash string
 }
 
+type APIToken struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+}
+
 type Store interface {
 	CreateUser(ctx context.Context, email string, passwordHash string) (User, error)
 	FindUserByEmail(ctx context.Context, email string) (UserWithPassword, error)
 	FindUserBySessionHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
 	CreateSession(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error
 	DeleteSession(ctx context.Context, tokenHash string) error
+	ListAPITokens(ctx context.Context, userID string) ([]APIToken, error)
+	CreateAPIToken(ctx context.Context, userID string, name string, tokenHash string) (APIToken, error)
+	RevokeAPIToken(ctx context.Context, userID string, id string) error
+	FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
 }
 
 type Service struct {
@@ -152,6 +163,18 @@ func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) UserFromRequest(r *http.Request) (User, bool) {
+	if user, ok := s.UserFromSessionRequest(r); ok {
+		return user, true
+	}
+	token, ok := readBearerToken(r)
+	if !ok {
+		return User{}, false
+	}
+	user, err := s.store.FindUserByAPITokenHash(r.Context(), hashToken(token), s.now())
+	return user, err == nil
+}
+
+func (s *Service) UserFromSessionRequest(r *http.Request) (User, bool) {
 	token, ok := s.readSessionToken(r)
 	if !ok {
 		return User{}, false
@@ -169,6 +192,81 @@ func (s *Service) RequireUser(next func(http.ResponseWriter, *http.Request, User
 		}
 		next(w, r, user)
 	}
+}
+
+func (s *Service) RequireSessionUser(next func(http.ResponseWriter, *http.Request, User)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := s.UserFromSessionRequest(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		next(w, r, user)
+	}
+}
+
+func (s *Service) ListAPITokens(w http.ResponseWriter, r *http.Request, user User) {
+	tokens, err := s.store.ListAPITokens(r.Context(), user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "API tokens could not be loaded")
+		return
+	}
+	if tokens == nil {
+		tokens = []APIToken{}
+	}
+	writeJSON(w, http.StatusOK, map[string][]APIToken{"tokens": tokens})
+}
+
+func (s *Service) CreateAPIToken(w http.ResponseWriter, r *http.Request, user User) {
+	if !validateAuthPost(w, r) {
+		return
+	}
+	var input apiTokenInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "token name is required")
+		return
+	}
+	if len([]rune(name)) > 80 {
+		writeError(w, http.StatusBadRequest, "token name must be 80 characters or fewer")
+		return
+	}
+
+	plain, err := randomAPIToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "API token could not be created")
+		return
+	}
+	token, err := s.store.CreateAPIToken(r.Context(), user.ID, name, hashToken(plain))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "API token could not be created")
+		return
+	}
+	writeJSON(w, http.StatusCreated, createAPITokenResponse{Token: plain, APIToken: token})
+}
+
+func (s *Service) RevokeAPIToken(w http.ResponseWriter, r *http.Request, user User) {
+	if !validateSameOrigin(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	if !validUUID(id) {
+		writeError(w, http.StatusNotFound, "API token not found")
+		return
+	}
+	err := s.store.RevokeAPIToken(r.Context(), user.ID, id)
+	if errors.Is(err, ErrUnauthorized) {
+		writeError(w, http.StatusNotFound, "API token not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "API token could not be revoked")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Service) createSession(w http.ResponseWriter, r *http.Request, user User) bool {
@@ -201,6 +299,22 @@ func (s *Service) readSessionToken(r *http.Request) (string, bool) {
 	return raw, true
 }
 
+func readBearerToken(r *http.Request) (string, bool) {
+	header := strings.TrimSpace(r.Header.Get("Authorization"))
+	if header == "" {
+		return "", false
+	}
+	scheme, token, ok := strings.Cut(header, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	if token == "" || strings.Contains(token, " ") {
+		return "", false
+	}
+	return token, true
+}
+
 func (s *Service) signToken(token string) string {
 	return token + "." + s.signature(token)
 }
@@ -217,6 +331,14 @@ func randomToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func randomAPIToken() (string, error) {
+	token, err := randomToken()
+	if err != nil {
+		return "", err
+	}
+	return "psg_" + token, nil
 }
 
 func hashToken(token string) string {
@@ -258,6 +380,15 @@ type meResponse struct {
 	User          *User `json:"user,omitempty"`
 }
 
+type apiTokenInput struct {
+	Name string `json:"name"`
+}
+
+type createAPITokenResponse struct {
+	Token    string   `json:"token"`
+	APIToken APIToken `json:"apiToken"`
+}
+
 func normalizeCredentials(w http.ResponseWriter, input credentials) (string, string, bool) {
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	password := input.Password
@@ -289,6 +420,25 @@ func validateSameOrigin(w http.ResponseWriter, r *http.Request) bool {
 	if origin != expected {
 		writeError(w, http.StatusForbidden, "cross-origin auth requests are not allowed")
 		return false
+	}
+	return true
+}
+
+func validUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for i, c := range value {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
 	}
 	return true
 }
