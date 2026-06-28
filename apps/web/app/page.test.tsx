@@ -7,6 +7,7 @@ beforeEach(() => {
   localStorage.clear();
   delete document.documentElement.dataset.theme;
   window.history.replaceState(null, "", "/");
+  vi.unstubAllGlobals();
 });
 
 describe("Landing", () => {
@@ -163,5 +164,51 @@ describe("Write (editor)", () => {
 
     fireEvent.click(darkMode);
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+  });
+
+  it("creates an account from the account menu and shows the signed-in user", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: false }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }), {
+          status: 201
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "writer@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/register",
+      expect.objectContaining({ method: "POST", credentials: "include" })
+    );
+  });
+
+  it("signs out from the account menu", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }), {
+          status: 200
+        })
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
+
+    await waitFor(() => expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/auth/logout", { method: "POST", credentials: "include" });
   });
 });

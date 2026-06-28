@@ -25,6 +25,23 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if body := rec.Body.String(); body != "{\"authenticated\":false}\n" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
 func TestStaticHandlerFallsBackToIndexForClientRoutes(t *testing.T) {
 	app := NewApp(fstest.MapFS{
 		"index.html":       {Data: []byte("<main>passage</main>")},

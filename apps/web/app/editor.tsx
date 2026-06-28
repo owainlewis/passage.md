@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "./auth";
 import { Brand } from "./brand";
 import { snippetOf, titleOf, wordCount } from "./doc-utils";
 import { useEntitlements } from "./entitlements";
@@ -103,9 +104,13 @@ export default function Editor() {
   const [filter, setFilter] = useState("");
   const [theme, setTheme] = useState<Theme>("light");
   const [hydrated, setHydrated] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimer = useRef<number | undefined>(undefined);
 
+  const auth = useAuth();
   const { plan, setPlan, can } = useEntitlements();
   const canDark = can("darkMode");
   const darkActive = canDark && theme === "dark";
@@ -266,6 +271,29 @@ export default function Editor() {
     }
   }
 
+  async function submitAuth(action: "login" | "register") {
+    setAuthError("");
+    try {
+      if (action === "login") {
+        await auth.signIn(authEmail, authPassword);
+      } else {
+        await auth.register(authEmail, authPassword);
+      }
+      setAuthPassword("");
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Authentication failed");
+    }
+  }
+
+  async function signOut() {
+    setAuthError("");
+    try {
+      await auth.signOut();
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Sign out failed");
+    }
+  }
+
   const words = wordCount(active.body);
   const title = titleOf(active.body);
 
@@ -412,6 +440,54 @@ export default function Editor() {
                 <>
                   <div className="menuOverlay" onClick={() => setMenuOpen(false)} aria-hidden="true" />
                   <div className="userMenu" role="menu">
+                    {auth.user ? (
+                      <>
+                        <div className="menuAccount">
+                          <span className="menuAccountLabel">Signed in</span>
+                          <span className="menuAccountEmail">{auth.user.email}</span>
+                        </div>
+                        {authError && <p className="authError">{authError}</p>}
+                        <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
+                          Sign out
+                        </button>
+                        <div className="menuDivider" />
+                      </>
+                    ) : (
+                      <>
+                        <form className="authForm" onSubmit={(e) => e.preventDefault()}>
+                          <label>
+                            <span>Email</span>
+                            <input
+                              className="authInput"
+                              type="email"
+                              value={authEmail}
+                              onChange={(e) => setAuthEmail(e.target.value)}
+                              autoComplete="email"
+                            />
+                          </label>
+                          <label>
+                            <span>Password</span>
+                            <input
+                              className="authInput"
+                              type="password"
+                              value={authPassword}
+                              onChange={(e) => setAuthPassword(e.target.value)}
+                              autoComplete="current-password"
+                            />
+                          </label>
+                          {authError && <p className="authError">{authError}</p>}
+                          <div className="authActions">
+                            <button type="button" className="menuItem" onClick={() => void submitAuth("login")}>
+                              Sign in
+                            </button>
+                            <button type="button" className="menuItem accent" onClick={() => void submitAuth("register")}>
+                              Create account
+                            </button>
+                          </div>
+                        </form>
+                        <div className="menuDivider" />
+                      </>
+                    )}
                     <div className="menuRow">
                       <span className="menuRowLabel">
                         Dark mode
@@ -429,10 +505,6 @@ export default function Editor() {
                         <span className="switchKnob" />
                       </button>
                     </div>
-                    <div className="menuDivider" />
-                    <button type="button" className="menuItem" role="menuitem" onClick={() => setMenuOpen(false)}>
-                      Sign in
-                    </button>
                     {plan === "free" ? (
                       <button type="button" className="menuItem accent" role="menuitem" onClick={() => setPlan("pro")}>
                         Go Pro
