@@ -1,10 +1,13 @@
 import Editor from "../editor";
+import { AuthProvider } from "../auth";
 import { EntitlementsProvider } from "../entitlements";
 
 export default function Write() {
   return (
-    <EntitlementsProvider>
-      <Editor />
-    </EntitlementsProvider>
+    <AuthProvider>
+      <EntitlementsProvider>
+        <Editor />
+      </EntitlementsProvider>
+    </AuthProvider>
   );
 }

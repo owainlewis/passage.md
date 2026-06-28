@@ -46,6 +46,10 @@ func usage() error {
 }
 
 func serve(cfg config.Config) error {
+	if cfg.SessionSecret == "" {
+		return errors.New("SESSION_SECRET is required")
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -64,7 +68,10 @@ func serve(cfg config.Config) error {
 		return err
 	}
 
-	app := passagehttp.NewApp(staticFS, db)
+	app := passagehttp.NewApp(staticFS, db, passagehttp.Options{
+		SessionSecret: cfg.SessionSecret,
+		CookieSecure:  cfg.CookieSecure,
+	})
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           app.Routes(),

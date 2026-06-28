@@ -572,6 +572,71 @@ button {
   font-weight: 600;
 }
 
+.menuAccount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+}
+
+.menuAccountLabel,
+.authForm label span {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.menuAccountEmail {
+  font-size: 0.84rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.authForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.authInput {
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 8px 9px;
+  outline: none;
+}
+
+.authInput:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hairline));
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.authActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.authError {
+  margin: 0;
+  color: #9a4a36;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
 .menuRow {
   display: flex;
   flex-wrap: nowrap;

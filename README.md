@@ -70,10 +70,13 @@ Build the static web app and run the Go server:
 
 ```sh
 npm run build:web
+export SESSION_SECRET='dev-session-secret-change-me'
 STATIC_DIR=apps/web/out go run ./server/cmd/passage serve
 ```
 
 The Go server runs at `http://localhost:8080` by default and serves `/api/health`.
+
+`SESSION_SECRET` must be set explicitly when `APP_ENV=production`.
 
 Run lint:
 
