@@ -7,6 +7,7 @@ import (
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/database"
+	"github.com/owainlewis/passage.md/server/internal/documents"
 )
 
 type Options struct {
@@ -18,6 +19,7 @@ type App struct {
 	static fs.FS
 	db     *database.Pool
 	auth   *auth.Service
+	docs   *documents.Handler
 }
 
 func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
@@ -31,6 +33,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	app := &App{static: static, db: db}
 	if db != nil {
 		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure)
+		app.docs = documents.NewHandler(documents.NewStore(db))
 	}
 	return app
 }
@@ -42,6 +45,11 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/register", a.register)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
+	mux.HandleFunc("GET /api/v1/docs", a.listDocs)
+	mux.HandleFunc("POST /api/v1/docs", a.createDoc)
+	mux.HandleFunc("GET /api/v1/docs/{id}", a.getDoc)
+	mux.HandleFunc("PATCH /api/v1/docs/{id}", a.updateDoc)
+	mux.HandleFunc("DELETE /api/v1/docs/{id}", a.archiveDoc)
 	mux.Handle("/", StaticHandler(a.static))
 	return mux
 }
@@ -97,6 +105,49 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) requireAuthService(w http.ResponseWriter) bool {
 	if a.auth == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
+		return false
+	}
+	return true
+}
+
+func (a *App) listDocs(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.List)(w, r)
+}
+
+func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.Create)(w, r)
+}
+
+func (a *App) getDoc(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.Get)(w, r)
+}
+
+func (a *App) updateDoc(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.Update)(w, r)
+}
+
+func (a *App) archiveDoc(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.Archive)(w, r)
+}
+
+func (a *App) requireDocumentService(w http.ResponseWriter) bool {
+	if a.auth == nil || a.docs == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
 		return false
 	}

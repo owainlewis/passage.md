@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 )
@@ -39,6 +41,20 @@ func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
 	}
 	if body := rec.Body.String(); body != "{\"authenticated\":false}\n" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestDocsRequireDatabase(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", rec.Code)
 	}
 }
 
@@ -78,6 +94,25 @@ func TestStaticHandlerServesExportedHTMLRoute(t *testing.T) {
 	}
 	body, _ := io.ReadAll(rec.Result().Body)
 	if string(body) != "<main>write</main>" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestStaticHandlerServesHeadForIndex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<main>home</main>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp(os.DirFS(dir), nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodHead, "/", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); body != "" {
 		t.Fatalf("body = %q", body)
 	}
 }

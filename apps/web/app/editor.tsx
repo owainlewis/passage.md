@@ -20,6 +20,7 @@ type Doc = {
 
 type Mode = "edit" | "preview";
 type ShareState = "idle" | "copied" | "toolong";
+type SaveState = "local" | "loading" | "saving" | "saved" | "error";
 
 const STORAGE_KEY = "passage.documents.v2";
 const ACTIVE_KEY = "passage.active.v2";
@@ -90,6 +91,70 @@ function newId() {
   return `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+async function apiDocs(): Promise<Doc[]> {
+  const res = await fetch("/api/v1/docs", { credentials: "include" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof body.error === "string" ? body.error : "Documents could not be loaded");
+  }
+  return Array.isArray(body.documents) ? body.documents : [];
+}
+
+async function apiCreateDoc(body: string): Promise<Doc> {
+  const res = await fetch("/api/v1/docs", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body })
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be created");
+  }
+  return payload as Doc;
+}
+
+async function apiUpdateDoc(id: string, body: string): Promise<Doc> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body })
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be saved");
+  }
+  return payload as Doc;
+}
+
+async function apiArchiveDoc(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be archived");
+  }
+}
+
+function saveLabel(state: SaveState) {
+  switch (state) {
+    case "loading":
+      return "Loading saved docs";
+    case "saving":
+      return "Saving";
+    case "saved":
+      return "Saved";
+    case "error":
+      return "Save failed";
+    case "local":
+    default:
+      return "Saved locally";
+  }
+}
+
 function seedDocs(): Doc[] {
   return [{ id: "welcome", body: welcomeBody, pinned: true }];
 }
@@ -107,10 +172,14 @@ export default function Editor() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>("local");
+  const [pendingSave, setPendingSave] = useState<{ id: string; body: string } | null>(null);
+  const [localReady, setLocalReady] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimer = useRef<number | undefined>(undefined);
 
   const auth = useAuth();
+  const signedIn = Boolean(auth.user);
   const { plan, setPlan, can } = useEntitlements();
   const canDark = can("darkMode");
   const darkActive = canDark && theme === "dark";
@@ -124,34 +193,99 @@ export default function Editor() {
 
   // Load persisted state after mount so SSR and the first client render match.
   useEffect(() => {
+    if (auth.loading) return;
+    if (signedIn) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHydrated(true);
+      setLocalReady(false);
+      return;
+    }
+    let nextDocs = seedDocs();
+    let nextActive = nextDocs[0].id;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       const storedActive = localStorage.getItem(ACTIVE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as Doc[];
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Reading localStorage must happen after mount to avoid a hydration
-          // mismatch, so this one-time sync from storage is intentional.
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setDocs(parsed);
-          setActiveId(storedActive && parsed.some((d) => d.id === storedActive) ? storedActive : parsed[0].id);
+          nextDocs = parsed;
+          nextActive = storedActive && parsed.some((d) => d.id === storedActive) ? storedActive : parsed[0].id;
         }
       }
     } catch {
       // Ignore corrupt storage and keep the seeded document.
     }
+    // Reading localStorage must happen after mount to avoid a hydration
+    // mismatch, so this one-time sync from storage is intentional.
+    setDocs(nextDocs);
+    setActiveId(nextActive);
     setHydrated(true);
-  }, []);
+    setLocalReady(true);
+    setSaveState("local");
+  }, [auth.loading, signedIn]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !localReady || auth.loading || signedIn) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
       localStorage.setItem(ACTIVE_KEY, activeId);
     } catch {
       // Storage may be unavailable (private mode); drafts stay in memory.
     }
-  }, [docs, activeId, hydrated]);
+  }, [docs, activeId, hydrated, localReady, auth.loading, signedIn]);
+
+  useEffect(() => {
+    if (!auth.user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPendingSave(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setSaveState("loading");
+      try {
+        let savedDocs = await apiDocs();
+        if (savedDocs.length === 0) {
+          savedDocs = [await apiCreateDoc(welcomeBody)];
+        }
+        if (cancelled) return;
+        setDocs(savedDocs);
+        setActiveId(savedDocs[0].id);
+        setSaveState("saved");
+        setPendingSave(null);
+      } catch {
+        if (!cancelled) setSaveState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.user]);
+
+  useEffect(() => {
+    if (!signedIn || !pendingSave) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setSaveState("saving");
+        try {
+          const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
+          if (cancelled) return;
+          setDocs((prev) =>
+            prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc))
+          );
+          setSaveState("saved");
+          setPendingSave(null);
+        } catch {
+          if (!cancelled) setSaveState("error");
+        }
+      })();
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [pendingSave, signedIn]);
 
   // Hydrate the saved theme preference after mount.
   useEffect(() => {
@@ -206,31 +340,51 @@ export default function Editor() {
   }, [toggleMode]);
 
   function updateBody(body: string) {
+    if (signedIn) {
+      setSaveState("saving");
+      setPendingSave({ id: active.id, body });
+    }
     setDocs((prev) => prev.map((d) => (d.id === active.id ? { ...d, body } : d)));
   }
 
-  function createDoc() {
-    const doc = { id: newId(), body: "" };
-    setDocs((prev) => [doc, ...prev]);
-    setActiveId(doc.id);
-    setMode("edit");
-    setFilter("");
-    requestAnimationFrame(() => textareaRef.current?.focus());
+  async function createDoc() {
+    setSaveState(signedIn ? "saving" : "local");
+    try {
+      const doc = signedIn ? await apiCreateDoc("") : { id: newId(), body: "" };
+      setDocs((prev) => [doc, ...prev]);
+      setActiveId(doc.id);
+      setMode("edit");
+      setFilter("");
+      setSaveState(signedIn ? "saved" : "local");
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    } catch {
+      setSaveState("error");
+    }
   }
 
   function togglePin(id: string) {
     setDocs((prev) => prev.map((d) => (d.id === id ? { ...d, pinned: !d.pinned } : d)));
   }
 
-  function deleteDoc(id: string) {
+  async function deleteDoc(id: string) {
     // Pinned documents are protected from deletion; unpin first to remove one.
     if (docs.find((d) => d.id === id)?.pinned) return;
+    setSaveState(signedIn ? "saving" : "local");
+    if (signedIn) {
+      try {
+        await apiArchiveDoc(id);
+      } catch {
+        setSaveState("error");
+        return;
+      }
+    }
     setDocs((prev) => {
       const next = prev.filter((d) => d.id !== id);
       const remaining = next.length > 0 ? next : seedDocs();
       if (id === activeId) setActiveId(remaining[0].id);
       return remaining;
     });
+    setSaveState(signedIn ? "saved" : "local");
   }
 
   function exportDoc() {
@@ -548,7 +702,7 @@ export default function Editor() {
           <span className="statusWords">{words === 1 ? "1 word" : `${words} words`}</span>
           <span className="statusSave">
             <span className="saveDot" aria-hidden="true" />
-            Saved locally
+            {saveLabel(saveState)}
           </span>
         </footer>
       </div>

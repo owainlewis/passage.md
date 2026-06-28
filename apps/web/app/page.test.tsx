@@ -10,6 +10,10 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("Landing", () => {
   it("renders the hero and a call to action", () => {
     render(<Landing />);
@@ -192,14 +196,24 @@ describe("Write (editor)", () => {
   });
 
   it("signs out from the account menu", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }), {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Private server draft" }] }), {
           status: 200
-        })
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        });
+      }
+      if (url === "/api/v1/auth/logout") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Write />);
@@ -209,6 +223,108 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
 
     await waitFor(() => expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Private server draft")).not.toBeInTheDocument());
+    expect(localStorage.getItem("passage.documents.v2")).not.toContain("Private server draft");
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/auth/logout", { method: "POST", credentials: "include" });
+  });
+
+  it("loads saved documents for a signed-in user", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft\n\nServer copy." }] }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs", { credentials: "include" });
+  });
+
+  it("creates the starter document on the server when a signed-in user has none", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        return new Response(JSON.stringify({ documents: [] }), { status: 200 });
+      }
+      if (url === "/api/v1/docs" && init?.method === "POST") {
+        return new Response(JSON.stringify({ id: "doc-welcome", body: JSON.parse(String(init.body)).body }), {
+          status: 201
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect((await screen.findAllByText("Markdown for agents and humans")).length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/docs",
+        expect.objectContaining({ method: "POST", credentials: "include" })
+      )
+    );
+  });
+
+  it("autosaves signed-in document edits to the API", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
+          status: 200
+        });
+      }
+      if (url === "/api/v1/docs/doc-1" && init?.method === "PATCH") {
+        return new Response(JSON.stringify({ id: "doc-1", body: JSON.parse(String(init.body)).body }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Saved draft\n\nAutosaved." }
+    });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/docs/doc-1",
+        expect.objectContaining({
+          method: "PATCH",
+          credentials: "include",
+          body: JSON.stringify({ body: "# Saved draft\n\nAutosaved." })
+        })
+      )
+    );
   });
 });
