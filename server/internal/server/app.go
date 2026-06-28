@@ -50,6 +50,9 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/docs/{id}", a.getDoc)
 	mux.HandleFunc("PATCH /api/v1/docs/{id}", a.updateDoc)
 	mux.HandleFunc("DELETE /api/v1/docs/{id}", a.archiveDoc)
+	mux.HandleFunc("POST /api/v1/docs/{id}/share", a.shareDoc)
+	mux.HandleFunc("DELETE /api/v1/docs/{id}/share", a.unshareDoc)
+	mux.HandleFunc("GET /d/{token}", a.publicDoc)
 	mux.Handle("/", StaticHandler(a.static))
 	return mux
 }
@@ -144,6 +147,28 @@ func (a *App) archiveDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireUser(a.docs.Archive)(w, r)
+}
+
+func (a *App) shareDoc(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.Share)(w, r)
+}
+
+func (a *App) unshareDoc(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.auth.RequireUser(a.docs.Unshare)(w, r)
+}
+
+func (a *App) publicDoc(w http.ResponseWriter, r *http.Request) {
+	if a.docs == nil {
+		http.NotFound(w, r)
+		return
+	}
+	a.docs.Public(w, r)
 }
 
 func (a *App) requireDocumentService(w http.ResponseWriter) bool {

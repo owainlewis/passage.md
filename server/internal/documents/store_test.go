@@ -34,6 +34,15 @@ func TestStoreRejectsMalformedDocumentIDsWithoutDatabase(t *testing.T) {
 	if err := store.Archive(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Archive error = %v, want %v", err, ErrNotFound)
 	}
+	if _, err := store.Share(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Share error = %v, want %v", err, ErrNotFound)
+	}
+	if err := store.Unshare(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Unshare error = %v, want %v", err, ErrNotFound)
+	}
+	if _, err := store.GetPublic(context.Background(), "not-a-token"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetPublic error = %v, want %v", err, ErrNotFound)
+	}
 }
 
 func TestValidUUID(t *testing.T) {
@@ -42,5 +51,21 @@ func TestValidUUID(t *testing.T) {
 	}
 	if validUUID("not-a-uuid") {
 		t.Fatal("validUUID accepted a malformed UUID")
+	}
+}
+
+func TestShareTokens(t *testing.T) {
+	token, err := randomShareToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validShareToken(token) {
+		t.Fatalf("randomShareToken returned invalid token %q", token)
+	}
+	if validShareToken(strings.Repeat("a", 42)) {
+		t.Fatal("validShareToken accepted the wrong length")
+	}
+	if validShareToken(strings.Repeat("a", 42) + "!") {
+		t.Fatal("validShareToken accepted an invalid character")
 	}
 }

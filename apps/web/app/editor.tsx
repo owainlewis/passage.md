@@ -16,20 +16,20 @@ type Doc = {
   id: string;
   body: string;
   pinned?: boolean;
+  shareToken?: string | null;
+  sharedAt?: string | null;
 };
 
 type Mode = "edit" | "preview";
-type ShareState = "idle" | "copied" | "toolong";
+type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
 type SaveState = "local" | "loading" | "saving" | "saved" | "error";
 
 const STORAGE_KEY = "passage.documents.v2";
 const ACTIVE_KEY = "passage.active.v2";
 
-// A share link carries the whole document in its URL fragment. Past a point the
-// link grows too long to paste reliably (chat apps, email clients, and some
-// browsers truncate very long URLs), so guard the length and tell the user
-// rather than handing back a link that silently breaks on paste. Saved-doc IDs
-// (#28) will lift this ceiling by moving the body server-side.
+// Anonymous share links carry the whole document in the URL fragment. Past a
+// point the link grows too long to paste reliably, so guard the length and tell
+// the user rather than handing back a link that silently breaks on paste.
 const MAX_SHARE_URL_LENGTH = 16000;
 
 const welcomeBody = `# Markdown for agents and humans
@@ -136,6 +136,35 @@ async function apiArchiveDoc(id: string): Promise<void> {
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be archived");
+  }
+}
+
+type ShareResponse = {
+  token: string;
+  htmlPath: string;
+  markdownPath: string;
+};
+
+async function apiShareDoc(id: string): Promise<ShareResponse> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}/share`, {
+    method: "POST",
+    credentials: "include"
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be shared");
+  }
+  return payload as ShareResponse;
+}
+
+async function apiUnshareDoc(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}/share`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be unshared");
   }
 }
 
@@ -398,20 +427,68 @@ export default function Editor() {
   }
 
   async function shareDoc() {
-    const url = `${window.location.origin}/d#${await encodeDoc(active.body)}`;
     window.clearTimeout(copyTimer.current);
-    if (url.length > MAX_SHARE_URL_LENGTH) {
-      setShareState("toolong");
+    try {
+      if (signedIn) {
+        if (pendingSave?.id === active.id) {
+          setSaveState("saving");
+          const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
+          setDocs((prev) => prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc)));
+          setPendingSave(null);
+          setSaveState("saved");
+        }
+        let htmlPath = active.shareToken ? `/d/${active.shareToken}` : "";
+        if (!htmlPath) {
+          const share = await apiShareDoc(active.id);
+          htmlPath = share.htmlPath;
+          setDocs((prev) =>
+            prev.map((doc) =>
+              doc.id === active.id
+                ? { ...doc, shareToken: share.token, sharedAt: new Date().toISOString() }
+                : doc
+            )
+          );
+        }
+        await copyURL(new URL(htmlPath, window.location.origin).toString());
+      } else {
+        const url = `${window.location.origin}/d#${await encodeDoc(active.body)}`;
+        if (url.length > MAX_SHARE_URL_LENGTH) {
+          setShareState("toolong");
+          copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
+          return;
+        }
+        await copyURL(url);
+      }
+      setShareState("copied");
+      copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
+    } catch {
+      setShareState("error");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
-      return;
     }
+  }
+
+  async function copyURL(url: string) {
     try {
       await navigator.clipboard.writeText(url);
     } catch {
       window.prompt("Copy this share link", url);
     }
-    setShareState("copied");
-    copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
+  }
+
+  async function unshareDoc() {
+    if (!signedIn || !active.shareToken) return;
+    window.clearTimeout(copyTimer.current);
+    try {
+      await apiUnshareDoc(active.id);
+      setDocs((prev) =>
+        prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null } : doc))
+      );
+      setShareState("unshared");
+      copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
+    } catch {
+      setShareState("error");
+      copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
+    }
   }
 
   function toggleDarkMode() {
@@ -574,8 +651,19 @@ export default function Editor() {
               onClick={shareDoc}
               title={shareState === "toolong" ? "This document is too long to share as a link" : undefined}
             >
-              {shareState === "copied" ? "Copied" : shareState === "toolong" ? "Too long" : "Share"}
+              {shareState === "copied"
+                ? "Copied"
+                : shareState === "toolong"
+                  ? "Too long"
+                  : shareState === "error"
+                    ? "Share failed"
+                    : "Share"}
             </button>
+            {signedIn && active.shareToken && (
+              <button type="button" className="textButton" onClick={unshareDoc}>
+                {shareState === "unshared" ? "Unshared" : "Unshare"}
+              </button>
+            )}
             <button type="button" className="textButton" onClick={exportDoc}>
               Export
             </button>
