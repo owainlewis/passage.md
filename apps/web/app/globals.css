@@ -1566,6 +1566,192 @@ button {
   color: var(--muted);
 }
 
+/* ---------------------------------------------------------------- CLI page */
+
+.cliPage {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.cliNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 22px clamp(20px, 5vw, 40px);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.cliNavLinks {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 3vw, 28px);
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.cliNavLinks a {
+  transition: color 0.12s ease;
+}
+
+.cliNavLinks a:hover {
+  color: var(--ink);
+}
+
+.cliMain {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: clamp(44px, 7vw, 84px) clamp(20px, 5vw, 40px) clamp(64px, 8vw, 96px);
+}
+
+.cliHero {
+  max-width: 44rem;
+  margin-bottom: clamp(48px, 8vw, 80px);
+}
+
+.cliKicker {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cliHero h1,
+.cliSectionHead h2 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.cliHero h1 {
+  max-width: 12ch;
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  line-height: 1.05;
+  font-weight: 720;
+}
+
+.cliHero p,
+.cliBody {
+  max-width: 40rem;
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.cliActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.cliBand {
+  min-width: 0;
+  padding: clamp(34px, 6vw, 56px) 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.cliSectionHead {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.35fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+
+.cliSectionHead h2 {
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.cliGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.cliPanel {
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--surface);
+}
+
+.cliPanel h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.cliPanel p,
+.cliSteps,
+.cliCommand span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.cliPanel p {
+  margin: 0 0 14px;
+}
+
+.cliPage pre {
+  margin: 18px 0 0;
+  padding: 15px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow-x: auto;
+  background: var(--code-bg);
+}
+
+.cliPage pre code,
+.cliCommand code {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+.cliPage pre code {
+  font-size: 0.84rem;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.cliSteps {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.cliSteps li {
+  margin: 0.45rem 0;
+  padding-left: 0.18rem;
+}
+
+.cliCommandList {
+  display: grid;
+  gap: 8px;
+}
+
+.cliCommand {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.42fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: baseline;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.cliCommand code {
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 720px) {
   .features {
     grid-template-columns: 1fr;
@@ -1573,6 +1759,28 @@ button {
 
   .pricingGrid {
     grid-template-columns: 1fr;
+  }
+
+  .cliNav {
+    align-items: flex-start;
+  }
+
+  .cliMain {
+    padding-top: 38px;
+  }
+
+  .cliHero h1 {
+    max-width: 10ch;
+  }
+
+  .cliSectionHead,
+  .cliGrid,
+  .cliCommand {
+    grid-template-columns: 1fr;
+  }
+
+  .cliCommand {
+    gap: 5px;
   }
 }
 

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import CLIPage from "./cli/page";
 import Landing from "./page";
 import { decodeDoc } from "./share";
 import Write from "./write/page";
@@ -19,7 +20,28 @@ describe("Landing", () => {
     render(<Landing />);
 
     expect(screen.getByText("Hosted Markdown for humans and agents")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "CLI" })).toHaveAttribute("href", "/cli");
     expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("CLI page", () => {
+  it("explains install, auth, core commands, and releases", () => {
+    render(<CLIPage />);
+
+    expect(screen.getByRole("heading", { name: "Hosted Markdown from your terminal." })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download releases" })).toHaveAttribute(
+      "href",
+      "https://github.com/owainlewis/passage-cli/releases"
+    );
+    expect(screen.getByText("passage login")).toBeInTheDocument();
+    expect(screen.getByText("passage auth status --check")).toBeInTheDocument();
+    expect(screen.getByText("passage replace <doc-id> ./draft.md")).toBeInTheDocument();
+    expect(screen.getByText(/Copy the token when it appears/)).toBeInTheDocument();
+    expect(screen.getByText(/Revoke old tokens/)).toBeInTheDocument();
+    expect(screen.getByText(/raw `.md` URLs/)).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("/d/<share-token>.md"))).toBeInTheDocument();
+    expect(screen.getByText(/Unshare revokes both URLs/)).toBeInTheDocument();
   });
 });
 
