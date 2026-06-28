@@ -1,4 +1,4 @@
-FROM node:22-bookworm AS web
+FROM node:26-bookworm AS web
 
 WORKDIR /src
 
