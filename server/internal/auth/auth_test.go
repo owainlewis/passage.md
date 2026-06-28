@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -166,20 +168,144 @@ func TestRequireUserRejectsAnonymousRequests(t *testing.T) {
 	}
 }
 
+func TestAPITokenCreateListBearerAuthAndRevoke(t *testing.T) {
+	store := newMemoryStore()
+	service := NewService(store, "test-secret", false)
+	user := User{ID: "user-1", Email: "u@example.com"}
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/api-tokens", strings.NewReader(`{"name":"Laptop"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	service.CreateAPIToken(create, createReq, user)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
+	}
+	var created createAPITokenResponse
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(created.Token, "psg_") {
+		t.Fatalf("token = %q, want psg_ prefix", created.Token)
+	}
+	if created.APIToken.Name != "Laptop" {
+		t.Fatalf("apiToken name = %q", created.APIToken.Name)
+	}
+	if store.lastAPITokenHash == "" || store.lastAPITokenHash == created.Token {
+		t.Fatalf("stored token hash = %q, plaintext = %q", store.lastAPITokenHash, created.Token)
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/api-tokens", nil)
+	service.ListAPITokens(list, listReq, user)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", list.Code, list.Body.String())
+	}
+	if strings.Contains(list.Body.String(), created.Token) {
+		t.Fatalf("list leaked plaintext token: %s", list.Body.String())
+	}
+
+	bearer := httptest.NewRequest(http.MethodGet, "/api/v1/docs", nil)
+	bearer.Header.Set("Authorization", "Bearer "+created.Token)
+	if got, ok := service.UserFromRequest(bearer); !ok || got.ID != user.ID {
+		t.Fatalf("bearer user = %#v, ok = %v", got, ok)
+	}
+
+	revoke := httptest.NewRecorder()
+	revokeReq := httptest.NewRequest(http.MethodDelete, "http://passage.test/api/v1/api-tokens/"+created.APIToken.ID, nil)
+	revokeReq.SetPathValue("id", created.APIToken.ID)
+	service.RevokeAPIToken(revoke, revokeReq, user)
+	if revoke.Code != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, body = %s", revoke.Code, revoke.Body.String())
+	}
+	if _, ok := service.UserFromRequest(bearer); ok {
+		t.Fatal("revoked bearer token still authenticated")
+	}
+}
+
+func TestRequireUserAcceptsBearerToken(t *testing.T) {
+	store := newMemoryStore()
+	service := NewService(store, "test-secret", false)
+	user := User{ID: "user-1", Email: "u@example.com"}
+	plain := "psg_test-token"
+	store.apiTokens[hashToken(plain)] = memoryAPIToken{
+		user:      user,
+		tokenHash: hashToken(plain),
+		token: APIToken{
+			ID:        "11111111-1111-1111-1111-111111111111",
+			Name:      "Test",
+			CreatedAt: time.Unix(100, 0).UTC(),
+		},
+	}
+	handler := service.RequireUser(func(w http.ResponseWriter, r *http.Request, got User) {
+		if got.ID != user.ID {
+			t.Fatalf("user = %#v", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs", nil)
+	req.Header.Set("Authorization", "Bearer "+plain)
+	handler(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRequireSessionUserRejectsBearerToken(t *testing.T) {
+	store := newMemoryStore()
+	service := NewService(store, "test-secret", false)
+	plain := "psg_test-token"
+	store.apiTokens[hashToken(plain)] = memoryAPIToken{
+		user:      User{ID: "user-1", Email: "u@example.com"},
+		tokenHash: hashToken(plain),
+		token: APIToken{
+			ID:        "11111111-1111-1111-1111-111111111111",
+			Name:      "Test",
+			CreatedAt: time.Unix(100, 0).UTC(),
+		},
+	}
+	handler := service.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user User) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/api-tokens", nil)
+	req.Header.Set("Authorization", "Bearer "+plain)
+	handler(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 type memoryStore struct {
-	users     map[string]UserWithPassword
-	sessions  map[string]User
-	nextID    int
-	findErr   error
-	deleteErr error
+	users            map[string]UserWithPassword
+	sessions         map[string]User
+	apiTokens        map[string]memoryAPIToken
+	nextID           int
+	nextTokenID      int
+	lastAPITokenHash string
+	findErr          error
+	deleteErr        error
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		users:    map[string]UserWithPassword{},
-		sessions: map[string]User{},
-		nextID:   1,
+		users:       map[string]UserWithPassword{},
+		sessions:    map[string]User{},
+		apiTokens:   map[string]memoryAPIToken{},
+		nextID:      1,
+		nextTokenID: 1,
 	}
+}
+
+type memoryAPIToken struct {
+	user      User
+	token     APIToken
+	tokenHash string
+	revoked   bool
 }
 
 func (s *memoryStore) CreateUser(ctx context.Context, email string, passwordHash string) (User, error) {
@@ -227,4 +353,49 @@ func (s *memoryStore) DeleteSession(ctx context.Context, tokenHash string) error
 	}
 	delete(s.sessions, tokenHash)
 	return nil
+}
+
+func (s *memoryStore) ListAPITokens(ctx context.Context, userID string) ([]APIToken, error) {
+	var tokens []APIToken
+	for _, record := range s.apiTokens {
+		if record.user.ID == userID && !record.revoked {
+			tokens = append(tokens, record.token)
+		}
+	}
+	return tokens, nil
+}
+
+func (s *memoryStore) CreateAPIToken(ctx context.Context, userID string, name string, tokenHash string) (APIToken, error) {
+	token := APIToken{
+		ID:        fmt.Sprintf("11111111-1111-1111-1111-%012d", s.nextTokenID),
+		Name:      name,
+		CreatedAt: time.Unix(100+int64(s.nextTokenID), 0).UTC(),
+	}
+	s.nextTokenID++
+	s.lastAPITokenHash = tokenHash
+	s.apiTokens[tokenHash] = memoryAPIToken{
+		user:      User{ID: userID, Email: "u@example.com"},
+		token:     token,
+		tokenHash: tokenHash,
+	}
+	return token, nil
+}
+
+func (s *memoryStore) RevokeAPIToken(ctx context.Context, userID string, id string) error {
+	for hash, record := range s.apiTokens {
+		if record.user.ID == userID && record.token.ID == id && !record.revoked {
+			record.revoked = true
+			s.apiTokens[hash] = record
+			return nil
+		}
+	}
+	return ErrUnauthorized
+}
+
+func (s *memoryStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error) {
+	record, ok := s.apiTokens[tokenHash]
+	if !ok || record.revoked {
+		return User{}, ErrUnauthorized
+	}
+	return record.user, nil
 }
