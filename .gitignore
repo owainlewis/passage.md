@@ -1,9 +1,12 @@
 .DS_Store
 node_modules/
 dist/
+!server/internal/web/dist/
+!server/internal/web/dist/index.html
 build/
 coverage/
 .next/
+apps/web/out/
 .env
 .env.*
 !.env.example

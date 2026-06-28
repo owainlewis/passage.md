@@ -70,7 +70,7 @@ It is not a docs platform with heavy permissions in V1.
 
 ## Product Model By Phase
 
-### Phase 1: Local Anonymous MVP
+### Phase 1: Local Server-Backed App
 
 - Open the browser editor.
 - Write Markdown.
@@ -78,29 +78,27 @@ It is not a docs platform with heavy permissions in V1.
 - Preview Mermaid diagrams.
 - Keep a transient local draft.
 - Copy Markdown from the editor.
-- No account required.
-- No database save.
+- Sign up and sign in with email/password.
+- Save private documents to local Postgres.
+- Reopen, autosave, list, and archive saved documents.
+- Share saved documents with explicit read-only links.
+- Read shared documents as human HTML or raw `.md`.
+- Anonymous local writing still works with no account.
 - No CLI.
 - No hosted deployment requirement.
 
-### Phase 2: Deployed Anonymous MVP
+### Phase 2: Deployed Server-Backed App
 
-- Deploy the anonymous editor to GCP.
-- Keep the same no-account writing flow.
-- Keep drafts browser-local.
+- Deploy the server-backed app to GCP.
 - Add production build, container, HTTPS, domain, and smoke tests.
-- Do not add public user accounts yet.
+- Do not deploy production during Phase 1.
 
-### Phase 3: Personal Saved Docs
+### Phase 3: Email Auth Flows
 
-- Add auth for Owain only.
-- Add Postgres-backed saved docs.
-- Add autosave.
-- Add list, search, open, archive, and export.
-- Add public share URLs and raw `.md` URLs for saved docs.
-- Add the CLI and API against the same document backend.
-- Keep access private and controlled.
-- Do not add a general paid tier yet.
+- Add password reset emails.
+- Add magic-link sign-in.
+- Reuse the same session core.
+- Do not add OAuth yet.
 
 ### Phase 4: Payments And Public Paid Tier
 
@@ -150,9 +148,7 @@ File export is part of the paid tier once payments exist.
 
 ## Saved Documents
 
-Saved documents are out of scope for Phase 1 and Phase 2.
-
-Phase 3 adds saved documents for Owain's own use.
+Phase 1 adds saved documents for local use.
 
 Phase 4 turns saved documents into the paid product boundary.
 

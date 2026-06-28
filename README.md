@@ -34,6 +34,8 @@ Prerequisites:
 
 - Node.js 22 or newer.
 - npm 10 or newer.
+- Go 1.26 or newer.
+- A native local PostgreSQL install, such as Postgres.app or Homebrew Postgres.
 
 Install dependencies:
 
@@ -51,6 +53,28 @@ The app runs at `http://localhost:3000` by default.
 
 If that port is busy, Next.js prints the alternate local URL.
 
+Create a local database:
+
+```sh
+createdb passage_dev
+export DATABASE_URL='postgres://localhost:5432/passage_dev?sslmode=disable'
+```
+
+Run database migrations:
+
+```sh
+go run ./server/cmd/passage migrate
+```
+
+Build the static web app and run the Go server:
+
+```sh
+npm run build:web
+STATIC_DIR=apps/web/out go run ./server/cmd/passage serve
+```
+
+The Go server runs at `http://localhost:8080` by default and serves `/api/health`.
+
 Run lint:
 
 ```sh
@@ -61,6 +85,7 @@ Run tests:
 
 ```sh
 npm test
+go test ./server/...
 ```
 
 Build the web app:
@@ -69,13 +94,19 @@ Build the web app:
 npm run build:web
 ```
 
+Build the production container:
+
+```sh
+docker build -t passage-md .
+```
+
 ## Phases
 
-Phase 1 gets the anonymous editor running locally.
+Phase 1 gets the server-backed local app running with auth, saved docs, sharing, and raw Markdown URLs.
 
-Phase 2 deploys the anonymous editor to GCP.
+Phase 2 deploys the server-backed app to GCP.
 
-Phase 3 adds personal saved docs, sharing, API, and CLI for Owain's own use.
+Phase 3 adds email auth flows.
 
 Phase 4 adds payments and the public paid tier.
 

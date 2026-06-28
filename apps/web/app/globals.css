@@ -412,6 +412,7 @@ button {
 .main {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   display: grid;
   grid-template-rows: 53px minmax(0, 1fr) 38px;
   background: var(--surface);
@@ -658,12 +659,14 @@ button {
 .writingPane {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 64px clamp(24px, 7vw, 88px) 28vh;
 }
 
 .editor,
 .markdown {
   width: 100%;
+  min-width: 0;
   max-width: var(--measure);
   margin: 0 auto;
 }
@@ -697,6 +700,7 @@ button {
   line-height: var(--lh-body);
   letter-spacing: -0.003em;
   text-wrap: pretty;
+  overflow-wrap: break-word;
 }
 
 .markdown > :first-child {
@@ -1365,11 +1369,13 @@ button {
     grid-template-columns: auto 1fr;
     gap: 6px;
     padding: 0 8px;
+    overflow: hidden;
   }
 
   .topCluster.end {
     min-width: 0;
     gap: 2px;
+    overflow: hidden;
   }
 
   .topCluster.end .modeToggle {

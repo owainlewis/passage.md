@@ -4,13 +4,15 @@
 
 Use a boring stack and grow it in phases.
 
-Phase 1 is a local browser app with no server dependency beyond the dev server.
+Phase 1 is now the local server-backed app.
 
-Phase 2 deploys the anonymous editor.
+It adds the Go server, local Postgres, email/password sessions, user-scoped saved docs, share links, and raw `.md` URLs.
 
-Phase 3 adds the Go API, Postgres, saved docs, public sharing, and CLI.
+Phase 2 deploys the server-backed app to GCP.
 
-Phase 4 adds Stripe and the public paid tier.
+Phase 3 adds email auth flows such as password reset and magic links.
+
+Phase 4 adds Stripe, Pro limits, and the public paid tier.
 
 ## Stack
 
@@ -41,22 +43,31 @@ Stripe gives the fastest path to paid save and sync when the public paid tier is
 
 ## Phase 1 Shape
 
-Phase 1 should ship as a polished local anonymous app.
+Phase 1 ships as a local browser app backed by one Go HTTP server and local Postgres.
 
-The app stores the current draft in browser storage.
+The Go server serves the static Next export and the JSON API from one origin.
 
-The app does not need a backend API.
+The Next development server can still be used for browser UI work.
 
-The app does not need Postgres.
+Anonymous users keep the local scratchpad flow in browser storage.
 
-The app does not need auth.
+Signed-in users can save documents to Postgres.
 
-The app should still be structured so a saved-document backend can be added without rewriting the editor.
+Saved documents are scoped to their owner and private by default.
 
-Recommended Phase 1 directories:
+Owners can explicitly share saved documents by opaque URL.
+
+Shared documents have a human HTML route and a raw Markdown `.md` route.
+
+Phase 1 auth is email/password only.
+
+Password reset emails, magic links, OAuth, API tokens, CLI, billing, and production deployment are out of scope.
+
+Phase 1 directories:
 
 ```txt
 apps/web
+server
 docs
 ```
 
@@ -121,20 +132,38 @@ Do not send anonymous drafts to a server.
 
 Do not introduce an account concept in Phase 1.
 
-## Phase 3 API
+## Phase 1 API
 
-The API owns server-side truth once saved docs exist.
+The API owns server-side truth for signed-in saved docs.
 
-It exposes document CRUD, content replace, public share, raw Markdown, auth, and API token management.
+It exposes health, email/password auth, document CRUD, content replace, public share, and raw Markdown.
 
-It must enforce private docs and later paid-only save/export/share/API access.
+It must enforce private docs.
 
-Browser and CLI should use the same document API.
+Browser saved-doc flows use this API.
 
 Suggested routes:
 
 ```txt
+GET    /api/health
 GET    /api/v1/me
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/logout
+GET    /api/v1/docs
+POST   /api/v1/docs
+GET    /api/v1/docs/:id
+PATCH  /api/v1/docs/:id
+DELETE /api/v1/docs/:id
+POST   /api/v1/docs/:id/share
+DELETE /api/v1/docs/:id/share
+GET    /d/:token
+GET    /d/:token.md
+```
+
+Legacy route names from earlier docs are not binding for Phase 1:
+
+```txt
 GET    /api/v1/documents
 POST   /api/v1/documents
 GET    /api/v1/documents/:id
@@ -144,19 +173,13 @@ PUT    /api/v1/documents/:id/content
 DELETE /api/v1/documents/:id
 POST   /api/v1/documents/:id/share
 DELETE /api/v1/documents/:id/share
-GET    /d/:token
-GET    /d/:token.md
 ```
 
-## Phase 3 CLI
+## Later CLI
 
-The CLI is a core product surface once saved docs exist.
+The CLI is a core product surface, but it is not part of Phase 1.
 
-It should support human terminal workflows and agent workflows.
-
-It should provide plain text output by default and JSON output with a flag.
-
-It should store auth tokens in the user's local config directory.
+It should use the same document backend once API-token auth exists.
 
 ## Suggested Data Model
 
@@ -166,6 +189,7 @@ The database starts in Phase 3.
 
 - `id`
 - `email`
+- `password_hash`
 - `created_at`
 - `updated_at`
 
@@ -182,7 +206,17 @@ The database starts in Phase 3.
 - `created_at`
 - `updated_at`
 
+### sessions
+
+- `id`
+- `user_id`
+- `token_hash`
+- `expires_at`
+- `created_at`
+
 ### document_versions
+
+Document versions are not required in Phase 1.
 
 - `id`
 - `document_id`
@@ -191,6 +225,8 @@ The database starts in Phase 3.
 - `created_by`
 
 ### api_tokens
+
+API tokens are not required in Phase 1.
 
 - `id`
 - `user_id`
@@ -215,11 +251,11 @@ Subscriptions start in Phase 4.
 
 ## Auth And Entitlements
 
-Phase 1 has no auth.
+Phase 1 has email/password auth for saved docs.
 
-Phase 2 can remain no-auth if the deployed app is anonymous only.
+Phase 2 deploys that same app.
 
-Phase 3 adds auth for Owain's personal saved docs.
+Phase 3 adds email-based auth flows.
 
 Phase 4 adds public paid entitlements.
 
