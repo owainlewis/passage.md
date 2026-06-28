@@ -419,6 +419,8 @@ button {
 }
 
 .topBar {
+  position: relative;
+  z-index: 50;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -523,6 +525,7 @@ button {
 .userMenuWrap {
   position: relative;
   margin-left: 6px;
+  z-index: 40;
 }
 
 .iconButton[aria-expanded="true"] {
@@ -537,11 +540,13 @@ button {
 }
 
 .userMenu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 31;
-  min-width: 224px;
+  position: fixed;
+  top: 52px;
+  right: 14px;
+  z-index: 41;
+  width: min(224px, calc(100vw - 28px));
+  max-height: calc(100vh - 66px);
+  overflow-y: auto;
   background: var(--elevated);
   border: 1px solid var(--hairline-strong);
   border-radius: 12px;
@@ -565,6 +570,15 @@ button {
 
 .menuItem:hover {
   background: var(--hover);
+}
+
+.menuItem:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.menuItem:disabled:hover {
+  background: transparent;
 }
 
 .menuItem.accent {
@@ -635,6 +649,141 @@ button {
   color: #9a4a36;
   font-size: 0.74rem;
   line-height: 1.4;
+}
+
+.tokenPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.tokenPanelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tokenTitle {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.tokenField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tokenField span {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.createdToken {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.createdTokenLabel {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.createdToken code {
+  display: block;
+  max-width: 100%;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: var(--code-bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.tokenCopy,
+.tokenRevoke {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  border-radius: 7px;
+  padding: 5px 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.tokenCopy:hover,
+.tokenRevoke:hover {
+  background: var(--hover);
+}
+
+.tokenRevoke {
+  color: var(--muted);
+}
+
+.tokenRevoke:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.tokenList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tokenRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.tokenInfo {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tokenName {
+  max-width: 16rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tokenMeta,
+.tokenEmpty {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.tokenEmpty {
+  margin: 4px 0 0;
 }
 
 .menuRow {
