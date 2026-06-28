@@ -27,6 +27,7 @@ export default function Landing() {
         <header className="landingNav onDark">
           <Brand />
           <nav className="landingNavLinks">
+            <Link href="/cli">CLI</Link>
             <a href="#pricing">Go Pro</a>
             <Link className="landingNavCta" href="/write">
               Start writing
