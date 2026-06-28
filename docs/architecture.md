@@ -1,148 +1,62 @@
 # passage.md Architecture
 
-## Summary
+## Source Of Truth
 
-Use a boring stack and grow it in phases.
+GitHub Issues and project board 14 are the source of truth for roadmap, phase order, issue scope, acceptance criteria, dependencies, verification, and status.
 
-Phase 1 is now the local server-backed app.
+This document records durable architecture decisions only.
 
-It adds the Go server, local Postgres, email/password sessions, user-scoped saved docs, share links, and raw `.md` URLs.
-
-Phase 2 deploys the server-backed app to GCP.
-
-Phase 3 adds email auth flows such as password reset and magic links.
-
-Phase 4 adds Stripe, Pro limits, and the public paid tier.
+If this document conflicts with a GitHub issue, the GitHub issue wins.
 
 ## Stack
 
 - Web: Next.js, React, TypeScript.
-- Editor: CodeMirror 6.
-- Markdown preview: remark, rehype, remark-gfm, Mermaid.
-- API: Go HTTP server, added when saved docs start.
-- CLI: Go, added when saved docs start.
-- Database: Postgres, added when saved docs start.
-- Billing: Stripe Checkout and Stripe Billing, added after the personal saved-doc phase.
-- Public rendering: server-side sanitized HTML once public sharing exists.
-- Deployment: GCP Cloud Run.
-- Database hosting: Cloud SQL for Postgres once persistence exists.
+- Editor: CodeMirror 6 when the editor needs richer behavior.
+- Markdown preview: sanitized Markdown with Mermaid support.
+- API: Go HTTP server.
+- CLI: Go, in the public `owainlewis/passage-cli` repo.
+- Database: Postgres.
+- Billing: Stripe Checkout and Stripe Billing.
+- Deployment: one Go server/container on GCP Cloud Run with the static Next.js frontend embedded.
+- Production database: Cloud SQL for Postgres via `DATABASE_URL`.
 
-## Why This Stack
-
-Next.js gives a strong browser app without much ceremony.
-
-CodeMirror 6 gives a proper Markdown editor without building editor behavior from scratch.
-
-Go is a good fit for the API and CLI once the product needs persistence and agent workflows.
-
-Postgres is enough for users, docs, search, versions, billing state, and API tokens.
-
-Cloud Run keeps operational complexity low.
-
-Stripe gives the fastest path to paid save and sync when the public paid tier is ready.
-
-## Phase 1 Shape
-
-Phase 1 ships as a local browser app backed by one Go HTTP server and local Postgres.
+## Runtime Shape
 
 The Go server serves the static Next export and the JSON API from one origin.
 
-The Next development server can still be used for browser UI work.
+The app uses Postgres for server-backed auth, saved documents, share links, and future API tokens.
 
-Anonymous users keep the local scratchpad flow in browser storage.
+Local development also uses Postgres through `DATABASE_URL`.
 
-Signed-in users can save documents to Postgres.
+The Next development server is only for frontend-only UI iteration.
 
-Saved documents are scoped to their owner and private by default.
-
-Owners can explicitly share saved documents by opaque URL.
-
-Shared documents have a human HTML route and a raw Markdown `.md` route.
-
-Phase 1 auth is email/password only.
-
-Password reset emails, magic links, OAuth, API tokens, CLI, billing, and production deployment are out of scope.
-
-Phase 1 directories:
-
-```txt
-apps/web
-server
-docs
-```
-
-Optional Phase 1 directories:
-
-```txt
-packages/markdown
-packages/ui
-```
-
-Only add shared packages if they remove real duplication.
+It is not the local acceptance path.
 
 ## Web App
 
-The web app owns the editor, preview, export, local draft persistence, and keyboard shortcuts.
+The web app owns the editor, preview, local draft persistence, account UI, and browser document workflows.
 
-The default route should be the writing surface.
+Anonymous mode can store transient drafts in browser storage.
 
-There should be no dashboard feeling inside the editor.
+Signed-in users save documents to Postgres through the Go API.
 
-Anonymous mode stores the current document locally in the browser.
+The editor should not feel like a dashboard.
 
-The editor should be built so its state can later be connected to saved docs.
+## API
 
-## Markdown Rendering
+The API owns server-side truth for:
 
-Edit mode shows raw Markdown.
+- Health.
+- Email/password auth.
+- Sessions.
+- Saved document CRUD.
+- Ownership checks.
+- Public share links.
+- Raw Markdown routes.
+- Future API tokens.
+- Future billing entitlements.
 
-View mode renders sanitized Markdown.
-
-Preview should support:
-
-- Headings.
-- Paragraphs.
-- Lists.
-- Links.
-- Blockquotes.
-- Tables.
-- Code blocks.
-- Inline code.
-- Mermaid fenced blocks.
-
-Invalid Markdown should still render as normal text where possible.
-
-Invalid Mermaid should render as an inline preview error and should not break the rest of the document.
-
-Raw Markdown export must preserve the original source.
-
-## Local Draft Storage
-
-Use browser storage for the anonymous draft.
-
-The initial implementation can use `localStorage`.
-
-Store enough metadata for a calm user experience:
-
-- Draft body.
-- Last edited timestamp.
-- Optional title.
-
-Do not send anonymous drafts to a server.
-
-Do not introduce an account concept in Phase 1.
-
-## Phase 1 API
-
-The API owns server-side truth for signed-in saved docs.
-
-It exposes health, email/password auth, document CRUD, content replace, public share, and raw Markdown.
-
-It must enforce private docs.
-
-Browser saved-doc flows use this API.
-
-Suggested routes:
+Current route shape:
 
 ```txt
 GET    /api/health
@@ -161,185 +75,96 @@ GET    /d/:token
 GET    /d/:token.md
 ```
 
-Legacy route names from earlier docs are not binding for Phase 1:
+API-token routes and stable CLI contracts are tracked in GitHub Issues.
+
+Do not add route-level scope here when a ticket owns the exact contract.
+
+## Data Model
+
+Current and expected core tables:
 
 ```txt
-GET    /api/v1/documents
-POST   /api/v1/documents
-GET    /api/v1/documents/:id
-PATCH  /api/v1/documents/:id
-GET    /api/v1/documents/:id/content
-PUT    /api/v1/documents/:id/content
-DELETE /api/v1/documents/:id
-POST   /api/v1/documents/:id/share
-DELETE /api/v1/documents/:id/share
+users
+sessions
+documents
+document_shares
+schema_migrations
 ```
 
-## Later CLI
+Likely future tables:
 
-The CLI is a core product surface, but it is not part of Phase 1.
+```txt
+api_tokens
+subscriptions
+```
 
-It should use the same document backend once API-token auth exists.
+Exact migrations live in `server/internal/migrations`.
 
-## Suggested Data Model
+Ticket-specific data model changes belong in the GitHub issue and PR.
 
-The database starts in Phase 3.
+## Auth And Access
 
-### users
+Browser auth uses signed, httpOnly sessions.
 
-- `id`
-- `email`
-- `password_hash`
-- `created_at`
-- `updated_at`
+CLI and agent auth should use bearer API tokens.
 
-### documents
+Private document access requires an authenticated owner.
 
-- `id`
-- `owner_user_id`
-- `public_id`
-- `title`
-- `body`
-- `is_public`
-- `public_token`
-- `archived_at`
-- `created_at`
-- `updated_at`
-
-### sessions
-
-- `id`
-- `user_id`
-- `token_hash`
-- `expires_at`
-- `created_at`
-
-### document_versions
-
-Document versions are not required in Phase 1.
-
-- `id`
-- `document_id`
-- `body`
-- `created_at`
-- `created_by`
-
-### api_tokens
-
-API tokens are not required in Phase 1.
-
-- `id`
-- `user_id`
-- `name`
-- `token_hash`
-- `last_used_at`
-- `created_at`
-- `revoked_at`
-
-### subscriptions
-
-Subscriptions start in Phase 4.
-
-- `id`
-- `user_id`
-- `stripe_customer_id`
-- `stripe_subscription_id`
-- `status`
-- `current_period_end`
-- `created_at`
-- `updated_at`
-
-## Auth And Entitlements
-
-Phase 1 has email/password auth for saved docs.
-
-Phase 2 deploys that same app.
-
-Phase 3 adds email-based auth flows.
-
-Phase 4 adds public paid entitlements.
-
-Reading and writing private docs requires auth once private docs exist.
-
-Creating saved docs requires the personal allowlist in Phase 3.
-
-Creating saved docs requires an active paid entitlement in Phase 4.
-
-Replacing saved doc content requires the same entitlement check.
-
-Sharing docs requires the same entitlement check.
-
-Exporting saved docs requires the same entitlement check once payments exist.
-
-Durable server share links require the same entitlement check once payments exist.
-
-Anonymous fragment share links can remain free because they do not create server state.
-
-Public shared docs do not require auth.
-
-Paid public share pages should render without visible Passage branding, navigation, upgrade prompts, or product marketing.
-
-CLI/API token access requires the same entitlement check.
-
-Dark mode and additional writing themes require an active paid entitlement once payments exist.
-
-## Error Behavior
+Unauthorized access to another user's private document should not reveal existence.
 
 Private or unshared public docs return 404 from public routes.
 
 Unauthenticated private API requests return 401.
 
-Authenticated users without access receive 403 during the personal allowlist phase.
+Entitlement and billing behavior is server-enforced.
 
-Authenticated users without paid access receive 402 once payments exist.
+## Sharing
 
-Unauthorized access to another user's private document returns 404.
+Saved docs are private by default.
+
+Owners can explicitly share saved documents by opaque token URL.
+
+Shared documents have:
+
+- A human HTML route.
+- A raw Markdown `.md` route.
+
+Unsharing revokes both public routes.
+
+Public shared docs do not require auth.
+
+Shared Markdown rendering must be sanitized.
+
+## Error Behavior
 
 Invalid Markdown should still save because Markdown is text.
 
 Invalid Mermaid should render as an inline preview error without blocking save.
 
+Unauthenticated private API requests return 401.
+
+Unauthorized document access returns 404 when revealing existence would leak private data.
+
+Invalid or revoked API tokens should return 401.
+
+Paid-only operations should return 402 once billing is enforced.
+
 ## Local Development
 
-Phase 1 should document one local path for:
+Local app acceptance uses the Go server and Postgres:
 
-- Web app install.
-- Web app dev server.
-- Web app tests.
-- Browser smoke test.
+```sh
+createdb passage_dev
+export DATABASE_URL='postgres://localhost:5432/passage_dev?sslmode=disable'
+export SESSION_SECRET='dev-session-secret-change-me'
+just migrate
+just dev
+```
 
-Phase 3 should add one local path for:
+The app runs at `http://localhost:8080`.
 
-- API server.
-- CLI.
-- Postgres.
-- Migrations.
-- API tests.
-- CLI tests.
+Health should report:
 
-Docker Compose is acceptable for local Postgres once persistence exists.
-
-## Deployment
-
-Phase 2 deploys the anonymous editor to GCP.
-
-Expected services:
-
-- Cloud Run for the web runtime or static-serving container.
-- Secret Manager only if runtime secrets are needed.
-- Artifact Registry for container images.
-- Cloud Build or GitHub Actions for build and deploy.
-
-Phase 3 adds:
-
-- Cloud Run for the Go API.
-- Cloud SQL for Postgres.
-- Secret Manager for database credentials and auth secrets.
-
-Phase 4 adds:
-
-- Stripe secrets.
-- Stripe webhook handling.
-- Billing portal configuration.
-
-Owain will create the GCP project and provide project IDs, domains, and secrets when needed.
+```json
+{"database":"ok","status":"ok"}
+```

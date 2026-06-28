@@ -49,19 +49,18 @@ func serve(cfg config.Config) error {
 	if cfg.SessionSecret == "" {
 		return errors.New("SESSION_SECRET is required")
 	}
+	if cfg.DatabaseURL == "" {
+		return errors.New("DATABASE_URL is required")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var db *database.Pool
-	if cfg.DatabaseURL != "" {
-		opened, err := database.Open(ctx, cfg.DatabaseURL)
-		if err != nil {
-			return fmt.Errorf("connect database: %w", err)
-		}
-		defer opened.Close()
-		db = opened
+	db, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
 	}
+	defer db.Close()
 
 	staticFS, err := web.FileSystem(cfg.StaticDir)
 	if err != nil {

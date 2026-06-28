@@ -89,7 +89,15 @@ The project board is the single source of truth for priority and status.
 
 The GitHub issue body is the single source of truth for scope, acceptance criteria, dependencies, verification, and out-of-scope notes.
 
-There is no local issue plan file.
+Local docs are product and architecture notes only.
+
+They are not the roadmap.
+
+If local docs conflict with GitHub Issues, the GitHub issue wins.
+
+`plan.md` is only a pointer to GitHub.
+
+It is not a local issue plan.
 
 When picking work:
 

@@ -3,16 +3,16 @@ import { Brand } from "./brand";
 
 const features = [
   {
-    title: "A calm place to write",
-    body: "An almost empty surface and a preview that reads like a finished document. Nothing between you and the words."
+    title: "Write in the browser",
+    body: "A calm Markdown surface that works anywhere you can open a tab. No vaults, folders, sync setup, or repo ceremony."
   },
   {
-    title: "Share with a link",
-    body: "Send a private link and the document travels inside it. Public the moment you share, private by default."
+    title: "Share online by URL",
+    body: "Saved documents are private by default. Share one when you mean to, revoke it when you are done, and keep the Markdown clean."
   },
   {
     title: "Built for agents too",
-    body: "Plain Markdown in, plain Markdown out. Your agents can read and write the same documents you do."
+    body: "Raw Markdown URLs, CLI access, and API workflows make the same document useful to you, your collaborators, and your agents."
   }
 ];
 
@@ -34,10 +34,10 @@ export default function Landing() {
           </nav>
         </header>
         <div className="heroInner">
-          <h1 className="heroTitle">Minimalist writing for agents and humans</h1>
+          <h1 className="heroTitle">Hosted Markdown for humans and agents</h1>
           <p className="heroSub">
-            A calm, minimalist Markdown app. Think, write, and collaborate with your agents, all in your browser. Free to
-            start.
+            Write in a calm browser workspace, share documents online, and give your agents clean Markdown they can read
+            and work with. No local files to manage. Free to start.
           </p>
           <div className="heroActions">
             <Link className="btnPrimary" href="/write">
@@ -54,22 +54,22 @@ export default function Landing() {
         <section className="story" id="story">
           <h2 className="sectionTitle">Why passage exists</h2>
           <div className="storyBody">
-            <p>I tried every writing app, and none of them fit.</p>
+            <p>I tried every online document tool, and none of them fit.</p>
             <p>
-              I wanted one place to write. In the browser, on my laptop or my phone, with nothing to install. And I
-              wanted my agents to reach the same documents I was working on, without copying files around or syncing a
-              repo just to share a paragraph.
+              I wanted one place to write Markdown in the browser, on my laptop or my phone, with nothing to install. And
+              I wanted my agents to reach the same documents I was working on, without copying files around, syncing a
+              folder, or creating a repo just to share a paragraph.
             </p>
             <p>
-              Local files were the worst of both worlds: great for me, invisible to my agents. So I leaned on GitHub, and
-              on syncing, and on a pile of Markdown tools that each did a little and got in the way a lot. I was managing
-              my tools instead of writing.
+              Google Docs is too rich. Notion is too heavy. Gists are useful, but they feel like developer plumbing, not
+              a place to think. Local Markdown files are tidy for a day and messy for a year once agents, phones, and
+              shared links enter the workflow.
             </p>
             <p>
-              So I stripped it all back. One URL. Beautiful Markdown. Write it, share it, and let your agents read and
-              edit it too. Private by default, public the moment you send the link.
+              So I stripped it back. Beautiful Markdown in the browser. One private URL per document. Share it when you
+              mean to. Let your agents read the raw Markdown when they need context.
             </p>
-            <p className="storyClose">That is all passage is, and nothing else.</p>
+            <p className="storyClose">Passage is not a local writing app. It is a small online home for Markdown.</p>
           </div>
         </section>
 
@@ -121,7 +121,7 @@ export default function Landing() {
 
       <footer className="landingFooter">
         <Brand />
-        <span className="footerTag">A Markdown notepad for agents and humans.</span>
+        <span className="footerTag">Hosted Markdown for humans and agents.</span>
       </footer>
     </div>
   );

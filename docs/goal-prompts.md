@@ -177,8 +177,6 @@ Use goals when the valuable part is repeated repair and re-checking.
 
 Use a normal prompt when one pass is enough.
 
-For the local MVP demo goal, use [Local MVP Demo Goal](local-mvp-demo-goal.md).
-
 ### Restore Local Quality
 
 What is this goal for?
@@ -261,7 +259,7 @@ Use this when the project docs might disagree with each other.
 
 What problem does it solve?
 
-Agents make worse changes when the README, issue plan, PRD, and architecture docs say different things.
+Agents make worse changes when local docs are treated as a second roadmap.
 
 How does it work?
 
@@ -269,17 +267,21 @@ Codex reads the core docs, fixes one real mismatch at a time, and re-checks for 
 
 It stops before making product decisions.
 
+GitHub Issues and project board 14 remain the source of truth.
+
 ```md
 /goal
-Make passage.md's planning docs agree with each other.
+Make passage.md's local docs defer to GitHub Issues and project board 14.
 
-Do not stop until `AGENTS.md`, `README.md`, `docs/issues.md`, `docs/prd.md`, and `docs/architecture.md` use consistent phase names, scope boundaries, stack choices, and local commands, or the work is blocked with evidence.
+Do not stop until `AGENTS.md`, `README.md`, `plan.md`, `docs/prd.md`, and `docs/architecture.md` clearly say GitHub Issues and project board 14 are the source of truth for roadmap, scope, acceptance criteria, dependencies, verification, and status.
 
-Before changing docs, read all five files.
+Before changing docs, read those files plus any GitHub issue referenced by the mismatch.
 
 Patch one real contradiction at a time.
 
-Preserve product direction unless the docs clearly identify the newer source of truth.
+Preserve durable product and architecture direction.
+
+Do not duplicate issue bodies, phase plans, or acceptance criteria into local docs.
 
 After each fix, re-scan for the same mismatch.
 
@@ -310,13 +312,13 @@ Make the selected passage.md issue agent-ready.
 
 Do not stop until the issue has a clear goal, context, acceptance criteria, verification steps, and explicit out-of-scope notes, or the missing decision is reported with evidence.
 
-Before editing, read `AGENTS.md`, `docs/issues.md`, the selected issue, and any referenced docs.
+Before editing, read `AGENTS.md`, the selected issue, and any referenced docs.
 
 Keep the issue scoped to one focused implementation run.
 
 Prefer concrete verification commands over vague success criteria.
 
-Update only the selected issue or its source plan entry.
+Update only the selected issue.
 
 Report the final issue text, files or tracker fields changed, and any assumptions.
 
