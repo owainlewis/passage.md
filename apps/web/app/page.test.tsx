@@ -5,6 +5,7 @@ import { decodeDoc } from "./share";
 import Write from "./write/page";
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   localStorage.clear();
   delete document.documentElement.dataset.theme;
   window.history.replaceState(null, "", "/");

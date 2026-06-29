@@ -28,9 +28,9 @@ API token bearer auth authenticates as the same user identity used by these docu
 
 Saved document routes require an authenticated user.
 
-Current auth uses the `passage_session` httpOnly cookie set by the browser login flow.
+Browser auth uses the `passage_session` httpOnly cookie set by the browser login flow.
 
-Future CLI auth will use:
+CLI and agent clients use bearer API tokens:
 
 ```http
 Authorization: Bearer <api-token>

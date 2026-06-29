@@ -35,9 +35,10 @@ type TokenStatus = "idle" | "loading" | "creating" | "revoking" | "copied" | "er
 const STORAGE_KEY = "passage.documents.v2";
 const ACTIVE_KEY = "passage.active.v2";
 
-// Anonymous share links carry the whole document in the URL fragment. Past a
-// point the link grows too long to paste reliably, so guard the length and tell
-// the user rather than handing back a link that silently breaks on paste.
+// Anonymous share links carry the whole document in the URL fragment.
+// Signed-in documents use the Go API's server-backed share links instead.
+// Past a point, anonymous links grow too long to paste reliably, so guard the
+// length and tell the user rather than handing back a link that silently breaks.
 const MAX_SHARE_URL_LENGTH = 16000;
 
 const welcomeBody = `# Markdown for agents and humans
@@ -60,7 +61,7 @@ Edit shows raw Markdown. Preview reads like a finished document.
 
 ## Sharing and export
 
-- **Share** copies a private link. The document travels inside the link, so only people you send it to can read it.
+- **Share** copies a read-only link. Signed-in docs use hosted share URLs you can revoke. Anonymous drafts travel inside the link.
 - **Export** downloads the raw \`.md\` file.
 
 ## A finished document
