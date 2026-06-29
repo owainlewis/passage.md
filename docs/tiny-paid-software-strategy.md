@@ -176,7 +176,7 @@ Anonymous use should be:
 - Local transient draft.
 - Markdown preview.
 - Copy Markdown.
-- Anonymous fragment share links.
+- Self-contained share links for transient drafts.
 
 Free accounts should be:
 
@@ -184,7 +184,8 @@ Free accounts should be:
 - Browser editor.
 - Markdown preview.
 - Copy Markdown.
-- Anonymous fragment share links.
+- Durable public share links.
+- Raw `.md` URLs for shared docs.
 - CLI access against those 5 hosted docs.
 - Existing doc editing after the 5 doc limit is reached.
 
@@ -197,8 +198,7 @@ Paid should be:
 - Unlimited saved docs with fair use.
 - Sync.
 - Export.
-- Durable public share links.
-- Raw `.md` URLs.
+- Higher sharing and raw `.md` URL limits.
 - Unbranded public share pages.
 - Higher CLI/API limits.
 - Agent skill support.

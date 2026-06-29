@@ -1,11 +1,9 @@
-// Share links carry the document inside the URL fragment (after `#`).
-// The fragment never reaches a server, so an anonymous draft stays private to
-// whoever holds the link, with zero backend.
+// Anonymous share links carry the document inside the URL fragment (after `#`).
+// The fragment never reaches a server, so a local draft can be shared with zero
+// backend. Signed-in saved docs use the Go API's server-backed share routes.
 //
 // The payload is deflate-compressed before base64url encoding, which keeps the
-// link far shorter than raw text for real Markdown. A short opaque id (e.g.
-// `/d/abc123`) needs a server lookup and arrives with saved docs (#28); the
-// `/d` view stays the same, only the data source changes.
+// link far shorter than raw text for real Markdown.
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
