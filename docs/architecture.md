@@ -24,7 +24,7 @@ If this document conflicts with a GitHub issue, the GitHub issue wins.
 
 The Go server serves the static Next export and the JSON API from one origin.
 
-The app uses Postgres for server-backed auth, saved documents, share links, and future API tokens.
+The app uses Postgres for server-backed auth, saved documents, share links, and API tokens.
 
 Local development also uses Postgres through `DATABASE_URL`.
 
@@ -53,7 +53,7 @@ The API owns server-side truth for:
 - Ownership checks.
 - Public share links.
 - Raw Markdown routes.
-- Future API tokens.
+- API tokens.
 - Future billing entitlements.
 
 Current route shape:
@@ -71,11 +71,14 @@ PATCH  /api/v1/docs/:id
 DELETE /api/v1/docs/:id
 POST   /api/v1/docs/:id/share
 DELETE /api/v1/docs/:id/share
+GET    /api/v1/api-tokens
+POST   /api/v1/api-tokens
+DELETE /api/v1/api-tokens/:id
 GET    /d/:token
 GET    /d/:token.md
 ```
 
-API-token routes and stable CLI contracts are tracked in GitHub Issues.
+Stable CLI contract changes are tracked in GitHub Issues.
 
 Do not add route-level scope here when a ticket owns the exact contract.
 
@@ -88,13 +91,13 @@ users
 sessions
 documents
 document_shares
+api_tokens
 schema_migrations
 ```
 
 Likely future tables:
 
 ```txt
-api_tokens
 subscriptions
 ```
 
