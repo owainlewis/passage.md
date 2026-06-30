@@ -32,20 +32,20 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #1a1a17;
-  --sidebar-bg: #161613;
-  --surface: #1a1a17;
-  --ink: #ecebe4;
-  --ink-soft: #d2d0c8;
-  --muted: #908d83;
-  --faint: #66645c;
-  --hairline: #2c2b26;
-  --hairline-strong: #3a382f;
+  --bg: #111318;
+  --sidebar-bg: #15171c;
+  --surface: #111318;
+  --ink: #f0f2f5;
+  --ink-soft: #d5d9df;
+  --muted: #969da8;
+  --faint: #68717d;
+  --hairline: #282d35;
+  --hairline-strong: #363d47;
   --accent: #6fbcad;
-  --accent-tint: #21342f;
-  --code-bg: #232320;
+  --accent-tint: #18352f;
+  --code-bg: #1b1f26;
   --selection: rgba(111, 188, 173, 0.22);
-  --elevated: #26261f;
+  --elevated: #1d2229;
   --hover: rgba(255, 255, 255, 0.07);
   --hover-soft: rgba(255, 255, 255, 0.05);
   --hover-strong: rgba(255, 255, 255, 0.1);
@@ -194,12 +194,39 @@ button {
 /* -------------------------------------------------------------- documents */
 
 .docList {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 0 10px 16px;
   overflow-y: auto;
+  min-height: 0;
   min-width: 268px;
+}
+
+.sidebarFoot {
+  min-width: 268px;
+  padding: 10px 12px 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.themeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 6px;
+}
+
+.themeLabel {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.themeLabel.active {
+  color: var(--ink);
 }
 
 .docRow {
@@ -786,36 +813,6 @@ button {
   margin: 4px 0 0;
 }
 
-.menuRow {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-}
-
-.menuRowLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--ink);
-}
-
-.proPill {
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-tint);
-  padding: 2px 6px;
-  border-radius: 999px;
-}
-
 .menuDivider {
   height: 1px;
   background: var(--hairline);
@@ -858,14 +855,6 @@ button {
 
 .switch.on .switchKnob {
   transform: translateX(16px);
-}
-
-.menuHint {
-  margin: 4px 0 2px;
-  padding: 8px 12px 4px;
-  border-top: 1px solid var(--hairline);
-  font-size: 0.7rem;
-  color: var(--faint);
 }
 
 /* ----------------------------------------------------------------- writing */
@@ -1752,6 +1741,79 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* ------------------------------------------------------------------ login */
+
+.loginPage {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--bg);
+}
+
+.loginNav {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 28px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.loginShell {
+  width: min(100%, 420px);
+  margin: 0 auto;
+  padding: 16vh 24px 80px;
+}
+
+.betaLabel {
+  margin: 0 0 14px;
+  color: var(--accent);
+  font: 500 0.78rem/1 var(--mono);
+  text-transform: uppercase;
+}
+
+.loginShell h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3.4rem);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.loginCopy {
+  margin: 18px 0 28px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.loginForm {
+  display: grid;
+  gap: 16px;
+}
+
+.loginForm label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.loginSubmit {
+  width: 100%;
+  margin-top: 4px;
+  border: 0;
+}
+
+.routeStatus {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
 @media (max-width: 720px) {
   .features {
     grid-template-columns: 1fr;
@@ -1807,7 +1869,7 @@ button {
   .sidebar {
     position: absolute;
     z-index: 20;
-    top: 0;
+    top: 53px;
     bottom: 0;
     left: 0;
     box-shadow: 4px 0 24px rgba(27, 26, 23, 0.12);

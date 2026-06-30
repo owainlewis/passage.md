@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/migrations"
 	passagehttp "github.com/owainlewis/passage.md/server/internal/server"
 	"github.com/owainlewis/passage.md/server/internal/web"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -36,13 +40,15 @@ func run(args []string) error {
 		return serve(cfg)
 	case "migrate":
 		return migrate(cfg)
+	case "user":
+		return user(cfg, args[2:])
 	default:
 		return usage()
 	}
 }
 
 func usage() error {
-	return errors.New("usage: passage serve|migrate")
+	return errors.New("usage: passage serve|migrate|user <email>")
 }
 
 func serve(cfg config.Config) error {
@@ -122,4 +128,56 @@ func migrate(cfg config.Config) error {
 		fmt.Println("migrations already up to date")
 	}
 	return nil
+}
+
+func user(cfg config.Config, args []string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return errors.New("usage: passage user <email>")
+	}
+	if cfg.DatabaseURL == "" {
+		return errors.New("DATABASE_URL is required")
+	}
+
+	password, err := generatedPassword()
+	if err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	defer db.Close()
+
+	emailInput := strings.ToLower(strings.TrimSpace(args[0]))
+	var email string
+	err = db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, $2)
+		ON CONFLICT (email) DO UPDATE
+		SET password_hash = EXCLUDED.password_hash,
+		    updated_at = now()
+		RETURNING email
+	`, emailInput, string(hash)).Scan(&email)
+	if err != nil {
+		return fmt.Errorf("save user: %w", err)
+	}
+
+	fmt.Printf("email: %s\n", email)
+	fmt.Printf("password: %s\n", password)
+	fmt.Println("Store this password now. It will not be shown again.")
+	return nil
+}
+
+func generatedPassword() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }

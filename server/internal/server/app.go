@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"net/url"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/database"
@@ -56,6 +57,10 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/docs/{id}/share", a.shareDoc)
 	mux.HandleFunc("DELETE /api/v1/docs/{id}/share", a.unshareDoc)
 	mux.HandleFunc("GET /d/{token}", a.publicDoc)
+	mux.HandleFunc("GET /write", a.write)
+	mux.HandleFunc("HEAD /write", a.write)
+	mux.HandleFunc("GET /write/", a.write)
+	mux.HandleFunc("HEAD /write/", a.write)
 	mux.Handle("/", StaticHandler(a.static))
 	return mux
 }
@@ -80,10 +85,7 @@ func (a *App) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) register(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuthService(w) {
-		return
-	}
-	a.auth.Register(w, r)
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": "Passage is in closed beta"})
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
@@ -193,6 +195,26 @@ func (a *App) publicDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.docs.Public(w, r)
+}
+
+func (a *App) write(w http.ResponseWriter, r *http.Request) {
+	if a.auth == nil {
+		redirectToLogin(w, r)
+		return
+	}
+	if _, ok := a.auth.UserFromSessionRequest(r); !ok {
+		redirectToLogin(w, r)
+		return
+	}
+	StaticHandler(a.static).ServeHTTP(w, r)
+}
+
+func redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	next := r.URL.RequestURI()
+	if next == "" {
+		next = "/write"
+	}
+	http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusFound)
 }
 
 func (a *App) requireDocumentService(w http.ResponseWriter) bool {

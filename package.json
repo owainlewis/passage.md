@@ -6,8 +6,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run build:web && STATIC_DIR=apps/web/out go run ./server/cmd/passage serve",
-    "dev:web": "npm run dev -w @passage/web",
+    "dev": "./scripts/dev.sh",
+    "dev:web": "npm run dev -w @passage/web -- --port 3001",
     "build:web": "npm run build -w @passage/web",
     "lint": "npm run lint -w @passage/web",
     "typecheck": "npm run typecheck -w @passage/web",

@@ -38,7 +38,7 @@ export default function Landing() {
           <h1 className="heroTitle">Markdown writing without messy local files</h1>
           <p className="heroSub">
             A minimalist writing app for humans and agents. Write in a calm browser workspace, share documents online,
-            and give your agents clean Markdown they can read and work with. Free to start.
+            and give your agents clean Markdown they can read and work with. Closed beta for now.
           </p>
           <div className="heroActions">
             <Link className="btnPrimary" href="/write">
@@ -95,6 +95,7 @@ export default function Landing() {
                 <li>5 saved documents</li>
                 <li>CLI and API for your agents</li>
                 <li>Preview, Mermaid, and copy</li>
+                <li>Light and dark mode</li>
                 <li>Share read-only links</li>
               </ul>
               <Link className="btnPrimary planCta" href="/write">
@@ -112,7 +113,7 @@ export default function Landing() {
                 <li>Everything in Free</li>
                 <li>Unlimited documents</li>
                 <li>Export and raw .md URLs</li>
-                <li>Dark mode and themes</li>
+                <li>Custom themes</li>
               </ul>
               <span className="btnGhost planCta planCtaDisabled">Coming soon</span>
             </div>

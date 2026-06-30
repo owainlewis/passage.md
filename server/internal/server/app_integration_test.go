@@ -13,6 +13,7 @@ import (
 
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
@@ -35,8 +36,8 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	server := httptest.NewServer(app.Routes())
 	defer server.Close()
 
-	userOneCookies := registerIntegrationUser(t, server.URL, "token-one@example.com")
-	userTwoCookies := registerIntegrationUser(t, server.URL, "token-two@example.com")
+	userOneCookies := createIntegrationUserAndLogin(t, db, server.URL, "token-one@example.com")
+	userTwoCookies := createIntegrationUserAndLogin(t, db, server.URL, "token-two@example.com")
 
 	tokenBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/api-tokens", `{"name":"Integration"}`, userOneCookies, "")
 	var tokenResponse struct {
@@ -90,9 +91,24 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 }
 
-func registerIntegrationUser(t *testing.T, baseURL string, email string) []*http.Cookie {
+func createIntegrationUserAndLogin(t *testing.T, db *database.Pool, baseURL string, email string) []*http.Cookie {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/auth/register", strings.NewReader(`{"email":"`+email+`","password":"password123"}`))
+	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(context.Background(), `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, $2)
+		ON CONFLICT (email) DO UPDATE
+		SET password_hash = EXCLUDED.password_hash,
+		    updated_at = now()
+	`, email, string(hash))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/auth/login", strings.NewReader(`{"email":"`+email+`","password":"password123"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +118,8 @@ func registerIntegrationUser(t *testing.T, baseURL string, email string) []*http
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusCreated {
-		t.Fatalf("register status = %d", res.StatusCode)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d", res.StatusCode)
 	}
 	return res.Cookies()
 }

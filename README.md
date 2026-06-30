@@ -14,7 +14,7 @@ Anonymous users can write transient docs in the browser.
 
 Free accounts can save 5 hosted docs and use the CLI with those docs.
 
-Pro users can save unlimited docs with fair use, sync, export, share, customize themes, and use higher-limit CLI/API workflows.
+Pro users can save unlimited docs with fair use, sync, export, share, custom themes, and higher-limit CLI/API workflows.
 
 ## Product
 
@@ -70,6 +70,8 @@ createdb passage_dev
 export DATABASE_URL='postgres://localhost:5432/passage_dev?sslmode=disable'
 ```
 
+`npm run dev` uses that local database URL by default.
+
 Run database migrations:
 
 ```sh
@@ -83,13 +85,13 @@ export SESSION_SECRET='dev-session-secret-change-me'
 npm run dev
 ```
 
-The Go server runs at `http://localhost:8080` by default and serves `/api/health`.
+The Go server runs at `http://localhost:3000` by default and serves `/api/health`.
 
-`DATABASE_URL` is required for `serve` so local runs use the same Postgres-backed path as production.
+`DATABASE_URL` is required for `serve`; the dev command defaults it to `postgres://localhost:5432/passage_dev?sslmode=disable`.
 
 `SESSION_SECRET` must be set explicitly when `APP_ENV=production`.
 
-For frontend-only UI iteration, `npm run dev:web` starts Next.js at `http://localhost:3000`.
+For frontend-only UI iteration, `npm run dev:web` starts Next.js at `http://localhost:3001`.
 
 That mode is not the local acceptance path because it does not run the Go API or Postgres.
 

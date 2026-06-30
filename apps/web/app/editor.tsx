@@ -4,10 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { Brand } from "./brand";
 import { snippetOf, titleOf, wordCount } from "./doc-utils";
-import { useEntitlements } from "./entitlements";
 import { DocIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, UserIcon } from "./icons";
 import { MarkdownView } from "./markdown-view";
-import { encodeDoc } from "./share";
 
 type Theme = "light" | "dark";
 const THEME_KEY = "passage.theme.v1";
@@ -29,16 +27,8 @@ type APIToken = {
 
 type Mode = "edit" | "preview";
 type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
-type SaveState = "local" | "loading" | "saving" | "saved" | "error";
+type SaveState = "loading" | "saving" | "saved" | "error";
 type TokenStatus = "idle" | "loading" | "creating" | "revoking" | "copied" | "error";
-
-const STORAGE_KEY = "passage.documents.v2";
-const ACTIVE_KEY = "passage.active.v2";
-
-// Anonymous share links carry the whole document in the URL fragment. Past a
-// point the link grows too long to paste reliably, so guard the length and tell
-// the user rather than handing back a link that silently breaks on paste.
-const MAX_SHARE_URL_LENGTH = 16000;
 
 const welcomeBody = `# Markdown for agents and humans
 
@@ -47,7 +37,7 @@ It is pinned, so it stays at the top, and pinned documents cannot be deleted unt
 
 ## Writing
 
-Just start typing. Everything is saved locally in this browser until you choose to share or export it.
+Just start typing. Everything is saved to your Passage account.
 
 Press **Cmd + R** (or **Ctrl + R**) to switch between **Edit** and **Preview**.
 Edit shows raw Markdown. Preview reads like a finished document.
@@ -60,7 +50,7 @@ Edit shows raw Markdown. Preview reads like a finished document.
 
 ## Sharing and export
 
-- **Share** copies a private link. The document travels inside the link, so only people you send it to can read it.
+- **Share** copies a read-only URL you can revoke later.
 - **Export** downloads the raw \`.md\` file.
 
 ## A finished document
@@ -89,15 +79,8 @@ flowchart LR
 | Browser | Humans   |
 | CLI     | Agents   |
 
-Dark mode lives in the account menu and is part of passage Pro.
+Dark mode lives in the sidebar, so the writing surface can stay comfortable in any light.
 `;
-
-function newId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 async function apiDocs(): Promise<Doc[]> {
   const res = await fetch("/api/v1/docs", { credentials: "include" });
@@ -220,9 +203,8 @@ function saveLabel(state: SaveState) {
       return "Saved";
     case "error":
       return "Save failed";
-    case "local":
     default:
-      return "Saved locally";
+      return "Saved";
   }
 }
 
@@ -245,13 +227,9 @@ export default function Editor() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [theme, setTheme] = useState<Theme>("light");
-  const [hydrated, setHydrated] = useState(false);
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("local");
+  const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<{ id: string; body: string } | null>(null);
-  const [localReady, setLocalReady] = useState(false);
   const [tokens, setTokens] = useState<APIToken[]>([]);
   const [tokenName, setTokenName] = useState("CLI");
   const [createdToken, setCreatedToken] = useState("");
@@ -265,10 +243,7 @@ export default function Editor() {
   const currentUserId = useRef<string | null>(null);
 
   const auth = useAuth();
-  const signedIn = Boolean(auth.user);
-  const { plan, setPlan, can } = useEntitlements();
-  const canDark = can("darkMode");
-  const darkActive = canDark && theme === "dark";
+  const darkActive = theme === "dark";
 
   useEffect(() => {
     currentUserId.current = auth.user?.id ?? null;
@@ -280,49 +255,6 @@ export default function Editor() {
       setSidebarOpen(false);
     }
   }, []);
-
-  // Load persisted state after mount so SSR and the first client render match.
-  useEffect(() => {
-    if (auth.loading) return;
-    if (signedIn) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHydrated(true);
-      setLocalReady(false);
-      return;
-    }
-    let nextDocs = seedDocs();
-    let nextActive = nextDocs[0].id;
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const storedActive = localStorage.getItem(ACTIVE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Doc[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          nextDocs = parsed;
-          nextActive = storedActive && parsed.some((d) => d.id === storedActive) ? storedActive : parsed[0].id;
-        }
-      }
-    } catch {
-      // Ignore corrupt storage and keep the seeded document.
-    }
-    // Reading localStorage must happen after mount to avoid a hydration
-    // mismatch, so this one-time sync from storage is intentional.
-    setDocs(nextDocs);
-    setActiveId(nextActive);
-    setHydrated(true);
-    setLocalReady(true);
-    setSaveState("local");
-  }, [auth.loading, signedIn]);
-
-  useEffect(() => {
-    if (!hydrated || !localReady || auth.loading || signedIn) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-      localStorage.setItem(ACTIVE_KEY, activeId);
-    } catch {
-      // Storage may be unavailable (private mode); drafts stay in memory.
-    }
-  }, [docs, activeId, hydrated, localReady, auth.loading, signedIn]);
 
   useEffect(() => {
     if (!auth.user) {
@@ -384,7 +316,7 @@ export default function Editor() {
   }, [auth.user, menuOpen]);
 
   useEffect(() => {
-    if (!signedIn || !pendingSave) return;
+    if (!auth.user || !pendingSave) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -406,7 +338,7 @@ export default function Editor() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [pendingSave, signedIn]);
+  }, [pendingSave, auth.user]);
 
   // Hydrate the saved theme preference after mount.
   useEffect(() => {
@@ -421,7 +353,7 @@ export default function Editor() {
     }
   }, []);
 
-  // Apply dark mode to the document only when the plan entitles it.
+  // Apply the saved theme to the document root.
   useEffect(() => {
     const root = document.documentElement;
     if (darkActive) {
@@ -461,22 +393,20 @@ export default function Editor() {
   }, [toggleMode]);
 
   function updateBody(body: string) {
-    if (signedIn) {
-      setSaveState("saving");
-      setPendingSave({ id: active.id, body });
-    }
+    setSaveState("saving");
+    setPendingSave({ id: active.id, body });
     setDocs((prev) => prev.map((d) => (d.id === active.id ? { ...d, body } : d)));
   }
 
   async function createDoc() {
-    setSaveState(signedIn ? "saving" : "local");
+    setSaveState("saving");
     try {
-      const doc = signedIn ? await apiCreateDoc("") : { id: newId(), body: "" };
+      const doc = await apiCreateDoc("");
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       setMode("edit");
       setFilter("");
-      setSaveState(signedIn ? "saved" : "local");
+      setSaveState("saved");
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch {
       setSaveState("error");
@@ -490,14 +420,12 @@ export default function Editor() {
   async function deleteDoc(id: string) {
     // Pinned documents are protected from deletion; unpin first to remove one.
     if (docs.find((d) => d.id === id)?.pinned) return;
-    setSaveState(signedIn ? "saving" : "local");
-    if (signedIn) {
-      try {
-        await apiArchiveDoc(id);
-      } catch {
-        setSaveState("error");
-        return;
-      }
+    setSaveState("saving");
+    try {
+      await apiArchiveDoc(id);
+    } catch {
+      setSaveState("error");
+      return;
     }
     setDocs((prev) => {
       const next = prev.filter((d) => d.id !== id);
@@ -505,7 +433,7 @@ export default function Editor() {
       if (id === activeId) setActiveId(remaining[0].id);
       return remaining;
     });
-    setSaveState(signedIn ? "saved" : "local");
+    setSaveState("saved");
   }
 
   function exportDoc() {
@@ -521,36 +449,24 @@ export default function Editor() {
   async function shareDoc() {
     window.clearTimeout(copyTimer.current);
     try {
-      if (signedIn) {
-        if (pendingSave?.id === active.id) {
-          setSaveState("saving");
-          const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
-          setDocs((prev) => prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc)));
-          setPendingSave(null);
-          setSaveState("saved");
-        }
-        let htmlPath = active.shareToken ? `/d/${active.shareToken}` : "";
-        if (!htmlPath) {
-          const share = await apiShareDoc(active.id);
-          htmlPath = share.htmlPath;
-          setDocs((prev) =>
-            prev.map((doc) =>
-              doc.id === active.id
-                ? { ...doc, shareToken: share.token, sharedAt: new Date().toISOString() }
-                : doc
-            )
-          );
-        }
-        await copyURL(new URL(htmlPath, window.location.origin).toString());
-      } else {
-        const url = `${window.location.origin}/d#${await encodeDoc(active.body)}`;
-        if (url.length > MAX_SHARE_URL_LENGTH) {
-          setShareState("toolong");
-          copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
-          return;
-        }
-        await copyURL(url);
+      if (pendingSave?.id === active.id) {
+        setSaveState("saving");
+        const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
+        setDocs((prev) => prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc)));
+        setPendingSave(null);
+        setSaveState("saved");
       }
+      let htmlPath = active.shareToken ? `/d/${active.shareToken}` : "";
+      if (!htmlPath) {
+        const share = await apiShareDoc(active.id);
+        htmlPath = share.htmlPath;
+        setDocs((prev) =>
+          prev.map((doc) =>
+            doc.id === active.id ? { ...doc, shareToken: share.token, sharedAt: new Date().toISOString() } : doc
+          )
+        );
+      }
+      await copyURL(new URL(htmlPath, window.location.origin).toString());
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {
@@ -576,7 +492,7 @@ export default function Editor() {
   }
 
   async function unshareDoc() {
-    if (!signedIn || !active.shareToken) return;
+    if (!active.shareToken) return;
     window.clearTimeout(copyTimer.current);
     try {
       await apiUnshareDoc(active.id);
@@ -592,27 +508,12 @@ export default function Editor() {
   }
 
   function toggleDarkMode() {
-    if (!canDark) return;
     const next: Theme = theme === "dark" ? "light" : "dark";
     setTheme(next);
     try {
       localStorage.setItem(THEME_KEY, next);
     } catch {
       // Storage may be unavailable; the choice stays in memory for this session.
-    }
-  }
-
-  async function submitAuth(action: "login" | "register") {
-    setAuthError("");
-    try {
-      if (action === "login") {
-        await auth.signIn(authEmail, authPassword);
-      } else {
-        await auth.register(authEmail, authPassword);
-      }
-      setAuthPassword("");
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Authentication failed");
     }
   }
 
@@ -781,6 +682,22 @@ export default function Editor() {
           })}
           {visibleDocs.length === 0 && <p className="docListEmpty">No documents match.</p>}
         </nav>
+        <div className="sidebarFoot">
+          <div className="themeToggle">
+            <span className={theme === "light" ? "themeLabel active" : "themeLabel"}>Light</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={darkActive}
+              aria-label="Dark mode"
+              className={`switch ${darkActive ? "on" : ""}`}
+              onClick={toggleDarkMode}
+            >
+              <span className="switchKnob" />
+            </button>
+            <span className={theme === "dark" ? "themeLabel active" : "themeLabel"}>Dark</span>
+          </div>
+        </div>
       </aside>
 
       <div className="main">
@@ -837,7 +754,7 @@ export default function Editor() {
                     ? "Share failed"
                     : "Share"}
             </button>
-            {signedIn && active.shareToken && (
+            {active.shareToken && (
               <button type="button" className="textButton" onClick={unshareDoc}>
                 {shareState === "unshared" ? "Unshared" : "Unshare"}
               </button>
@@ -860,144 +777,71 @@ export default function Editor() {
                 <>
                   <div className="menuOverlay" onClick={closeMenu} aria-hidden="true" />
                   <div className="userMenu" role="menu">
-                    {auth.user ? (
-                      <>
-                        <div className="menuAccount">
-                          <span className="menuAccountLabel">Signed in</span>
-                          <span className="menuAccountEmail">{auth.user.email}</span>
-                        </div>
-                        {authError && <p className="authError">{authError}</p>}
-                        <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
-                          Sign out
-                        </button>
-                        <div className="menuDivider" />
-                        <section className="tokenPanel" aria-label="API tokens">
-                          <div className="tokenPanelHead">
-                            <span className="tokenTitle">API tokens</span>
-                            {tokenStatus === "loading" && <span className="tokenMeta">Loading</span>}
-                          </div>
-                          <label className="tokenField">
-                            <span>Name</span>
-                            <input
-                              className="authInput"
-                              type="text"
-                              name="api-token-name"
-                              value={tokenName}
-                              maxLength={80}
-                              onChange={(e) => setTokenName(e.target.value)}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className="menuItem accent"
-                            disabled={tokenStatus === "creating" || tokenStatus === "revoking"}
-                            onClick={() => void createToken()}
-                          >
-                            {tokenStatus === "creating" ? "Creating" : "Create token"}
-                          </button>
-                          {createdToken && (
-                            <div className="createdToken">
-                              <span className="createdTokenLabel">Copy now</span>
-                              <code>{createdToken}</code>
-                              <button type="button" className="tokenCopy" onClick={() => void copyCreatedToken()}>
-                                {tokenStatus === "copied" ? "Copied" : "Copy"}
-                              </button>
-                            </div>
-                          )}
-                          {tokenError && <p className="authError">{tokenError}</p>}
-                          <div className="tokenList">
-                            {tokens.map((token) => (
-                              <div className="tokenRow" key={token.id}>
-                                <span className="tokenInfo">
-                                  <span className="tokenName">{token.name}</span>
-                                  <span className="tokenMeta">Created {formatTokenDate(token.createdAt)}</span>
-                                </span>
-                                <button
-                                  type="button"
-                                  className="tokenRevoke"
-                                  onClick={() => void revokeToken(token.id)}
-                                  disabled={tokenStatus === "creating" || tokenStatus === "revoking"}
-                                >
-                                  Revoke
-                                </button>
-                              </div>
-                            ))}
-                            {tokenStatus !== "loading" && tokens.length === 0 && (
-                              <p className="tokenEmpty">No API tokens yet.</p>
-                            )}
-                          </div>
-                        </section>
-                        <div className="menuDivider" />
-                      </>
-                    ) : (
-                      <>
-                        <form className="authForm" onSubmit={(e) => e.preventDefault()}>
-                          <label>
-                            <span>Email</span>
-                            <input
-                              className="authInput"
-                              type="email"
-                              name="email"
-                              value={authEmail}
-                              onChange={(e) => setAuthEmail(e.target.value)}
-                              autoComplete="email"
-                            />
-                          </label>
-                          <label>
-                            <span>Password</span>
-                            <input
-                              className="authInput"
-                              type="password"
-                              name="password"
-                              value={authPassword}
-                              onChange={(e) => setAuthPassword(e.target.value)}
-                              autoComplete="current-password"
-                            />
-                          </label>
-                          {authError && <p className="authError">{authError}</p>}
-                          <div className="authActions">
-                            <button type="button" className="menuItem" onClick={() => void submitAuth("login")}>
-                              Sign in
-                            </button>
-                            <button type="button" className="menuItem accent" onClick={() => void submitAuth("register")}>
-                              Create account
-                            </button>
-                          </div>
-                        </form>
-                        <div className="menuDivider" />
-                      </>
-                    )}
-                    <div className="menuRow">
-                      <span className="menuRowLabel">
-                        Dark mode
-                        {!canDark && <span className="proPill">Pro</span>}
-                      </span>
+                    <div className="menuAccount">
+                      <span className="menuAccountLabel">Signed in</span>
+                      <span className="menuAccountEmail">{auth.user?.email}</span>
+                    </div>
+                    {authError && <p className="authError">{authError}</p>}
+                    <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
+                      Sign out
+                    </button>
+                    <div className="menuDivider" />
+                    <section className="tokenPanel" aria-label="API tokens">
+                      <div className="tokenPanelHead">
+                        <span className="tokenTitle">API tokens</span>
+                        {tokenStatus === "loading" && <span className="tokenMeta">Loading</span>}
+                      </div>
+                      <label className="tokenField">
+                        <span>Name</span>
+                        <input
+                          className="authInput"
+                          type="text"
+                          name="api-token-name"
+                          value={tokenName}
+                          maxLength={80}
+                          onChange={(e) => setTokenName(e.target.value)}
+                        />
+                      </label>
                       <button
                         type="button"
-                        role="switch"
-                        aria-checked={darkActive}
-                        aria-label="Dark mode"
-                        className={`switch ${darkActive ? "on" : ""}`}
-                        disabled={!canDark}
-                        onClick={toggleDarkMode}
+                        className="menuItem accent"
+                        disabled={tokenStatus === "creating" || tokenStatus === "revoking"}
+                        onClick={() => void createToken()}
                       >
-                        <span className="switchKnob" />
+                        {tokenStatus === "creating" ? "Creating" : "Create token"}
                       </button>
-                    </div>
-                    {plan === "free" ? (
-                      <button type="button" className="menuItem accent" role="menuitem" onClick={() => setPlan("pro")}>
-                        Go Pro
-                      </button>
-                    ) : (
-                      <button type="button" className="menuItem" role="menuitem" onClick={() => setPlan("free")}>
-                        Switch to Free
-                      </button>
-                    )}
-                    <p className="menuHint">
-                      {plan === "free"
-                        ? "Dark mode is a Pro feature."
-                        : "Pro unlocked. Billing is a local preview for now."}
-                    </p>
+                      {createdToken && (
+                        <div className="createdToken">
+                          <span className="createdTokenLabel">Copy now</span>
+                          <code>{createdToken}</code>
+                          <button type="button" className="tokenCopy" onClick={() => void copyCreatedToken()}>
+                            {tokenStatus === "copied" ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                      )}
+                      {tokenError && <p className="authError">{tokenError}</p>}
+                      <div className="tokenList">
+                        {tokens.map((token) => (
+                          <div className="tokenRow" key={token.id}>
+                            <span className="tokenInfo">
+                              <span className="tokenName">{token.name}</span>
+                              <span className="tokenMeta">Created {formatTokenDate(token.createdAt)}</span>
+                            </span>
+                            <button
+                              type="button"
+                              className="tokenRevoke"
+                              onClick={() => void revokeToken(token.id)}
+                              disabled={tokenStatus === "creating" || tokenStatus === "revoking"}
+                            >
+                              Revoke
+                            </button>
+                          </div>
+                        ))}
+                        {tokenStatus !== "loading" && tokens.length === 0 && (
+                          <p className="tokenEmpty">No API tokens yet.</p>
+                        )}
+                      </div>
+                    </section>
                   </div>
                 </>
               )}
