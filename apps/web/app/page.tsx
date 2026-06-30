@@ -35,10 +35,10 @@ export default function Landing() {
           </nav>
         </header>
         <div className="heroInner">
-          <h1 className="heroTitle">Hosted Markdown for humans and agents</h1>
+          <h1 className="heroTitle">Markdown writing without messy local files</h1>
           <p className="heroSub">
-            Write in a calm browser workspace, share documents online, and give your agents clean Markdown they can read
-            and work with. No local files to manage. Free to start.
+            A minimalist writing app for humans and agents. Write in a calm browser workspace, share documents online,
+            and give your agents clean Markdown they can read and work with. Free to start.
           </p>
           <div className="heroActions">
             <Link className="btnPrimary" href="/write">
@@ -122,7 +122,7 @@ export default function Landing() {
 
       <footer className="landingFooter">
         <Brand />
-        <span className="footerTag">Hosted Markdown for humans and agents.</span>
+        <span className="footerTag">Markdown writing without messy local files.</span>
       </footer>
     </div>
   );
