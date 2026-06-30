@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -146,7 +148,7 @@ func TestStaticHandlerFallsBackToIndexForClientRoutes(t *testing.T) {
 	}, nil)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/write", nil)
+	req := httptest.NewRequest(http.MethodGet, "/account", nil)
 	app.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -161,19 +163,80 @@ func TestStaticHandlerFallsBackToIndexForClientRoutes(t *testing.T) {
 func TestStaticHandlerServesExportedHTMLRoute(t *testing.T) {
 	app := NewApp(fstest.MapFS{
 		"index.html":     {Data: []byte("<main>home</main>")},
-		"write.html":     {Data: []byte("<main>write</main>")},
-		"write/data.txt": {Data: []byte("data")},
+		"login.html":     {Data: []byte("<main>login</main>")},
+		"login/data.txt": {Data: []byte("data")},
 	}, nil)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/write", nil)
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	app.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body, _ := io.ReadAll(rec.Result().Body)
+	if string(body) != "<main>login</main>" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestWriteRedirectsAnonymousToLogin(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>home</main>")},
+		"write.html": {Data: []byte("<main>write</main>")},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/write", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+	if location := rec.Header().Get("Location"); location != "/login?next=%2Fwrite" {
+		t.Fatalf("location = %q", location)
+	}
+}
+
+func TestWriteServesExportedRouteForSessionUser(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	app := &App{
+		static: fstest.MapFS{
+			"index.html": {Data: []byte("<main>home</main>")},
+			"write.html": {Data: []byte("<main>write</main>")},
+		},
+		auth: auth.NewService(authStore, "test-secret", false),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/write", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body, _ := io.ReadAll(rec.Result().Body)
 	if string(body) != "<main>write</main>" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRegisterIsClosedBeta(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); body != "{\"error\":\"Passage is in closed beta\"}\n" {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -212,8 +275,9 @@ func TestStaticHandlerReturnsNotFoundForMissingAssets(t *testing.T) {
 }
 
 type routeAuthStore struct {
-	users   map[string]auth.User
-	revoked map[string]bool
+	users    map[string]auth.User
+	sessions map[string]auth.User
+	revoked  map[string]bool
 }
 
 func newRouteAuthStore() *routeAuthStore {
@@ -222,7 +286,8 @@ func newRouteAuthStore() *routeAuthStore {
 			routeTokenHash("psg_owner_one"): {ID: "user-1", Email: "one@example.com"},
 			routeTokenHash("psg_owner_two"): {ID: "user-2", Email: "two@example.com"},
 		},
-		revoked: map[string]bool{},
+		sessions: map[string]auth.User{},
+		revoked:  map[string]bool{},
 	}
 }
 
@@ -235,7 +300,11 @@ func (s *routeAuthStore) FindUserByEmail(ctx context.Context, email string) (aut
 }
 
 func (s *routeAuthStore) FindUserBySessionHash(ctx context.Context, tokenHash string, now time.Time) (auth.User, error) {
-	return auth.User{}, auth.ErrUnauthorized
+	user, ok := s.sessions[tokenHash]
+	if !ok {
+		return auth.User{}, auth.ErrUnauthorized
+	}
+	return user, nil
 }
 
 func (s *routeAuthStore) CreateSession(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error {
@@ -272,6 +341,12 @@ func (s *routeAuthStore) FindUserByAPITokenHash(ctx context.Context, tokenHash s
 func routeTokenHash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func routeSignedToken(token string) string {
+	mac := hmac.New(sha256.New, []byte("test-secret"))
+	_, _ = mac.Write([]byte(token))
+	return token + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 type routeDocumentStore struct {

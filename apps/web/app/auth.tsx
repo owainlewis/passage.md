@@ -11,7 +11,6 @@ type AuthValue = {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -30,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const body = (await res.json()) as { authenticated?: boolean; user?: User };
         if (!cancelled) setUser(body.authenticated ? body.user ?? null : null);
       } catch {
-        // The anonymous editor still works when no API server is available.
+        // Treat auth lookup failures as signed out.
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -59,11 +58,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [submitCredentials]
   );
 
-  const register = useCallback(
-    (email: string, password: string) => submitCredentials("/api/v1/auth/register", email, password),
-    [submitCredentials]
-  );
-
   const signOut = useCallback(async () => {
     const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
     if (!res.ok) {
@@ -73,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, signIn, register, signOut }), [user, loading, signIn, register, signOut]);
+  const value = useMemo(() => ({ user, loading, signIn, signOut }), [user, loading, signIn, signOut]);
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

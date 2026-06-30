@@ -184,6 +184,7 @@ Free accounts should be:
 - Browser editor.
 - Markdown preview.
 - Copy Markdown.
+- Light and dark mode.
 - Durable public share links.
 - Raw `.md` URLs for shared docs.
 - CLI access against those 5 hosted docs.
@@ -202,7 +203,6 @@ Paid should be:
 - Unbranded public share pages.
 - Higher CLI/API limits.
 - Agent skill support.
-- Dark mode.
 - Themes.
 
 The CLI and agent skill can be free to install.

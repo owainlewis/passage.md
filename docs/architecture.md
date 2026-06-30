@@ -164,7 +164,7 @@ just migrate
 just dev
 ```
 
-The app runs at `http://localhost:8080`.
+The app runs at `http://localhost:3000`.
 
 Health should report:
 

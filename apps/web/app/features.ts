@@ -8,7 +8,7 @@ export type Plan = "free" | "pro";
 export type Feature = "darkMode";
 
 export const FEATURE_REQUIREMENTS: Record<Feature, Plan> = {
-  darkMode: "pro"
+  darkMode: "free"
 };
 
 const PLAN_RANK: Record<Plan, number> = {
