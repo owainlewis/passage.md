@@ -139,14 +139,15 @@ func (h *Handler) Share(w http.ResponseWriter, r *http.Request, user auth.User) 
 		writeError(w, http.StatusInternalServerError, "document could not be shared")
 		return
 	}
-	if doc.ShareToken == nil {
-		writeError(w, http.StatusInternalServerError, "share token could not be created")
+	if doc.PublicID == "" {
+		writeError(w, http.StatusInternalServerError, "public id is missing")
 		return
 	}
 	writeJSON(w, http.StatusOK, shareResponse{
-		Token:        *doc.ShareToken,
-		HTMLPath:     "/d/" + *doc.ShareToken,
-		MarkdownPath: "/d/" + *doc.ShareToken + ".md",
+		Token:        doc.PublicID,
+		PublicID:     doc.PublicID,
+		HTMLPath:     "/d/" + doc.PublicID,
+		MarkdownPath: "/d/" + doc.PublicID + ".md",
 	})
 }
 
@@ -211,6 +212,7 @@ type bodyInput struct {
 
 type shareResponse struct {
 	Token        string `json:"token"`
+	PublicID     string `json:"publicId"`
 	HTMLPath     string `json:"htmlPath"`
 	MarkdownPath string `json:"markdownPath"`
 }

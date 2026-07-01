@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { Brand } from "./brand";
-import { snippetOf, titleOf, wordCount } from "./doc-utils";
+import { bodyWithTags, bodyWithoutFrontmatter, parseTagInput, parseTags, snippetOf, titleOf, wordCount } from "./doc-utils";
 import { DocIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, UserIcon } from "./icons";
 import { MarkdownView } from "./markdown-view";
 
@@ -22,6 +22,7 @@ function blockThemeTransitionsForNextPaint() {
 
 type Doc = {
   id: string;
+  publicId?: string;
   body: string;
   pinned?: boolean;
   shareToken?: string | null;
@@ -142,6 +143,7 @@ async function apiArchiveDoc(id: string): Promise<void> {
 
 type ShareResponse = {
   token: string;
+  publicId?: string;
   htmlPath: string;
   markdownPath: string;
 };
@@ -228,6 +230,12 @@ function seedDocs(): Doc[] {
   return [{ id: "welcome", body: welcomeBody, pinned: true }];
 }
 
+function publicIdFromPath() {
+  if (typeof window === "undefined") return "";
+  const match = window.location.pathname.match(/^\/write\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 export default function Editor() {
   const [docs, setDocs] = useState<Doc[]>(seedDocs);
   const [activeId, setActiveId] = useState<string>("welcome");
@@ -236,6 +244,9 @@ export default function Editor() {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [selectedTag, setSelectedTag] = useState("");
+  const [tagDraft, setTagDraft] = useState<{ docId: string; value: string }>({ docId: "", value: "" });
+  const [tagError, setTagError] = useState<{ docId: string; message: string }>({ docId: "", message: "" });
   const [theme, setTheme] = useState<Theme>("light");
   const [authError, setAuthError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("loading");
@@ -251,6 +262,7 @@ export default function Editor() {
   const tokenCreateGeneration = useRef(0);
   const tokenMutationGeneration = useRef(0);
   const currentUserId = useRef<string | null>(null);
+  const initialURLPublicId = useRef("");
 
   const auth = useAuth();
   const darkActive = theme === "dark";
@@ -260,6 +272,7 @@ export default function Editor() {
   }, [auth.user]);
 
   useEffect(() => {
+    initialURLPublicId.current = publicIdFromPath();
     if (window.matchMedia?.("(max-width: 720px)").matches) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSidebarOpen(false);
@@ -287,8 +300,9 @@ export default function Editor() {
           savedDocs = [await apiCreateDoc(welcomeBody)];
         }
         if (cancelled) return;
+        const urlDoc = savedDocs.find((doc) => doc.publicId === initialURLPublicId.current);
         setDocs(savedDocs);
-        setActiveId(savedDocs[0].id);
+        setActiveId((urlDoc ?? savedDocs[0]).id);
         setSaveState("saved");
         setPendingSave(null);
       } catch {
@@ -374,6 +388,18 @@ export default function Editor() {
   }, [darkActive]);
 
   const active = docs.find((d) => d.id === activeId) ?? docs[0];
+  const activeTags = parseTags(active.body);
+  const tagDraftValue = tagDraft.docId === active.id ? tagDraft.value : activeTags.join(", ");
+  const tagErrorMessage = tagError.docId === active.id ? tagError.message : "";
+  const activeShared = Boolean(active.sharedAt || active.shareToken);
+
+  useEffect(() => {
+    if (!auth.user || saveState === "loading" || !active.publicId) return;
+    const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState(null, "", nextPath);
+    }
+  }, [active.id, active.publicId, auth.user, saveState]);
 
   // Grow the textarea with its content so the pane scrolls as one surface.
   // Modern browsers do this natively with `field-sizing: content`, which avoids
@@ -408,14 +434,39 @@ export default function Editor() {
     setDocs((prev) => prev.map((d) => (d.id === active.id ? { ...d, body } : d)));
   }
 
+  function updateEditorURL(doc: Doc, mode: "push" | "replace") {
+    if (!doc.publicId) return;
+    const nextPath = `/write/${encodeURIComponent(doc.publicId)}`;
+    if (window.location.pathname === nextPath) return;
+    window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextPath);
+  }
+
+  function selectDoc(doc: Doc) {
+    setActiveId(doc.id);
+    updateEditorURL(doc, "push");
+  }
+
+  function saveTags(input = tagDraftValue) {
+    const parsed = parseTagInput(input);
+    if (parsed.invalid.length > 0) {
+      setTagError({ docId: active.id, message: "Use lowercase a-z and hyphen only." });
+      return;
+    }
+    setTagError({ docId: active.id, message: "" });
+    setTagDraft({ docId: active.id, value: parsed.tags.join(", ") });
+    updateBody(bodyWithTags(active.body, parsed.tags));
+  }
+
   async function createDoc() {
     setSaveState("saving");
     try {
       const doc = await apiCreateDoc("");
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
+      updateEditorURL(doc, "push");
       setMode("edit");
       setFilter("");
+      setSelectedTag("");
       setSaveState("saved");
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch {
@@ -440,7 +491,10 @@ export default function Editor() {
     setDocs((prev) => {
       const next = prev.filter((d) => d.id !== id);
       const remaining = next.length > 0 ? next : seedDocs();
-      if (id === activeId) setActiveId(remaining[0].id);
+      if (id === activeId) {
+        setActiveId(remaining[0].id);
+        updateEditorURL(remaining[0], "replace");
+      }
       return remaining;
     });
     setSaveState("saved");
@@ -466,13 +520,15 @@ export default function Editor() {
         setPendingSave(null);
         setSaveState("saved");
       }
-      let htmlPath = active.shareToken ? `/d/${active.shareToken}` : "";
+      let htmlPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
       if (!htmlPath) {
         const share = await apiShareDoc(active.id);
         htmlPath = share.htmlPath;
         setDocs((prev) =>
           prev.map((doc) =>
-            doc.id === active.id ? { ...doc, shareToken: share.token, sharedAt: new Date().toISOString() } : doc
+            doc.id === active.id
+              ? { ...doc, publicId: share.publicId ?? doc.publicId, shareToken: share.token, sharedAt: new Date().toISOString() }
+              : doc
           )
         );
       }
@@ -502,7 +558,7 @@ export default function Editor() {
   }
 
   async function unshareDoc() {
-    if (!active.shareToken) return;
+    if (!activeShared) return;
     window.clearTimeout(copyTimer.current);
     try {
       await apiUnshareDoc(active.id);
@@ -616,11 +672,13 @@ export default function Editor() {
 
   const words = wordCount(active.body);
   const title = titleOf(active.body);
+  const allTags = Array.from(new Set(docs.flatMap((doc) => parseTags(doc.body)))).sort();
 
   // Naive in-memory filter over title and body, with pinned docs floated up.
   // Array.sort is stable, so unpinned docs keep their existing order.
   const query = filter.trim().toLowerCase();
   const visibleDocs = docs
+    .filter((d) => !selectedTag || parseTags(d.body).includes(selectedTag))
     .filter((d) => !query || titleOf(d.body).toLowerCase().includes(query) || d.body.toLowerCase().includes(query))
     .slice()
     .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
@@ -654,18 +712,28 @@ export default function Editor() {
         <nav className="docList">
           {visibleDocs.map((doc) => {
             const isActive = doc.id === active.id;
+            const docTags = parseTags(doc.body);
             return (
               <div
                 key={doc.id}
                 className={`docRow ${isActive ? "active" : ""} ${doc.pinned ? "pinned" : ""}`}
               >
-                <button type="button" className="docRowSelect" onClick={() => setActiveId(doc.id)}>
+                  <button type="button" className="docRowSelect" onClick={() => selectDoc(doc)}>
                   <span className="docRowIcon">
                     <DocIcon />
                   </span>
                   <span className="docRowText">
                     <span className="docRowTitle">{titleOf(doc.body)}</span>
                     <span className="docRowSnippet">{snippetOf(doc.body)}</span>
+                    {docTags.length > 0 && (
+                      <span className="docRowTags" aria-hidden="true">
+                        {docTags.map((tag) => (
+                          <span className="docRowTag" key={tag}>
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
                 </button>
                 <span className="docRowActions">
@@ -694,6 +762,49 @@ export default function Editor() {
           {visibleDocs.length === 0 && <p className="docListEmpty">No documents match.</p>}
         </nav>
         <div className="sidebarFoot">
+          <div className="tagEditor">
+            <label className="tagField">
+              <span>Tags</span>
+              <input
+                className="tagInput"
+                type="text"
+                name="document-tags"
+                placeholder="notes, scripts"
+                aria-label="Document tags"
+                aria-invalid={tagErrorMessage ? "true" : "false"}
+                value={tagDraftValue}
+                onChange={(e) => setTagDraft({ docId: active.id, value: e.target.value })}
+                onBlur={(e) => saveTags(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
+              />
+            </label>
+            {tagErrorMessage && <p className="tagError">{tagErrorMessage}</p>}
+          </div>
+          <div className="tagFilter" aria-label="Filter by tag">
+            <button
+              type="button"
+              className={!selectedTag ? "tagChip active" : "tagChip"}
+              aria-pressed={!selectedTag}
+              onClick={() => setSelectedTag("")}
+            >
+              All
+            </button>
+            {allTags.map((tag) => (
+              <button
+                type="button"
+                key={tag}
+                className={selectedTag === tag ? "tagChip active" : "tagChip"}
+                aria-pressed={selectedTag === tag}
+                onClick={() => setSelectedTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
           <div className="themeToggle">
             <span className={theme === "light" ? "themeLabel active" : "themeLabel"}>Light</span>
             <button
@@ -765,7 +876,7 @@ export default function Editor() {
                     ? "Share failed"
                     : "Share"}
             </button>
-            {active.shareToken && (
+            {activeShared && (
               <button type="button" className="textButton" onClick={unshareDoc}>
                 {shareState === "unshared" ? "Unshared" : "Unshare"}
               </button>
@@ -873,7 +984,7 @@ export default function Editor() {
               onChange={(e) => updateBody(e.target.value)}
             />
           ) : (
-            <MarkdownView source={active.body} theme={darkActive ? "dark" : "light"} />
+            <MarkdownView source={bodyWithoutFrontmatter(active.body)} theme={darkActive ? "dark" : "light"} />
           )}
         </section>
 

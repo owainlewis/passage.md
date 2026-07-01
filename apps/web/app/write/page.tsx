@@ -6,6 +6,10 @@ import { AuthProvider, useAuth } from "../auth";
 import { EntitlementsProvider } from "../entitlements";
 
 export default function Write() {
+  return <WriteShell />;
+}
+
+export function WriteShell() {
   return (
     <AuthProvider>
       <WriteGate />
@@ -18,7 +22,7 @@ function WriteGate() {
 
   useEffect(() => {
     if (!auth.loading && !auth.user) {
-      window.location.replace("/login?next=/write");
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     }
   }, [auth.loading, auth.user]);
 

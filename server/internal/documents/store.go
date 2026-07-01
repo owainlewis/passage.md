@@ -17,6 +17,7 @@ var ErrNotFound = errors.New("document not found")
 
 type Document struct {
 	ID         string     `json:"id"`
+	PublicID   string     `json:"publicId"`
 	Title      string     `json:"title"`
 	Body       string     `json:"body"`
 	ShareToken *string    `json:"shareToken,omitempty"`
@@ -36,7 +37,7 @@ func NewStore(db *database.Pool) *Store {
 
 func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, title, body, share_token, shared_at, created_at, updated_at, archived_at
+		SELECT id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
 		FROM documents
 		WHERE owner_user_id = $1
 		  AND archived_at IS NULL
@@ -59,13 +60,24 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 }
 
 func (s *Store) Create(ctx context.Context, ownerID string, body string) (Document, error) {
-	var doc Document
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO documents (owner_user_id, title, body)
-		VALUES ($1, $2, $3)
-		RETURNING id::text, title, body, share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, titleOf(body), body).Scan(&doc.ID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
-	return doc, err
+	for range 5 {
+		publicID, err := randomPublicID()
+		if err != nil {
+			return Document{}, err
+		}
+		var doc Document
+		err = s.db.QueryRow(ctx, `
+			INSERT INTO documents (owner_user_id, public_id, title, body)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
+		`, ownerID, publicID, titleOf(body), body).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			continue
+		}
+		return doc, err
+	}
+	return Document{}, errors.New("public id collision")
 }
 
 func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, error) {
@@ -74,12 +86,12 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, e
 	}
 	var doc Document
 	err := s.db.QueryRow(ctx, `
-		SELECT id::text, title, body, share_token, shared_at, created_at, updated_at, archived_at
+		SELECT id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
 		FROM documents
 		WHERE owner_user_id = $1
 		  AND id = $2
 		  AND archived_at IS NULL
-	`, ownerID, id).Scan(&doc.ID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	`, ownerID, id).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
@@ -99,8 +111,8 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, body stri
 		WHERE owner_user_id = $1
 		  AND id = $2
 		  AND archived_at IS NULL
-		RETURNING id::text, title, body, share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, id, titleOf(body), body).Scan(&doc.ID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+		RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
+	`, ownerID, id, titleOf(body), body).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
@@ -132,32 +144,20 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 	if !validUUID(id) {
 		return Document{}, ErrNotFound
 	}
-	for range 5 {
-		token, err := randomShareToken()
-		if err != nil {
-			return Document{}, err
-		}
-		var doc Document
-		err = s.db.QueryRow(ctx, `
-			UPDATE documents
-			SET share_token = COALESCE(share_token, $3),
-			    shared_at = COALESCE(shared_at, now()),
-			    updated_at = now()
-			WHERE owner_user_id = $1
-			  AND id = $2
-			  AND archived_at IS NULL
-			RETURNING id::text, title, body, share_token, shared_at, created_at, updated_at, archived_at
-		`, ownerID, id, token).Scan(&doc.ID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Document{}, ErrNotFound
-		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			continue
-		}
-		return doc, err
+	var doc Document
+	err := s.db.QueryRow(ctx, `
+		UPDATE documents
+		SET shared_at = COALESCE(shared_at, now()),
+		    updated_at = now()
+		WHERE owner_user_id = $1
+		  AND id = $2
+		  AND archived_at IS NULL
+		RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
+	`, ownerID, id).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Document{}, ErrNotFound
 	}
-	return Document{}, errors.New("share token collision")
+	return doc, err
 }
 
 func (s *Store) Unshare(ctx context.Context, ownerID string, id string) error {
@@ -166,8 +166,7 @@ func (s *Store) Unshare(ctx context.Context, ownerID string, id string) error {
 	}
 	tag, err := s.db.Exec(ctx, `
 		UPDATE documents
-		SET share_token = NULL,
-		    shared_at = NULL,
+		SET shared_at = NULL,
 		    updated_at = now()
 		WHERE owner_user_id = $1
 		  AND id = $2
@@ -183,16 +182,17 @@ func (s *Store) Unshare(ctx context.Context, ownerID string, id string) error {
 }
 
 func (s *Store) GetPublic(ctx context.Context, token string) (Document, error) {
-	if !validShareToken(token) {
+	if !validPublicID(token) && !validShareToken(token) {
 		return Document{}, ErrNotFound
 	}
 	var doc Document
 	err := s.db.QueryRow(ctx, `
-		SELECT id::text, title, body, share_token, shared_at, created_at, updated_at, archived_at
+		SELECT id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
 		FROM documents
-		WHERE share_token = $1
+		WHERE (public_id = $1 OR share_token = $1)
+		  AND shared_at IS NOT NULL
 		  AND archived_at IS NULL
-	`, token).Scan(&doc.ID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	`, token).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
@@ -205,12 +205,12 @@ type scanner interface {
 
 func scanDocument(row scanner) (Document, error) {
 	var doc Document
-	err := row.Scan(&doc.ID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	err := row.Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
 	return doc, err
 }
 
-func randomShareToken() (string, error) {
-	bytes := make([]byte, 32)
+func randomPublicID() (string, error) {
+	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
@@ -240,6 +240,17 @@ func validShareToken(value string) bool {
 	if len(value) != 43 {
 		return false
 	}
+	return validURLSafeID(value)
+}
+
+func validPublicID(value string) bool {
+	if len(value) != 22 {
+		return false
+	}
+	return validURLSafeID(value)
+}
+
+func validURLSafeID(value string) bool {
 	for _, c := range value {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_') {
 			return false

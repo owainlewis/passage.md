@@ -109,8 +109,8 @@ func TestHandlerReturnsNotFoundForMalformedDocumentID(t *testing.T) {
 }
 
 func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
-	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	store := &fakeStore{shareToken: &token}
+	publicID := "abcdefghijklmnopqrstuv"
+	store := &fakeStore{publicID: publicID}
 	handler := NewHandler(store)
 	user := auth.User{ID: "user-1"}
 
@@ -123,7 +123,7 @@ func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 	if share.Code != http.StatusOK {
 		t.Fatalf("share status = %d, body = %s", share.Code, share.Body.String())
 	}
-	if !strings.Contains(share.Body.String(), `"/d/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md"`) {
+	if !strings.Contains(share.Body.String(), `"/d/abcdefghijklmnopqrstuv.md"`) {
 		t.Fatalf("share body = %s", share.Body.String())
 	}
 
@@ -139,21 +139,20 @@ func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 }
 
 func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
-	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	publicID := "abcdefghijklmnopqrstuv"
 	store := &fakeStore{
-		shareToken: &token,
 		publicDoc: Document{
-			ID:         "11111111-1111-1111-1111-111111111111",
-			Title:      "Shared",
-			Body:       "# Shared\n\n<script>alert(1)</script>\n\nBody.",
-			ShareToken: &token,
+			ID:       "11111111-1111-1111-1111-111111111111",
+			PublicID: publicID,
+			Title:    "Shared",
+			Body:     "# Shared\n\n<script>alert(1)</script>\n\nBody.",
 		},
 	}
 	handler := NewHandler(store)
 
 	html := httptest.NewRecorder()
-	htmlReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+token, nil)
-	htmlReq.SetPathValue("token", token)
+	htmlReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+publicID, nil)
+	htmlReq.SetPathValue("token", publicID)
 	handler.Public(html, htmlReq)
 
 	if html.Code != http.StatusOK {
@@ -168,8 +167,8 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	assertPublicSecurityHeaders(t, html)
 
 	raw := httptest.NewRecorder()
-	rawReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+token+".md", nil)
-	rawReq.SetPathValue("token", token+".md")
+	rawReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+publicID+".md", nil)
+	rawReq.SetPathValue("token", publicID+".md")
 	handler.Public(raw, rawReq)
 
 	if raw.Code != http.StatusOK {
@@ -185,19 +184,20 @@ type fakeStore struct {
 	ownerID    string
 	body       string
 	getErr     error
+	publicID   string
 	shareToken *string
 	publicDoc  Document
 }
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {
 	s.ownerID = ownerID
-	return []Document{{ID: "11111111-1111-1111-1111-111111111111", Body: "# One"}}, nil
+	return []Document{{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}}, nil
 }
 
 func (s *fakeStore) Create(ctx context.Context, ownerID string, body string) (Document, error) {
 	s.ownerID = ownerID
 	s.body = body
-	return Document{ID: "11111111-1111-1111-1111-111111111111", Body: body}, nil
+	return Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: body}, nil
 }
 
 func (s *fakeStore) Get(ctx context.Context, ownerID string, id string) (Document, error) {
@@ -205,13 +205,13 @@ func (s *fakeStore) Get(ctx context.Context, ownerID string, id string) (Documen
 	if s.getErr != nil {
 		return Document{}, s.getErr
 	}
-	return Document{ID: id, Body: "# One"}, nil
+	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}, nil
 }
 
 func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, body string) (Document, error) {
 	s.ownerID = ownerID
 	s.body = body
-	return Document{ID: id, Body: body}, nil
+	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: body}, nil
 }
 
 func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) error {
@@ -221,7 +221,11 @@ func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) erro
 
 func (s *fakeStore) Share(ctx context.Context, ownerID string, id string) (Document, error) {
 	s.ownerID = ownerID
-	return Document{ID: id, Body: "# One", ShareToken: s.shareToken}, nil
+	publicID := s.publicID
+	if publicID == "" {
+		publicID = "abcdefghijklmnopqrstuv"
+	}
+	return Document{ID: id, PublicID: publicID, Body: "# One", ShareToken: s.shareToken}, nil
 }
 
 func (s *fakeStore) Unshare(ctx context.Context, ownerID string, id string) error {
