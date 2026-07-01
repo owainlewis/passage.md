@@ -74,6 +74,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.themeTransitionBlocked;
   window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
   stubSignedInFetch();
@@ -256,6 +257,7 @@ describe("Write (editor)", () => {
     expect(darkMode).not.toBeDisabled();
 
     fireEvent.click(darkMode);
+    expect(document.documentElement.dataset.themeTransitionBlocked).toBe("true");
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
 

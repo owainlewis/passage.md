@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { Brand } from "./brand";
 import { snippetOf, titleOf, wordCount } from "./doc-utils";
@@ -9,6 +9,16 @@ import { MarkdownView } from "./markdown-view";
 
 type Theme = "light" | "dark";
 const THEME_KEY = "passage.theme.v1";
+
+function blockThemeTransitionsForNextPaint() {
+  const root = document.documentElement;
+  root.dataset.themeTransitionBlocked = "true";
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      delete root.dataset.themeTransitionBlocked;
+    });
+  });
+}
 
 type Doc = {
   id: string;
@@ -353,8 +363,8 @@ export default function Editor() {
     }
   }, []);
 
-  // Apply the saved theme to the document root.
-  useEffect(() => {
+  // Apply the saved theme before paint so the page does not animate between palettes.
+  useLayoutEffect(() => {
     const root = document.documentElement;
     if (darkActive) {
       root.dataset.theme = "dark";
@@ -509,6 +519,7 @@ export default function Editor() {
 
   function toggleDarkMode() {
     const next: Theme = theme === "dark" ? "light" : "dark";
+    blockThemeTransitionsForNextPaint();
     setTheme(next);
     try {
       localStorage.setItem(THEME_KEY, next);
