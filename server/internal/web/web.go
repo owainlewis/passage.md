@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-//go:embed dist
+//go:embed all:dist
 var embedded embed.FS
 
 func FileSystem(staticDir string) (fs.FS, error) {
