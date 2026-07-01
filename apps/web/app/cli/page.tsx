@@ -48,28 +48,23 @@ export default function CLIPage() {
         <section className="cliBand" aria-labelledby="install-heading">
           <div className="cliSectionHead">
             <p className="cliKicker">Install</p>
-            <h2 id="install-heading">Start with a release or local build</h2>
+            <h2 id="install-heading">Install the CLI in one command</h2>
           </div>
           <div className="cliGrid">
             <div className="cliPanel">
-              <h3>Release build</h3>
-              <p>Download the archive for your OS from GitHub releases, then put `passage` on your PATH.</p>
+              <h3>macOS or Linux</h3>
+              <p>The installer downloads the latest release, verifies the checksum, and puts `passage` on your PATH.</p>
               <pre>
-                <code>{`# macOS or Linux
-tar -xzf passage_<version>_<os>_<arch>.tar.gz
-chmod +x passage
-./passage version`}</code>
+                <code>{`curl -fsSL https://raw.githubusercontent.com/owainlewis/passage-cli/main/install.sh | bash
+passage version`}</code>
               </pre>
             </div>
             <div className="cliPanel">
-              <h3>Local build</h3>
-              <p>Until a tagged release exists, build the public Go CLI repo locally.</p>
+              <h3>Manual downloads</h3>
+              <p>Download archives and checksums from GitHub releases when you want to install by hand.</p>
               <pre>
-                <code>{`git clone https://github.com/owainlewis/passage-cli
-cd passage-cli
-go test ./...
-go build ./cmd/passage
-./passage version`}</code>
+                <code>{`# Latest release
+https://github.com/owainlewis/passage-cli/releases/latest`}</code>
               </pre>
             </div>
           </div>

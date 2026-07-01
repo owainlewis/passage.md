@@ -8,16 +8,16 @@ Releases live at <https://github.com/owainlewis/passage-cli/releases>.
 
 ## Install
 
-Download a release archive for your platform when a tagged release exists.
-
-Until then, build locally:
+Install the latest release:
 
 ```sh
-git clone https://github.com/owainlewis/passage-cli
-cd passage-cli
-go test ./...
-go build ./cmd/passage
-./passage version
+curl -fsSL https://raw.githubusercontent.com/owainlewis/passage-cli/main/install.sh | bash
+```
+
+Verify:
+
+```sh
+passage version
 ```
 
 ## API Tokens
