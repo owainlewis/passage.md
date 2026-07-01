@@ -54,13 +54,26 @@ func TestValidUUID(t *testing.T) {
 	}
 }
 
-func TestShareTokens(t *testing.T) {
-	token, err := randomShareToken()
+func TestPublicIDs(t *testing.T) {
+	publicID, err := randomPublicID()
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !validPublicID(publicID) {
+		t.Fatalf("randomPublicID returned invalid public id %q", publicID)
+	}
+	if validPublicID(strings.Repeat("a", 21)) {
+		t.Fatal("validPublicID accepted the wrong length")
+	}
+	if validPublicID(strings.Repeat("a", 21) + "!") {
+		t.Fatal("validPublicID accepted an invalid character")
+	}
+}
+
+func TestLegacyShareTokens(t *testing.T) {
+	token := strings.Repeat("a", 43)
 	if !validShareToken(token) {
-		t.Fatalf("randomShareToken returned invalid token %q", token)
+		t.Fatalf("validShareToken rejected a legacy token %q", token)
 	}
 	if validShareToken(strings.Repeat("a", 42)) {
 		t.Fatal("validShareToken accepted the wrong length")

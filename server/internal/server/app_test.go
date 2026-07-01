@@ -221,6 +221,19 @@ func TestWriteServesExportedRouteForSessionUser(t *testing.T) {
 	if string(body) != "<main>write</main>" {
 		t.Fatalf("body = %q", body)
 	}
+
+	docRec := httptest.NewRecorder()
+	docReq := httptest.NewRequest(http.MethodGet, "/write/abcdefghijklmnopqrstuv", nil)
+	docReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(docRec, docReq)
+
+	if docRec.Code != http.StatusOK {
+		t.Fatalf("document write status = %d, want %d", docRec.Code, http.StatusOK)
+	}
+	docBody, _ := io.ReadAll(docRec.Result().Body)
+	if string(docBody) != "<main>write</main>" {
+		t.Fatalf("document write body = %q", docBody)
+	}
 }
 
 func TestRegisterIsClosedBeta(t *testing.T) {
@@ -366,7 +379,7 @@ func (s *routeDocumentStore) List(ctx context.Context, ownerID string) ([]docume
 func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string) (documents.Document, error) {
 	s.ownerID = ownerID
 	s.body = body
-	return documents.Document{ID: "11111111-1111-1111-1111-111111111111", Title: "Token doc", Body: body}, nil
+	return documents.Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil
 }
 
 func (s *routeDocumentStore) Get(ctx context.Context, ownerID string, id string) (documents.Document, error) {
@@ -374,7 +387,7 @@ func (s *routeDocumentStore) Get(ctx context.Context, ownerID string, id string)
 	if ownerID != "user-1" || id != "11111111-1111-1111-1111-111111111111" {
 		return documents.Document{}, documents.ErrNotFound
 	}
-	return documents.Document{ID: id, Title: "Token doc", Body: s.body}, nil
+	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body}, nil
 }
 
 func (s *routeDocumentStore) Update(ctx context.Context, ownerID string, id string, body string) (documents.Document, error) {
@@ -383,7 +396,7 @@ func (s *routeDocumentStore) Update(ctx context.Context, ownerID string, id stri
 		return documents.Document{}, documents.ErrNotFound
 	}
 	s.body = body
-	return documents.Document{ID: id, Title: "Token doc", Body: body}, nil
+	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil
 }
 
 func (s *routeDocumentStore) Archive(ctx context.Context, ownerID string, id string) error {
@@ -400,7 +413,7 @@ func (s *routeDocumentStore) Share(ctx context.Context, ownerID string, id strin
 		return documents.Document{}, documents.ErrNotFound
 	}
 	token := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	return documents.Document{ID: id, Title: "Token doc", Body: s.body, ShareToken: &token}, nil
+	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body, ShareToken: &token}, nil
 }
 
 func (s *routeDocumentStore) Unshare(ctx context.Context, ownerID string, id string) error {

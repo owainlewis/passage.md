@@ -8,6 +8,7 @@ const defaultDocBody = "# Markdown for agents and humans\n\nWelcome to passage."
 
 type TestDoc = {
   id: string;
+  publicId?: string;
   body: string;
   pinned?: boolean;
   shareToken?: string | null;
@@ -15,7 +16,10 @@ type TestDoc = {
 };
 
 function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody, pinned: true }]) {
-  let docs = [...initialDocs];
+  let docs: Array<TestDoc & { publicId: string }> = initialDocs.map((doc, index) => ({
+    publicId: `public-${index + 1}`,
+    ...doc
+  }));
   let nextDoc = docs.length + 1;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -31,16 +35,18 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     }
     if (url === "/api/v1/docs" && method === "POST") {
       const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
-      const doc: TestDoc = { id: `doc-${nextDoc++}`, body };
+      const doc: TestDoc & { publicId: string } = { id: `doc-${nextDoc}`, publicId: `public-${nextDoc}`, body };
+      nextDoc += 1;
       docs = [doc, ...docs];
       return new Response(JSON.stringify(doc), { status: 201 });
     }
     if (url.startsWith("/api/v1/docs/") && method === "PATCH") {
       const id = url.split("/")[4];
       const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
-      const doc: TestDoc = { id, body };
-      docs = docs.map((existing) => (existing.id === id ? doc : existing));
-      return new Response(JSON.stringify(doc), { status: 200 });
+      const doc = docs.find((existing) => existing.id === id) ?? { id, publicId: "public-updated" };
+      const updated = { ...doc, body };
+      docs = docs.map((existing) => (existing.id === id ? updated : existing));
+      return new Response(JSON.stringify(updated), { status: 200 });
     }
     if (url.startsWith("/api/v1/docs/") && method === "DELETE") {
       const id = url.split("/")[4];
@@ -48,8 +54,11 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       return new Response(null, { status: 204 });
     }
     if (url.startsWith("/api/v1/docs/") && url.endsWith("/share") && method === "POST") {
+      const id = url.split("/")[4];
+      const doc = docs.find((existing) => existing.id === id);
+      const publicId = doc?.publicId ?? "share-token";
       return new Response(
-        JSON.stringify({ token: "share-token", htmlPath: "/d/share-token", markdownPath: "/d/share-token.md" }),
+        JSON.stringify({ token: publicId, publicId, htmlPath: `/d/${publicId}`, markdownPath: `/d/${publicId}.md` }),
         { status: 200 }
       );
     }
@@ -184,6 +193,24 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
   });
 
+  it("uses stable public ids in the editor URL", async () => {
+    stubSignedInFetch([
+      { id: "doc-notes", publicId: "notes-public-id", body: "# Agent notes\n\nFollow ups." },
+      { id: "doc-scripts", publicId: "scripts-public-id", body: "# Video script\n\nOpening line." }
+    ]);
+    window.history.replaceState(null, "", "/write/scripts-public-id");
+
+    await renderWrite();
+
+    expect((await screen.findAllByRole("heading", { name: "Video script", level: 1 })).length).toBeGreaterThan(0);
+    expect(window.location.pathname).toBe("/write/scripts-public-id");
+
+    fireEvent.click(screen.getByRole("button", { name: /Agent notes/ }));
+
+    expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
+    expect(window.location.pathname).toBe("/write/notes-public-id");
+  });
+
   it("filters the document list by frontmatter tags", async () => {
     stubSignedInFetch([
       { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
@@ -257,7 +284,7 @@ describe("Write (editor)", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copiedUrl = writeText.mock.calls[0][0] as string;
-    expect(copiedUrl).toBe("http://localhost:3000/d/share-token");
+    expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
     expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 
@@ -279,7 +306,7 @@ describe("Write (editor)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("http://localhost:3000/d/share-token"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("http://localhost:3000/d/public-2"));
   });
 
   it("toggles dark mode from the sidebar for every user", async () => {

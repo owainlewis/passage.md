@@ -22,6 +22,7 @@ function blockThemeTransitionsForNextPaint() {
 
 type Doc = {
   id: string;
+  publicId?: string;
   body: string;
   pinned?: boolean;
   shareToken?: string | null;
@@ -142,6 +143,7 @@ async function apiArchiveDoc(id: string): Promise<void> {
 
 type ShareResponse = {
   token: string;
+  publicId?: string;
   htmlPath: string;
   markdownPath: string;
 };
@@ -228,6 +230,12 @@ function seedDocs(): Doc[] {
   return [{ id: "welcome", body: welcomeBody, pinned: true }];
 }
 
+function publicIdFromPath() {
+  if (typeof window === "undefined") return "";
+  const match = window.location.pathname.match(/^\/write\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 export default function Editor() {
   const [docs, setDocs] = useState<Doc[]>(seedDocs);
   const [activeId, setActiveId] = useState<string>("welcome");
@@ -254,6 +262,7 @@ export default function Editor() {
   const tokenCreateGeneration = useRef(0);
   const tokenMutationGeneration = useRef(0);
   const currentUserId = useRef<string | null>(null);
+  const initialURLPublicId = useRef("");
 
   const auth = useAuth();
   const darkActive = theme === "dark";
@@ -263,6 +272,7 @@ export default function Editor() {
   }, [auth.user]);
 
   useEffect(() => {
+    initialURLPublicId.current = publicIdFromPath();
     if (window.matchMedia?.("(max-width: 720px)").matches) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSidebarOpen(false);
@@ -290,8 +300,9 @@ export default function Editor() {
           savedDocs = [await apiCreateDoc(welcomeBody)];
         }
         if (cancelled) return;
+        const urlDoc = savedDocs.find((doc) => doc.publicId === initialURLPublicId.current);
         setDocs(savedDocs);
-        setActiveId(savedDocs[0].id);
+        setActiveId((urlDoc ?? savedDocs[0]).id);
         setSaveState("saved");
         setPendingSave(null);
       } catch {
@@ -380,6 +391,15 @@ export default function Editor() {
   const activeTags = parseTags(active.body);
   const tagDraftValue = tagDraft.docId === active.id ? tagDraft.value : activeTags.join(", ");
   const tagErrorMessage = tagError.docId === active.id ? tagError.message : "";
+  const activeShared = Boolean(active.sharedAt || active.shareToken);
+
+  useEffect(() => {
+    if (!auth.user || saveState === "loading" || !active.publicId) return;
+    const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState(null, "", nextPath);
+    }
+  }, [active.id, active.publicId, auth.user, saveState]);
 
   // Grow the textarea with its content so the pane scrolls as one surface.
   // Modern browsers do this natively with `field-sizing: content`, which avoids
@@ -414,6 +434,18 @@ export default function Editor() {
     setDocs((prev) => prev.map((d) => (d.id === active.id ? { ...d, body } : d)));
   }
 
+  function updateEditorURL(doc: Doc, mode: "push" | "replace") {
+    if (!doc.publicId) return;
+    const nextPath = `/write/${encodeURIComponent(doc.publicId)}`;
+    if (window.location.pathname === nextPath) return;
+    window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextPath);
+  }
+
+  function selectDoc(doc: Doc) {
+    setActiveId(doc.id);
+    updateEditorURL(doc, "push");
+  }
+
   function saveTags(input = tagDraftValue) {
     const parsed = parseTagInput(input);
     if (parsed.invalid.length > 0) {
@@ -431,6 +463,7 @@ export default function Editor() {
       const doc = await apiCreateDoc("");
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
+      updateEditorURL(doc, "push");
       setMode("edit");
       setFilter("");
       setSelectedTag("");
@@ -458,7 +491,10 @@ export default function Editor() {
     setDocs((prev) => {
       const next = prev.filter((d) => d.id !== id);
       const remaining = next.length > 0 ? next : seedDocs();
-      if (id === activeId) setActiveId(remaining[0].id);
+      if (id === activeId) {
+        setActiveId(remaining[0].id);
+        updateEditorURL(remaining[0], "replace");
+      }
       return remaining;
     });
     setSaveState("saved");
@@ -484,13 +520,15 @@ export default function Editor() {
         setPendingSave(null);
         setSaveState("saved");
       }
-      let htmlPath = active.shareToken ? `/d/${active.shareToken}` : "";
+      let htmlPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
       if (!htmlPath) {
         const share = await apiShareDoc(active.id);
         htmlPath = share.htmlPath;
         setDocs((prev) =>
           prev.map((doc) =>
-            doc.id === active.id ? { ...doc, shareToken: share.token, sharedAt: new Date().toISOString() } : doc
+            doc.id === active.id
+              ? { ...doc, publicId: share.publicId ?? doc.publicId, shareToken: share.token, sharedAt: new Date().toISOString() }
+              : doc
           )
         );
       }
@@ -520,7 +558,7 @@ export default function Editor() {
   }
 
   async function unshareDoc() {
-    if (!active.shareToken) return;
+    if (!activeShared) return;
     window.clearTimeout(copyTimer.current);
     try {
       await apiUnshareDoc(active.id);
@@ -680,7 +718,7 @@ export default function Editor() {
                 key={doc.id}
                 className={`docRow ${isActive ? "active" : ""} ${doc.pinned ? "pinned" : ""}`}
               >
-                <button type="button" className="docRowSelect" onClick={() => setActiveId(doc.id)}>
+                  <button type="button" className="docRowSelect" onClick={() => selectDoc(doc)}>
                   <span className="docRowIcon">
                     <DocIcon />
                   </span>
@@ -838,7 +876,7 @@ export default function Editor() {
                     ? "Share failed"
                     : "Share"}
             </button>
-            {active.shareToken && (
+            {activeShared && (
               <button type="button" className="textButton" onClick={unshareDoc}>
                 {shareState === "unshared" ? "Unshared" : "Unshare"}
               </button>

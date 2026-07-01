@@ -58,9 +58,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/docs/{id}/share", a.unshareDoc)
 	mux.HandleFunc("GET /d/{token}", a.publicDoc)
 	mux.HandleFunc("GET /write", a.write)
-	mux.HandleFunc("HEAD /write", a.write)
-	mux.HandleFunc("GET /write/", a.write)
-	mux.HandleFunc("HEAD /write/", a.write)
+	mux.HandleFunc("GET /write/{$}", a.write)
+	mux.HandleFunc("GET /write/{publicId}", a.write)
 	mux.Handle("/", StaticHandler(a.static))
 	return mux
 }
@@ -206,7 +205,7 @@ func (a *App) write(w http.ResponseWriter, r *http.Request) {
 		redirectToLogin(w, r)
 		return
 	}
-	StaticHandler(a.static).ServeHTTP(w, r)
+	serveFile(w, r, a.static, "write.html")
 }
 
 func redirectToLogin(w http.ResponseWriter, r *http.Request) {
