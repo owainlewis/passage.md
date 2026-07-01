@@ -184,6 +184,38 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
   });
 
+  it("filters the document list by frontmatter tags", async () => {
+    stubSignedInFetch([
+      { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
+      { id: "doc-scripts", body: "---\ntags: [scripts]\n---\n\n# Video script\n\nOpening line." }
+    ]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Agent notes/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "scripts" }));
+
+    expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
+  });
+
+  it("saves lowercase document tags and rejects invalid tags", async () => {
+    await renderWrite();
+    await screen.findByText("Saved");
+
+    const tags = screen.getByRole("textbox", { name: "Document tags" });
+    fireEvent.change(tags, { target: { value: "notes, scripts" } });
+    fireEvent.blur(tags);
+
+    expect(await screen.findByRole("button", { name: "notes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "scripts" })).toBeInTheDocument();
+
+    fireEvent.change(tags, { target: { value: "Notes, scripts" } });
+    fireEvent.blur(tags);
+
+    expect(await screen.findByText("Use lowercase a-z and hyphen only.")).toBeInTheDocument();
+  });
+
   it("keeps document row actions as native keyboard-reachable buttons", async () => {
     await renderWrite();
 
