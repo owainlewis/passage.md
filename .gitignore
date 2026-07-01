@@ -13,3 +13,4 @@ apps/web/out/
 tmp/
 *.log
 *.tsbuildinfo
+gha-creds-*.json
