@@ -244,7 +244,7 @@ func validShareToken(value string) bool {
 }
 
 func validPublicID(value string) bool {
-	if len(value) != 22 {
+	if len(value) != 22 && len(value) != 32 {
 		return false
 	}
 	return validURLSafeID(value)

@@ -62,6 +62,9 @@ func TestPublicIDs(t *testing.T) {
 	if !validPublicID(publicID) {
 		t.Fatalf("randomPublicID returned invalid public id %q", publicID)
 	}
+	if !validPublicID(strings.Repeat("a", 32)) {
+		t.Fatal("validPublicID rejected a UUID-based backfill id")
+	}
 	if validPublicID(strings.Repeat("a", 21)) {
 		t.Fatal("validPublicID accepted the wrong length")
 	}

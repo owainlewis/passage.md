@@ -1,12 +1,12 @@
 ALTER TABLE documents
-  ADD COLUMN public_id text;
+  ADD COLUMN IF NOT EXISTS public_id text;
 
 UPDATE documents
-SET public_id = translate(rtrim(encode(gen_random_bytes(16), 'base64'), '='), '+/', '-_')
+SET public_id = replace(gen_random_uuid()::text, '-', '')
 WHERE public_id IS NULL;
 
 ALTER TABLE documents
   ALTER COLUMN public_id SET NOT NULL;
 
-CREATE UNIQUE INDEX documents_public_id_idx
+CREATE UNIQUE INDEX IF NOT EXISTS documents_public_id_idx
   ON documents (public_id);
