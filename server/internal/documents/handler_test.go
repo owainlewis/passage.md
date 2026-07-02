@@ -138,6 +138,25 @@ func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 	}
 }
 
+func TestHandlerRequiresUnshareBeforeArchive(t *testing.T) {
+	store := &fakeStore{archiveErr: ErrShared}
+	handler := NewHandler(store)
+	user := auth.User{ID: "user-1"}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "http://passage.test/api/v1/docs/11111111-1111-1111-1111-111111111111", nil)
+	req.Header.Set("Origin", "http://passage.test")
+	req.SetPathValue("id", "11111111-1111-1111-1111-111111111111")
+	handler.Archive(rec, req, user)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("archive status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unshare this document before deleting it") {
+		t.Fatalf("archive body = %s", rec.Body.String())
+	}
+}
+
 func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	publicID := "abcdefghijklmnopqrstuv"
 	store := &fakeStore{
@@ -187,6 +206,7 @@ type fakeStore struct {
 	ownerID    string
 	body       string
 	getErr     error
+	archiveErr error
 	publicID   string
 	shareToken *string
 	publicDoc  Document
@@ -219,7 +239,7 @@ func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, body 
 
 func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) error {
 	s.ownerID = ownerID
-	return nil
+	return s.archiveErr
 }
 
 func (s *fakeStore) Share(ctx context.Context, ownerID string, id string) (Document, error) {

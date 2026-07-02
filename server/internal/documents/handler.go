@@ -114,6 +114,10 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request, user auth.User
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
+	if errors.Is(err, ErrShared) {
+		writeError(w, http.StatusConflict, "unshare this document before deleting it")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "document could not be archived")
 		return

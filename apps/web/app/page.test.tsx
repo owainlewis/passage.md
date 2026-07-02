@@ -255,6 +255,18 @@ describe("Write (editor)", () => {
     expect(remove.tagName).toBe("BUTTON");
   });
 
+  it("does not show delete for shared documents", async () => {
+    stubSignedInFetch([
+      { id: "doc-1", body: "# Lead magnet", shareToken: "share-token" },
+      { id: "doc-2", body: "# Prompt pack", sharedAt: "2026-07-02T12:00:00Z" }
+    ]);
+
+    await renderWrite();
+
+    expect(await screen.findByRole("button", { name: /Lead magnet/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete document" })).not.toBeInTheDocument();
+  });
+
   it("still renders when browser storage reads are blocked", async () => {
     const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("storage blocked");

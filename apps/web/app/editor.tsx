@@ -29,6 +29,10 @@ type Doc = {
   sharedAt?: string | null;
 };
 
+function isShared(doc: Doc) {
+  return Boolean(doc.sharedAt || doc.shareToken);
+}
+
 type APIToken = {
   id: string;
   name: string;
@@ -391,7 +395,7 @@ export default function Editor() {
   const activeTags = parseTags(active.body);
   const tagDraftValue = tagDraft.docId === active.id ? tagDraft.value : activeTags.join(", ");
   const tagErrorMessage = tagError.docId === active.id ? tagError.message : "";
-  const activeShared = Boolean(active.sharedAt || active.shareToken);
+  const activeShared = isShared(active);
 
   useEffect(() => {
     if (!auth.user || saveState === "loading" || !active.publicId) return;
@@ -480,7 +484,8 @@ export default function Editor() {
 
   async function deleteDoc(id: string) {
     // Pinned documents are protected from deletion; unpin first to remove one.
-    if (docs.find((d) => d.id === id)?.pinned) return;
+    const doc = docs.find((d) => d.id === id);
+    if (!doc || doc.pinned || isShared(doc)) return;
     setSaveState("saving");
     try {
       await apiArchiveDoc(id);
@@ -745,7 +750,7 @@ export default function Editor() {
                   >
                     <PinIcon filled={Boolean(doc.pinned)} />
                   </button>
-                  {docs.length > 1 && !doc.pinned && (
+                  {docs.length > 1 && !doc.pinned && !isShared(doc) && (
                     <button
                       type="button"
                       className="docRowDelete"

@@ -14,6 +14,7 @@ import (
 )
 
 var ErrNotFound = errors.New("document not found")
+var ErrShared = errors.New("shared document cannot be archived")
 
 type Document struct {
 	ID         string     `json:"id"`
@@ -123,21 +124,45 @@ func (s *Store) Archive(ctx context.Context, ownerID string, id string) error {
 	if !validUUID(id) {
 		return ErrNotFound
 	}
-	tag, err := s.db.Exec(ctx, `
-		UPDATE documents
-		SET archived_at = now(),
-		    updated_at = now()
-		WHERE owner_user_id = $1
-		  AND id = $2
-		  AND archived_at IS NULL
-	`, ownerID, id)
+	var archived bool
+	var found bool
+	var shared bool
+	err := s.db.QueryRow(ctx, `
+		WITH target AS (
+			SELECT shared_at
+			FROM documents
+			WHERE owner_user_id = $1
+			  AND id = $2
+			  AND archived_at IS NULL
+		),
+		archived AS (
+			UPDATE documents
+			SET archived_at = now(),
+			    updated_at = now()
+			WHERE owner_user_id = $1
+			  AND id = $2
+			  AND archived_at IS NULL
+			  AND shared_at IS NULL
+			RETURNING 1
+		)
+		SELECT
+			EXISTS (SELECT 1 FROM archived),
+			EXISTS (SELECT 1 FROM target),
+			EXISTS (SELECT 1 FROM target WHERE shared_at IS NOT NULL)
+	`, ownerID, id).Scan(&archived, &found, &shared)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if archived {
+		return nil
+	}
+	if shared {
+		return ErrShared
+	}
+	if !found {
 		return ErrNotFound
 	}
-	return nil
+	return ErrNotFound
 }
 
 func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document, error) {

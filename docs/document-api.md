@@ -336,7 +336,11 @@ Malformed UUIDs, archived documents, missing documents, and documents owned by a
 DELETE /api/v1/docs/{id}
 ```
 
-Archives an owned active document.
+Archives an owned active private document.
+
+Shared documents cannot be archived.
+
+Unshare the document before archiving it.
 
 Archived documents are hidden from list, read, update, share, and public lookup.
 
@@ -345,6 +349,8 @@ Response:
 ```http
 HTTP/1.1 204 No Content
 ```
+
+Shared documents return `409`.
 
 Malformed UUIDs, archived documents, missing documents, and documents owned by another user all return `404`.
 
