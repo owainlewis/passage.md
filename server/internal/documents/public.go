@@ -38,22 +38,10 @@ var publicTemplate = template.Must(template.New("public").Parse(`<!doctype html>
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    header {
-      min-height: 52px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 0 22px;
-      border-bottom: 1px solid var(--hairline);
-      color: var(--muted);
-      font-size: 0.78rem;
-    }
-    .brand { font-weight: 650; color: var(--ink); }
     main {
       max-width: var(--measure);
       margin: 0 auto;
-      padding: 52px 22px 76px;
+      padding: 72px 22px 76px;
       font-size: 1.125rem;
       line-height: 1.7;
     }
@@ -103,10 +91,6 @@ var publicTemplate = template.Must(template.New("public").Parse(`<!doctype html>
   </style>
 </head>
 <body>
-  <header>
-    <span class="brand">passage.md</span>
-    <span>Shared document</span>
-  </header>
   <main>{{ .Body }}</main>
 </body>
 </html>`))

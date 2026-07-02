@@ -1247,22 +1247,6 @@ button {
   background: var(--bg);
 }
 
-.shareBar {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 16px;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.shareMeta {
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-}
-
 .shareScroll {
   flex: 1 1 auto;
   overflow-y: auto;
