@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Brand } from "./brand";
+import { PLAN_FEATURES } from "./features";
 
 const features = [
   {
@@ -92,11 +93,9 @@ export default function Landing() {
                 $0<span className="planPer"> forever</span>
               </p>
               <ul className="planList">
-                <li>5 saved documents</li>
-                <li>CLI and API for your agents</li>
-                <li>Preview, Mermaid, and copy</li>
-                <li>Light and dark mode</li>
-                <li>Share read-only links</li>
+                {PLAN_FEATURES.free.map((feature) => (
+                  <li key={feature}>{feature}</li>
+                ))}
               </ul>
               <Link className="btnPrimary planCta" href="/write">
                 Start writing
@@ -104,18 +103,20 @@ export default function Landing() {
             </div>
             <div className="planCard planCardPro">
               <p className="planName">
-                Pro<span className="planTag">Coming soon</span>
+                Pro<span className="planTag">Monthly</span>
               </p>
               <p className="planPrice">
                 $6.99<span className="planPer"> / month</span>
               </p>
               <ul className="planList">
                 <li>Everything in Free</li>
-                <li>Unlimited documents</li>
-                <li>Export and raw .md URLs</li>
-                <li>Custom themes</li>
+                {PLAN_FEATURES.pro.map((feature) => (
+                  <li key={feature}>{feature}</li>
+                ))}
               </ul>
-              <span className="btnGhost planCta planCtaDisabled">Coming soon</span>
+              <Link className="btnGhost planCta" href="/account">
+                Upgrade
+              </Link>
             </div>
           </div>
         </section>

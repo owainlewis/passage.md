@@ -166,6 +166,10 @@ func (s *Service) UserFromRequest(r *http.Request) (User, bool) {
 	if user, ok := s.UserFromSessionRequest(r); ok {
 		return user, true
 	}
+	return s.UserFromBearerRequest(r)
+}
+
+func (s *Service) UserFromBearerRequest(r *http.Request) (User, bool) {
 	token, ok := readBearerToken(r)
 	if !ok {
 		return User{}, false

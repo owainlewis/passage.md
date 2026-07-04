@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { Brand } from "./brand";
 import { bodyWithTags, bodyWithoutFrontmatter, parseTagInput, parseTags, snippetOf, titleOf, wordCount } from "./doc-utils";
+import { useEntitlements } from "./entitlements";
 import { DocIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, UserIcon } from "./icons";
 import { MarkdownView } from "./markdown-view";
 
@@ -33,17 +35,9 @@ function isShared(doc: Doc) {
   return Boolean(doc.sharedAt || doc.shareToken);
 }
 
-type APIToken = {
-  id: string;
-  name: string;
-  createdAt: string;
-  lastUsedAt?: string | null;
-};
-
 type Mode = "edit" | "preview";
 type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
 type SaveState = "loading" | "saving" | "saved" | "error";
-type TokenStatus = "idle" | "loading" | "creating" | "revoking" | "copied" | "error";
 
 const welcomeBody = `# Markdown for agents and humans
 
@@ -175,40 +169,6 @@ async function apiUnshareDoc(id: string): Promise<void> {
   }
 }
 
-async function apiTokens(): Promise<APIToken[]> {
-  const res = await fetch("/api/v1/api-tokens", { credentials: "include" });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof body.error === "string" ? body.error : "API tokens could not be loaded");
-  }
-  return Array.isArray(body.tokens) ? body.tokens : [];
-}
-
-async function apiCreateToken(name: string): Promise<{ token: string; apiToken: APIToken }> {
-  const res = await fetch("/api/v1/api-tokens", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name })
-  });
-  const payload = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof payload.error === "string" ? payload.error : "API token could not be created");
-  }
-  return payload as { token: string; apiToken: APIToken };
-}
-
-async function apiRevokeToken(id: string): Promise<void> {
-  const res = await fetch(`/api/v1/api-tokens/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    credentials: "include"
-  });
-  if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "API token could not be revoked");
-  }
-}
-
 function saveLabel(state: SaveState) {
   switch (state) {
     case "loading":
@@ -222,12 +182,6 @@ function saveLabel(state: SaveState) {
     default:
       return "Saved";
   }
-}
-
-function formatTokenDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown date";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function seedDocs(): Doc[] {
@@ -255,25 +209,14 @@ export default function Editor() {
   const [authError, setAuthError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<{ id: string; body: string } | null>(null);
-  const [tokens, setTokens] = useState<APIToken[]>([]);
-  const [tokenName, setTokenName] = useState("CLI");
-  const [createdToken, setCreatedToken] = useState("");
-  const [createdTokenId, setCreatedTokenId] = useState("");
-  const [tokenStatus, setTokenStatus] = useState<TokenStatus>("idle");
-  const [tokenError, setTokenError] = useState("");
+  const [billingNotice, setBillingNotice] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimer = useRef<number | undefined>(undefined);
-  const tokenCreateGeneration = useRef(0);
-  const tokenMutationGeneration = useRef(0);
-  const currentUserId = useRef<string | null>(null);
   const initialURLPublicId = useRef("");
 
   const auth = useAuth();
+  const entitlements = useEntitlements();
   const darkActive = theme === "dark";
-
-  useEffect(() => {
-    currentUserId.current = auth.user?.id ?? null;
-  }, [auth.user]);
 
   useEffect(() => {
     initialURLPublicId.current = publicIdFromPath();
@@ -287,12 +230,6 @@ export default function Editor() {
     if (!auth.user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingSave(null);
-      tokenCreateGeneration.current += 1;
-      setTokens([]);
-      setCreatedToken("");
-      setCreatedTokenId("");
-      setTokenError("");
-      setTokenStatus("idle");
       return;
     }
     let cancelled = false;
@@ -317,31 +254,6 @@ export default function Editor() {
       cancelled = true;
     };
   }, [auth.user]);
-
-  useEffect(() => {
-    if (!auth.user || !menuOpen) return;
-    let cancelled = false;
-    const mutationGeneration = tokenMutationGeneration.current;
-    (async () => {
-      setTokenStatus((current) => (current === "creating" || current === "revoking" ? current : "loading"));
-      setTokenError("");
-      try {
-        const loaded = await apiTokens();
-        if (cancelled) return;
-        if (tokenMutationGeneration.current === mutationGeneration) {
-          setTokens(loaded);
-        }
-        setTokenStatus((current) => (current === "loading" ? "idle" : current));
-      } catch (err) {
-        if (cancelled) return;
-        setTokenError(err instanceof Error ? err.message : "API tokens could not be loaded");
-        setTokenStatus((current) => (current === "loading" ? "error" : current));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.user, menuOpen]);
 
   useEffect(() => {
     if (!auth.user || !pendingSave) return;
@@ -396,6 +308,16 @@ export default function Editor() {
   const tagDraftValue = tagDraft.docId === active.id ? tagDraft.value : activeTags.join(", ");
   const tagErrorMessage = tagError.docId === active.id ? tagError.message : "";
   const activeShared = isShared(active);
+  const shareButtonLabel =
+    shareState === "toolong"
+      ? "Too long"
+      : shareState === "error"
+        ? "Share failed"
+        : activeShared
+          ? "Shared"
+          : shareState === "copied"
+            ? "Copied"
+            : "Share";
 
   useEffect(() => {
     if (!auth.user || saveState === "loading" || !active.publicId) return;
@@ -462,6 +384,12 @@ export default function Editor() {
   }
 
   async function createDoc() {
+    if (docs.length >= entitlements.maxSavedDocs) {
+      const prefix = entitlements.plan === "free" ? "Free includes" : "Your plan includes";
+      setBillingNotice(`${prefix} ${entitlements.maxSavedDocs} saved documents. Upgrade for more.`);
+      return;
+    }
+    setBillingNotice("");
     setSaveState("saving");
     try {
       const doc = await apiCreateDoc("");
@@ -473,7 +401,8 @@ export default function Editor() {
       setSelectedTag("");
       setSaveState("saved");
       requestAnimationFrame(() => textareaRef.current?.focus());
-    } catch {
+    } catch (err) {
+      setBillingNotice(err instanceof Error ? err.message : "Document could not be created");
       setSaveState("error");
     }
   }
@@ -506,6 +435,11 @@ export default function Editor() {
   }
 
   function exportDoc() {
+    if (!entitlements.can("exportMarkdown")) {
+      setBillingNotice("Export is a Pro feature.");
+      return;
+    }
+    setBillingNotice("");
     const blob = new Blob([active.body], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -516,6 +450,11 @@ export default function Editor() {
   }
 
   async function shareDoc() {
+    if (!entitlements.can("shareLinks")) {
+      setBillingNotice("Sharing and raw .md URLs are Pro features.");
+      return;
+    }
+    setBillingNotice("");
     window.clearTimeout(copyTimer.current);
     try {
       if (pendingSave?.id === active.id) {
@@ -591,11 +530,6 @@ export default function Editor() {
 
   async function signOut() {
     setAuthError("");
-    tokenCreateGeneration.current += 1;
-    currentUserId.current = null;
-    setTokens([]);
-    setCreatedToken("");
-    setCreatedTokenId("");
     try {
       await auth.signOut();
     } catch (err) {
@@ -603,76 +537,8 @@ export default function Editor() {
     }
   }
 
-  async function createToken() {
-    if (tokenStatus === "creating" || tokenStatus === "revoking") return;
-    const name = tokenName.trim();
-    if (!name) {
-      setTokenError("Token name is required");
-      setTokenStatus("error");
-      return;
-    }
-    setTokenError("");
-    setTokenStatus("creating");
-    tokenMutationGeneration.current += 1;
-    const generation = tokenCreateGeneration.current;
-    const ownerId = auth.user?.id ?? null;
-    try {
-      const created = await apiCreateToken(name);
-      if (tokenCreateGeneration.current !== generation) {
-        if (ownerId && currentUserId.current === ownerId) {
-          setTokens((prev) => [created.apiToken, ...prev.filter((token) => token.id !== created.apiToken.id)]);
-        }
-        setTokenStatus("idle");
-        return;
-      }
-      setTokens((prev) => [created.apiToken, ...prev.filter((token) => token.id !== created.apiToken.id)]);
-      setCreatedToken(created.token);
-      setCreatedTokenId(created.apiToken.id);
-      setTokenName("CLI");
-      await copyText(created.token);
-      setTokenStatus("copied");
-    } catch (err) {
-      setTokenError(err instanceof Error ? err.message : "API token could not be created");
-      setTokenStatus("error");
-    }
-  }
-
-  async function copyCreatedToken() {
-    if (!createdToken) return;
-    setTokenError("");
-    try {
-      await copyText(createdToken);
-      setTokenStatus("copied");
-    } catch {
-      setTokenError("Token could not be copied");
-      setTokenStatus("error");
-    }
-  }
-
-  async function revokeToken(id: string) {
-    if (tokenStatus === "creating" || tokenStatus === "revoking") return;
-    setTokenError("");
-    setTokenStatus("revoking");
-    tokenMutationGeneration.current += 1;
-    try {
-      await apiRevokeToken(id);
-      setTokens((prev) => prev.filter((token) => token.id !== id));
-      setTokenStatus("idle");
-      if (id === createdTokenId) {
-        setCreatedToken("");
-        setCreatedTokenId("");
-      }
-    } catch (err) {
-      setTokenError(err instanceof Error ? err.message : "API token could not be revoked");
-      setTokenStatus("error");
-    }
-  }
-
   function closeMenu() {
-    tokenCreateGeneration.current += 1;
     setMenuOpen(false);
-    setCreatedToken("");
-    setCreatedTokenId("");
   }
 
   const words = wordCount(active.body);
@@ -692,7 +558,7 @@ export default function Editor() {
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
       <aside className="sidebar" aria-label="Documents" data-open={sidebarOpen}>
         <div className="sidebarHead">
-          <Brand href="/" />
+          <Brand href="/write" />
         </div>
         <div className="filterRow">
           <div className="filterField">
@@ -869,23 +735,19 @@ export default function Editor() {
             </div>
             <button
               type="button"
-              className="textButton"
-              onClick={shareDoc}
-              title={shareState === "toolong" ? "This document is too long to share as a link" : undefined}
+              className="textButton shareToggle"
+              aria-pressed={activeShared}
+              onClick={() => void (activeShared ? unshareDoc() : shareDoc())}
+              title={
+                shareState === "toolong"
+                  ? "This document is too long to share as a link"
+                  : activeShared
+                    ? "Click to unshare"
+                    : undefined
+              }
             >
-              {shareState === "copied"
-                ? "Copied"
-                : shareState === "toolong"
-                  ? "Too long"
-                  : shareState === "error"
-                    ? "Share failed"
-                    : "Share"}
+              {shareButtonLabel}
             </button>
-            {activeShared && (
-              <button type="button" className="textButton" onClick={unshareDoc}>
-                {shareState === "unshared" ? "Unshared" : "Unshare"}
-              </button>
-            )}
             <button type="button" className="textButton" onClick={exportDoc}>
               Export
             </button>
@@ -909,72 +771,25 @@ export default function Editor() {
                       <span className="menuAccountEmail">{auth.user?.email}</span>
                     </div>
                     {authError && <p className="authError">{authError}</p>}
+                    <Link className="menuItem" role="menuitem" href="/account" onClick={closeMenu}>
+                      Account settings
+                    </Link>
                     <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
                       Sign out
                     </button>
-                    <div className="menuDivider" />
-                    <section className="tokenPanel" aria-label="API tokens">
-                      <div className="tokenPanelHead">
-                        <span className="tokenTitle">API tokens</span>
-                        {tokenStatus === "loading" && <span className="tokenMeta">Loading</span>}
-                      </div>
-                      <label className="tokenField">
-                        <span>Name</span>
-                        <input
-                          className="authInput"
-                          type="text"
-                          name="api-token-name"
-                          value={tokenName}
-                          maxLength={80}
-                          onChange={(e) => setTokenName(e.target.value)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="menuItem accent"
-                        disabled={tokenStatus === "creating" || tokenStatus === "revoking"}
-                        onClick={() => void createToken()}
-                      >
-                        {tokenStatus === "creating" ? "Creating" : "Create token"}
-                      </button>
-                      {createdToken && (
-                        <div className="createdToken">
-                          <span className="createdTokenLabel">Copy now</span>
-                          <code>{createdToken}</code>
-                          <button type="button" className="tokenCopy" onClick={() => void copyCreatedToken()}>
-                            {tokenStatus === "copied" ? "Copied" : "Copy"}
-                          </button>
-                        </div>
-                      )}
-                      {tokenError && <p className="authError">{tokenError}</p>}
-                      <div className="tokenList">
-                        {tokens.map((token) => (
-                          <div className="tokenRow" key={token.id}>
-                            <span className="tokenInfo">
-                              <span className="tokenName">{token.name}</span>
-                              <span className="tokenMeta">Created {formatTokenDate(token.createdAt)}</span>
-                            </span>
-                            <button
-                              type="button"
-                              className="tokenRevoke"
-                              onClick={() => void revokeToken(token.id)}
-                              disabled={tokenStatus === "creating" || tokenStatus === "revoking"}
-                            >
-                              Revoke
-                            </button>
-                          </div>
-                        ))}
-                        {tokenStatus !== "loading" && tokens.length === 0 && (
-                          <p className="tokenEmpty">No API tokens yet.</p>
-                        )}
-                      </div>
-                    </section>
                   </div>
                 </>
               )}
             </div>
           </div>
         </header>
+
+        {billingNotice && (
+          <div className="billingNotice">
+            <span>{billingNotice}</span>
+            <Link href="/account">Upgrade</Link>
+          </div>
+        )}
 
         <section className="writingPane" aria-label="Markdown editor">
           {mode === "edit" ? (

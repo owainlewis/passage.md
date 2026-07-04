@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
 	"golang.org/x/crypto/bcrypt"
@@ -88,6 +90,66 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 	if got := doIntegrationStatus(t, http.MethodGet, server.URL+"/api/v1/docs", "", nil, ""); got != http.StatusUnauthorized {
 		t.Fatalf("anonymous docs status = %d, want %d", got, http.StatusUnauthorized)
+	}
+}
+
+func TestBillingPGStorePreservesSubscriptionMetadataOnPartialUpdate(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := "billing-partial-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.com"
+	var userID string
+	err = db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, $2)
+		RETURNING id::text
+	`, email, "hash").Scan(&userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := billing.NewPGStore(db)
+	periodEnd := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Second)
+	cancelAtPeriodEnd := true
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:        "cus_partial_" + userID,
+		SubscriptionID:    "sub_partial_" + userID,
+		Status:            "active",
+		PriceID:           "price_test",
+		CurrentPeriodEnd:  &periodEnd,
+		CancelAtPeriodEnd: &cancelAtPeriodEnd,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:     "cus_partial_" + userID,
+		SubscriptionID: "sub_partial_" + userID,
+		Status:         "past_due",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := store.State(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StripeSubscriptionStatus != "past_due" {
+		t.Fatalf("status = %q, want past_due", state.StripeSubscriptionStatus)
+	}
+	if state.StripePriceID != "price_test" || state.StripeCurrentPeriodEnd == nil || !state.StripeCurrentPeriodEnd.Equal(periodEnd) || !state.StripeCancelAtPeriodEnd {
+		t.Fatalf("subscription metadata was not preserved: %#v", state)
 	}
 }
 

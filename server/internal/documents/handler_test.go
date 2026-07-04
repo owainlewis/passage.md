@@ -74,6 +74,55 @@ func TestHandlerUsesAuthenticatedOwnerForCreateAndList(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store)
+	user := auth.User{ID: "user-1", Email: "u@example.com"}
+	body := strings.Repeat("x", MaxDocumentBodyBytes+1)
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"`+body+`"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	handler.Create(create, createReq, user)
+
+	if create.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
+	}
+	if store.body != "" {
+		t.Fatalf("oversized create reached store with body length %d", len(store.body))
+	}
+
+	update := httptest.NewRecorder()
+	updateReq := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/11111111-1111-1111-1111-111111111111", strings.NewReader(`{"body":"`+body+`"}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.SetPathValue("id", "11111111-1111-1111-1111-111111111111")
+	handler.Update(update, updateReq, user)
+
+	if update.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("update status = %d, body = %s", update.Code, update.Body.String())
+	}
+	if store.body != "" {
+		t.Fatalf("oversized update reached store with body length %d", len(store.body))
+	}
+}
+
+func TestHandlerRejectsOversizedDocumentRequests(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store)
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(strings.Repeat("x", maxDocumentRequestBytes+1)))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.Create(rec, req, auth.User{ID: "user-1"})
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if store.body != "" {
+		t.Fatalf("oversized request reached store with body length %d", len(store.body))
+	}
+}
+
 func TestHandlerReturnsNotFoundForOtherUsersDocument(t *testing.T) {
 	store := &fakeStore{getErr: ErrNotFound}
 	handler := NewHandler(store)

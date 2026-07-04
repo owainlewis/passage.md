@@ -1,46 +1,25 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext } from "react";
+import { useAuth } from "./auth";
 import { type Feature, type Plan, planAllows } from "./features";
-
-const PLAN_KEY = "passage.plan.v1";
 
 type EntitlementsValue = {
   plan: Plan;
-  setPlan: (plan: Plan) => void;
+  maxSavedDocs: number;
   can: (feature: Feature) => boolean;
 };
 
 const EntitlementsContext = createContext<EntitlementsValue | null>(null);
 
 export function EntitlementsProvider({ children }: { children: React.ReactNode }) {
-  const [plan, setPlanState] = useState<Plan>("free");
-
-  // Hydrate the plan after mount so SSR and the first client render match.
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(PLAN_KEY);
-      if (stored === "pro" || stored === "free") {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setPlanState(stored);
-      }
-    } catch {
-      // Storage may be blocked; the default free plan stays in memory.
-    }
-  }, []);
-
-  const setPlan = useCallback((next: Plan) => {
-    setPlanState(next);
-    try {
-      localStorage.setItem(PLAN_KEY, next);
-    } catch {
-      // Storage may be unavailable; the plan stays in memory for this session.
-    }
-  }, []);
+  const auth = useAuth();
+  const plan = auth.account?.plan ?? "free";
+  const maxSavedDocs = auth.account?.limits.maxSavedDocs ?? 5;
 
   const can = useCallback((feature: Feature) => planAllows(plan, feature), [plan]);
 
-  return <EntitlementsContext value={{ plan, setPlan, can }}>{children}</EntitlementsContext>;
+  return <EntitlementsContext value={{ plan, maxSavedDocs, can }}>{children}</EntitlementsContext>;
 }
 
 export function useEntitlements(): EntitlementsValue {

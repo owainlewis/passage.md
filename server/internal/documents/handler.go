@@ -14,6 +14,11 @@ type Handler struct {
 	store documentStore
 }
 
+const (
+	MaxDocumentBodyBytes    = 512 * 1024
+	maxDocumentRequestBytes = MaxDocumentBodyBytes + 4096
+)
+
 func NewHandler(store documentStore) *Handler {
 	return &Handler{store: store}
 }
@@ -49,6 +54,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User)
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	if !validateDocumentBody(w, input.Body) {
+		return
+	}
 	doc, err := h.store.Create(r.Context(), user.ID, input.Body)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "document could not be created")
@@ -81,6 +89,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 	}
 	var input bodyInput
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if !validateDocumentBody(w, input.Body) {
 		return
 	}
 	id := r.PathValue("id")
@@ -232,7 +243,15 @@ func validateJSONMutation(w http.ResponseWriter, r *http.Request) bool {
 		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
 		return false
 	}
-	return validateSameOrigin(w, r)
+	if !validateSameOrigin(w, r) {
+		return false
+	}
+	if r.ContentLength > maxDocumentRequestBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxDocumentRequestBytes)
+	return true
 }
 
 func validateSameOrigin(w http.ResponseWriter, r *http.Request) bool {
@@ -261,7 +280,20 @@ func scheme(r *http.Request) string {
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	defer r.Body.Close()
 	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+			return false
+		}
 		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return false
+	}
+	return true
+}
+
+func validateDocumentBody(w http.ResponseWriter, body string) bool {
+	if len([]byte(body)) > MaxDocumentBodyBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "document body is too large")
 		return false
 	}
 	return true
