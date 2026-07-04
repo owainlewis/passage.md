@@ -109,11 +109,11 @@ func (a *App) applySubscriptionEvent(r *http.Request, subscription stripeSubscri
 		return err
 	}
 	var periodEnd *time.Time
-	if subscription.CurrentPeriodEnd > 0 {
-		value := time.Unix(subscription.CurrentPeriodEnd, 0).UTC()
+	if currentPeriodEnd := subscription.CurrentPeriodEndValue(); currentPeriodEnd > 0 {
+		value := time.Unix(currentPeriodEnd, 0).UTC()
 		periodEnd = &value
 	}
-	cancelAtPeriodEnd := subscription.CancelAtPeriodEnd
+	cancelAtPeriodEnd := subscription.ScheduledForCancellation()
 	return a.billing.UpdateSubscription(r.Context(), user.ID, billing.SubscriptionUpdate{
 		CustomerID:        subscription.Customer,
 		SubscriptionID:    subscription.ID,
@@ -187,9 +187,12 @@ type stripeSubscription struct {
 	Status            string `json:"status"`
 	CurrentPeriodEnd  int64  `json:"current_period_end"`
 	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
+	CancelAt          int64  `json:"cancel_at"`
+	EndedAt           int64  `json:"ended_at"`
 	Items             struct {
 		Data []struct {
-			Price struct {
+			CurrentPeriodEnd int64 `json:"current_period_end"`
+			Price            struct {
 				ID string `json:"id"`
 			} `json:"price"`
 		} `json:"data"`
@@ -201,6 +204,23 @@ func (s stripeSubscription) PriceID() string {
 		return ""
 	}
 	return s.Items.Data[0].Price.ID
+}
+
+func (s stripeSubscription) CurrentPeriodEndValue() int64 {
+	if s.CurrentPeriodEnd > 0 {
+		return s.CurrentPeriodEnd
+	}
+	if len(s.Items.Data) > 0 && s.Items.Data[0].CurrentPeriodEnd > 0 {
+		return s.Items.Data[0].CurrentPeriodEnd
+	}
+	if s.CancelAt > 0 {
+		return s.CancelAt
+	}
+	return 0
+}
+
+func (s stripeSubscription) ScheduledForCancellation() bool {
+	return s.CancelAtPeriodEnd || (s.CancelAt > 0 && s.EndedAt == 0 && s.Status != "canceled")
 }
 
 type stripeInvoice struct {

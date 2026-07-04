@@ -653,6 +653,52 @@ func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
 	}
 }
 
+func TestStripeWebhookReadsCurrentStripeSubscriptionShape(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+	}
+	now := time.Now().UTC()
+	periodEnd := now.Add(30 * 24 * time.Hour).Unix()
+	body := []byte(`{
+		"id":"evt_current_shape",
+		"type":"customer.subscription.updated",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":null,
+			"cancel_at_period_end":false,
+			"cancel_at":` + strconv.FormatInt(periodEnd, 10) + `,
+			"items":{"data":[{
+				"current_period_end":` + strconv.FormatInt(periodEnd, 10) + `,
+				"price":{"id":"price_1TpAeQRiiEo9jrWNlLdI9HwB"}
+			}]}
+		}}
+	}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", signedStripePayload(body, "whsec_test", now))
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	state := billingStore.states["user-1"]
+	if state.StripeCurrentPeriodEnd == nil || state.StripeCurrentPeriodEnd.Unix() != periodEnd {
+		t.Fatalf("current period end = %v, want %d", state.StripeCurrentPeriodEnd, periodEnd)
+	}
+	if !state.StripeCancelAtPeriodEnd {
+		t.Fatalf("cancel at period end = false, want true")
+	}
+}
+
 func TestStripeWebhookRejectsInvalidSignatureWithoutStateChange(t *testing.T) {
 	billingStore := newRouteBillingStore()
 	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
