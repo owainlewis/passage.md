@@ -10,14 +10,18 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
+	"github.com/owainlewis/passage.md/server/internal/billing"
+	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/documents"
 )
 
@@ -254,6 +258,425 @@ func TestRegisterIsClosedBeta(t *testing.T) {
 	}
 }
 
+func TestMeIncludesServerAccountForOwnerComp(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "owain@owainlewis.com"}
+	billingStore := newRouteBillingStore()
+	billingStore.savedDocs["user-1"] = 2
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		billing: billing.NewService(billingStore, routeBillingConfig()),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"authenticated":true`, `"plan":"pro"`, `"source":"owner"`, `"maxSavedDocs":1000`, `"savedDocs":2`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %s: %s", want, body)
+		}
+	}
+}
+
+func TestCreateDocReturnsPaymentRequiredAtFreeLimit(t *testing.T) {
+	authStore := newRouteAuthStore()
+	docStore := newRouteDocumentStore()
+	billingStore := newRouteBillingStore()
+	billingStore.savedDocs["user-1"] = 5
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		docs:    documents.NewHandler(docStore),
+		billing: billing.NewService(billingStore, routeBillingConfig()),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs", strings.NewReader(`{"body":"# Limit"}`))
+	req.Header.Set("Authorization", "Bearer psg_owner_one")
+	req.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if docStore.body != "" {
+		t.Fatalf("document store was called with body %q", docStore.body)
+	}
+}
+
+func TestPaidOnlyRoutesReturnPaymentRequiredForFreeUsers(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	docStore := newRouteDocumentStore()
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		docs:    documents.NewHandler(docStore),
+		billing: billing.NewService(newRouteBillingStore(), routeBillingConfig()),
+	}
+
+	share := httptest.NewRecorder()
+	shareReq := httptest.NewRequest(http.MethodPost, "/api/v1/docs/11111111-1111-1111-1111-111111111111/share", nil)
+	shareReq.Header.Set("Authorization", "Bearer psg_owner_one")
+	app.Routes().ServeHTTP(share, shareReq)
+	if share.Code != http.StatusPaymentRequired {
+		t.Fatalf("share status = %d, body = %s", share.Code, share.Body.String())
+	}
+
+	token := httptest.NewRecorder()
+	tokenReq := httptest.NewRequest(http.MethodPost, "/api/v1/api-tokens", strings.NewReader(`{"name":"CLI"}`))
+	tokenReq.Header.Set("Content-Type", "application/json")
+	tokenReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(token, tokenReq)
+	if token.Code != http.StatusPaymentRequired {
+		t.Fatalf("token status = %d, body = %s", token.Code, token.Body.String())
+	}
+}
+
+func TestBearerDocumentAPIReturnsPaymentRequiredForFreeUsers(t *testing.T) {
+	authStore := newRouteAuthStore()
+	docStore := newRouteDocumentStore()
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		docs:    documents.NewHandler(docStore),
+		billing: billing.NewService(newRouteBillingStore(), routeBillingConfig()),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs", nil)
+	req.Header.Set("Authorization", "Bearer psg_owner_one")
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminCanUpdateAccountOverride(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
+	billingStore := newRouteBillingStore()
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		billing: billing.NewService(billingStore, routeBillingConfig()),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/admin/users/two@example.com/account", strings.NewReader(`{"plan":"pro","maxSavedDocs":42}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"email":"two@example.com"`, `"plan":"pro"`, `"source":"manual"`, `"maxSavedDocs":42`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %s: %s", want, body)
+		}
+	}
+}
+
+func TestBillingCheckoutCreatesMonthlyStripeSession(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	billingStore := newRouteBillingStore()
+	var checkoutForm url.Values
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if user, _, ok := r.BasicAuth(); !ok || user != "sk_test_123" {
+			t.Fatalf("missing Stripe basic auth")
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		switch r.URL.Path {
+		case "/v1/customers":
+			if got := r.Form.Get("email"); got != "one@example.com" {
+				t.Fatalf("customer email = %q", got)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"cus_test"}`))
+		case "/v1/checkout/sessions":
+			checkoutForm = r.Form
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"cs_test","url":"https://checkout.stripe.test/session"}`))
+		default:
+			t.Fatalf("unexpected Stripe path %s", r.URL.Path)
+		}
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		billing: billing.NewService(billingStore, routeBillingConfig()),
+		stripe:  billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: config.BillingConfig{
+			FreeMaxSavedDocs:   5,
+			ProMaxSavedDocs:    1000,
+			OwnerEmails:        []string{"owain@owainlewis.com"},
+			StripeSecretKey:    "sk_test_123",
+			StripeMonthlyPrice: "price_1TpAeQRiiEo9jrWNlLdI9HwB",
+			AppBaseURL:         "https://passage.test",
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/checkout", nil)
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "https://checkout.stripe.test/session") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	if got := billingStore.states["user-1"].StripeCustomerID; got != "cus_test" {
+		t.Fatalf("stored customer = %q", got)
+	}
+	if got := billingStore.states["user-1"].StripeSubscriptionStatus; got != "" {
+		t.Fatalf("checkout wrote subscription status = %q", got)
+	}
+	if got := checkoutForm.Get("line_items[0][price]"); got != "price_1TpAeQRiiEo9jrWNlLdI9HwB" {
+		t.Fatalf("checkout price = %q", got)
+	}
+	if got := checkoutForm.Get("success_url"); got != "https://passage.test/account?billing=success" {
+		t.Fatalf("success_url = %q", got)
+	}
+}
+
+func TestBillingPortalCreatesStripePortalSession(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test", StripeSubscriptionStatus: "active"}
+	var portalForm url.Values
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/billing_portal/sessions" {
+			t.Fatalf("unexpected Stripe path %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		portalForm = r.Form
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"bps_test","url":"https://billing.stripe.test/session"}`))
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		billing: billing.NewService(billingStore, routeBillingConfig()),
+		stripe:  billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: config.BillingConfig{
+			StripeSecretKey: "sk_test_123",
+			AppBaseURL:      "https://passage.test",
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/portal", nil)
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := portalForm.Get("customer"); got != "cus_test" {
+		t.Fatalf("portal customer = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "https://billing.stripe.test/session") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestBillingEndpointsRequireSession(t *testing.T) {
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(newRouteBillingStore(), routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", "https://stripe.test", nil),
+		billingConfig: config.BillingConfig{StripeSecretKey: "sk_test_123", StripeMonthlyPrice: "price_test"},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/checkout", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStripeWebhookUpdatesSubscriptionEntitlement(t *testing.T) {
+	authStore := newRouteAuthStore()
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(authStore, "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+	}
+	now := time.Now().UTC()
+	body := []byte(`{
+		"id":"evt_test",
+		"type":"customer.subscription.updated",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":` + strconv.FormatInt(now.Add(time.Hour).Unix(), 10) + `,
+			"items":{"data":[{"price":{"id":"price_1TpAeQRiiEo9jrWNlLdI9HwB"}}]}
+		}}
+	}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", signedStripePayload(body, "whsec_test", now))
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	account, err := app.billing.Account(context.Background(), auth.User{ID: "user-1", Email: "one@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Plan != billing.PlanPro || account.Source != billing.SourceStripe {
+		t.Fatalf("account = %#v", account)
+	}
+	if account.Subscription.StripeSubscriptionID != "sub_test" {
+		t.Fatalf("subscription = %#v", account.Subscription)
+	}
+}
+
+func TestStripeCheckoutWebhookDoesNotOverwriteSubscriptionState(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	periodEnd := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Second)
+	billingStore.states["user-1"] = billing.State{
+		StripeCustomerID:         "cus_test",
+		StripeSubscriptionID:     "sub_test",
+		StripeSubscriptionStatus: "active",
+		StripePriceID:            "price_test",
+		StripeCurrentPeriodEnd:   &periodEnd,
+	}
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+	}
+	now := time.Now().UTC()
+	body := []byte(`{
+		"id":"evt_checkout_late",
+		"type":"checkout.session.completed",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"subscription":"sub_test",
+			"client_reference_id":"user-1",
+			"payment_status":"paid"
+		}}
+	}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", signedStripePayload(body, "whsec_test", now))
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	state := billingStore.states["user-1"]
+	if state.StripeSubscriptionStatus != "active" || state.StripePriceID != "price_test" || state.StripeCurrentPeriodEnd == nil {
+		t.Fatalf("subscription state was overwritten: %#v", state)
+	}
+}
+
+func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	periodEnd := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Second)
+	billingStore.states["user-1"] = billing.State{
+		StripeCustomerID:         "cus_test",
+		StripeSubscriptionID:     "sub_test",
+		StripeSubscriptionStatus: "active",
+		StripePriceID:            "price_test",
+		StripeCurrentPeriodEnd:   &periodEnd,
+		StripeCancelAtPeriodEnd:  true,
+	}
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+	}
+	now := time.Now().UTC()
+	body := []byte(`{
+		"id":"evt_invoice_failed",
+		"type":"invoice.payment_failed",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"subscription":"sub_test"
+		}}
+	}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", signedStripePayload(body, "whsec_test", now))
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	state := billingStore.states["user-1"]
+	if state.StripeSubscriptionStatus != "past_due" {
+		t.Fatalf("status = %q, want past_due", state.StripeSubscriptionStatus)
+	}
+	if state.StripePriceID != "price_test" || state.StripeCurrentPeriodEnd == nil || !state.StripeCurrentPeriodEnd.Equal(periodEnd) || !state.StripeCancelAtPeriodEnd {
+		t.Fatalf("subscription metadata was not preserved: %#v", state)
+	}
+}
+
+func TestStripeWebhookRejectsInvalidSignatureWithoutStateChange(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+	}
+	body := []byte(`{"id":"evt_bad","type":"customer.subscription.updated","created":1,"data":{"object":{"id":"sub_test","customer":"cus_test","status":"active"}}}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", "t=1,v1=bad")
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := billingStore.states["user-1"].StripeSubscriptionStatus; got != "" {
+		t.Fatalf("subscription status changed to %q", got)
+	}
+}
+
 func TestStaticHandlerServesHeadForIndex(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<main>home</main>"), 0o644); err != nil {
@@ -362,6 +785,15 @@ func routeSignedToken(token string) string {
 	return token + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
+func signedStripePayload(payload []byte, secret string, at time.Time) string {
+	timestamp := strconv.FormatInt(at.Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write(payload)
+	return "t=" + timestamp + ",v1=" + hex.EncodeToString(mac.Sum(nil))
+}
+
 type routeDocumentStore struct {
 	ownerID string
 	body    string
@@ -426,4 +858,93 @@ func (s *routeDocumentStore) Unshare(ctx context.Context, ownerID string, id str
 
 func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (documents.Document, error) {
 	return documents.Document{}, documents.ErrNotFound
+}
+
+type routeBillingStore struct {
+	users     map[string]auth.User
+	states    map[string]billing.State
+	savedDocs map[string]int
+}
+
+func newRouteBillingStore() *routeBillingStore {
+	return &routeBillingStore{
+		users: map[string]auth.User{
+			"one@example.com": {ID: "user-1", Email: "one@example.com"},
+			"two@example.com": {ID: "user-2", Email: "two@example.com"},
+		},
+		states:    map[string]billing.State{},
+		savedDocs: map[string]int{},
+	}
+}
+
+func routeBillingConfig() config.BillingConfig {
+	return config.BillingConfig{
+		FreeMaxSavedDocs: 5,
+		ProMaxSavedDocs:  1000,
+		OwnerEmails:      []string{"owain@owainlewis.com"},
+	}
+}
+
+func (s *routeBillingStore) FindUserByEmail(ctx context.Context, email string) (auth.User, error) {
+	user, ok := s.users[email]
+	if !ok {
+		return auth.User{}, billing.ErrUserNotFound
+	}
+	return user, nil
+}
+
+func (s *routeBillingStore) FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
+	for userID, state := range s.states {
+		if state.StripeCustomerID == customerID {
+			for _, user := range s.users {
+				if user.ID == userID {
+					return user, nil
+				}
+			}
+		}
+	}
+	return auth.User{}, billing.ErrUserNotFound
+}
+
+func (s *routeBillingStore) State(ctx context.Context, userID string) (billing.State, error) {
+	return s.states[userID], nil
+}
+
+func (s *routeBillingStore) UpdateOverride(ctx context.Context, userID string, plan *billing.Plan, maxSavedDocs *int) error {
+	state := s.states[userID]
+	state.ManualPlan = plan
+	state.MaxSavedDocs = maxSavedDocs
+	s.states[userID] = state
+	return nil
+}
+
+func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
+	state := s.states[userID]
+	state.StripeCustomerID = customerID
+	s.states[userID] = state
+	return nil
+}
+
+func (s *routeBillingStore) UpdateSubscription(ctx context.Context, userID string, update billing.SubscriptionUpdate) error {
+	state := s.states[userID]
+	if update.CustomerID != "" {
+		state.StripeCustomerID = update.CustomerID
+	}
+	state.StripeSubscriptionID = update.SubscriptionID
+	state.StripeSubscriptionStatus = update.Status
+	if update.PriceID != "" {
+		state.StripePriceID = update.PriceID
+	}
+	if update.CurrentPeriodEnd != nil {
+		state.StripeCurrentPeriodEnd = update.CurrentPeriodEnd
+	}
+	if update.CancelAtPeriodEnd != nil {
+		state.StripeCancelAtPeriodEnd = *update.CancelAtPeriodEnd
+	}
+	s.states[userID] = state
+	return nil
+}
+
+func (s *routeBillingStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {
+	return s.savedDocs[userID], nil
 }

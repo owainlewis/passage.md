@@ -1,10 +1,32 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import Account from "./account/page";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
 import Landing from "./page";
 import Write from "./write/page";
 
 const defaultDocBody = "# Markdown for agents and humans\n\nWelcome to passage.";
+const proAccount = {
+  plan: "pro",
+  source: "stripe",
+  limits: { maxSavedDocs: 1000 },
+  usage: { savedDocs: 1 },
+  subscription: { stripeCustomerId: "cus_test", status: "active", cancelAtPeriodEnd: false }
+};
+const manualProAccount = {
+  plan: "pro",
+  source: "manual",
+  limits: { maxSavedDocs: 1000 },
+  usage: { savedDocs: 1 },
+  subscription: { status: "active", cancelAtPeriodEnd: false }
+};
+const freeAccount = {
+  plan: "free",
+  source: "default",
+  limits: { maxSavedDocs: 1 },
+  usage: { savedDocs: 1 },
+  subscription: { cancelAtPeriodEnd: false }
+};
 
 type TestDoc = {
   id: string;
@@ -26,7 +48,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     const method = init?.method ?? "GET";
     if (url === "/api/v1/me") {
       return new Response(
-        JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+        JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
         { status: 200 }
       );
     }
@@ -120,6 +142,72 @@ describe("CLI page", () => {
     expect(screen.getByText(/raw `.md` URLs/)).toBeInTheDocument();
     expect(screen.getByText((content) => content.includes("/d/<share-token>.md"))).toBeInTheDocument();
     expect(screen.getByText(/Unshare revokes both URLs/)).toBeInTheDocument();
+  });
+});
+
+describe("Account", () => {
+  it("shows plan, usage, tokens, and starts checkout for free users", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: freeAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/api-tokens" && !init?.method) {
+        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
+      }
+      if (url === "/api/v1/billing/checkout" && init?.method === "POST") {
+        return new Response(JSON.stringify({ url: "https://checkout.stripe.test/session" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Account />);
+
+    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "passage.md home" })).toHaveAttribute("href", "/write");
+    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
+    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
+    expect(screen.getByText("Saved documents")).toBeInTheDocument();
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Upgrade" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/billing/checkout",
+        expect.objectContaining({ method: "POST", credentials: "include" })
+      )
+    );
+  });
+
+  it("does not open the Stripe portal for manually managed Pro accounts", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: manualProAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/api-tokens" && !init?.method) {
+        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Account />);
+
+    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByText("Billing is managed manually.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage billing" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/billing/portal",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 });
 
@@ -297,7 +385,65 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("blocks free users at the saved document limit", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-1", body: "# One" }]);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: freeAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && method === "GET") {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+
+    expect(await screen.findByText("Free includes 1 saved documents. Upgrade for more.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("blocks sharing for free users", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-1", body: "# One" }]);
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: freeAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && method === "GET") {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    expect(await screen.findByText("Sharing and raw .md URLs are Pro features.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-1/share",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 
   it("shares large documents through the server", async () => {
@@ -368,7 +514,7 @@ describe("Write (editor)", () => {
       const url = String(input);
       if (url === "/api/v1/me") {
         return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
           { status: 200 }
         );
       }
@@ -396,12 +542,7 @@ describe("Write (editor)", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/auth/logout", { method: "POST", credentials: "include" });
   });
 
-  it("creates and copies an API token from the account menu", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
+  it("keeps API token management on the account settings page", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/v1/me") {
@@ -414,18 +555,6 @@ describe("Write (editor)", () => {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
           status: 200
         });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Response(
-          JSON.stringify({
-            token: "psg_plaintext",
-            apiToken: { id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }
-          }),
-          { status: 201 }
-        );
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -435,416 +564,10 @@ describe("Write (editor)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
     expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-
-    expect(await screen.findByText("psg_plaintext")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
-    expect(writeText).toHaveBeenCalledWith("psg_plaintext");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/api-tokens",
-      expect.objectContaining({
-        method: "POST",
-        credentials: "include",
-        body: JSON.stringify({ name: "Laptop" })
-      })
-    );
-  });
-
-  it("hides API token plaintext after closing and reopening the account menu", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(
-          JSON.stringify({ tokens: [{ id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }] }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Response(
-          JSON.stringify({
-            token: "psg_one_time",
-            apiToken: { id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }
-          }),
-          { status: 201 }
-        );
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-
-    const account = await screen.findByRole("button", { name: "Account" });
-    fireEvent.click(account);
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByText("psg_one_time")).toBeInTheDocument();
-
-    fireEvent.click(account);
-    await waitFor(() => expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument());
-    fireEvent.click(account);
-
-    expect(await screen.findByText("Laptop")).toBeInTheDocument();
-    expect(screen.queryByText("psg_one_time")).not.toBeInTheDocument();
-  });
-
-  it("keeps token creation disabled when list loading finishes during create", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
-    let resolveList: ((response: Response) => void) | undefined;
-    let resolveCreate: ((response: Response) => void) | undefined;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Promise<Response>((resolve) => {
-          resolveList = resolve;
-        });
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Promise<Response>((resolve) => {
-          resolveCreate = resolve;
-        });
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByRole("button", { name: "Creating" })).toBeDisabled();
-
-    resolveList?.(new Response(JSON.stringify({ tokens: [] }), { status: 200 }));
-
-    await waitFor(() => expect(screen.getByRole("button", { name: "Creating" })).toBeDisabled());
+    expect(screen.getByRole("menuitem", { name: "Account settings" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create token" })).not.toBeInTheDocument();
-
-    resolveCreate?.(
-      new Response(
-        JSON.stringify({
-          token: "psg_pending_create",
-          apiToken: { id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }
-        }),
-        { status: 201 }
-      )
-    );
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
-  });
-
-  it("keeps created token metadata when an older list request finishes later", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
-    let resolveList: ((response: Response) => void) | undefined;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Promise<Response>((resolve) => {
-          resolveList = resolve;
-        });
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Response(
-          JSON.stringify({
-            token: "psg_created_before_list",
-            apiToken: { id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }
-          }),
-          { status: 201 }
-        );
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByText("Laptop")).toBeInTheDocument();
-
-    resolveList?.(new Response(JSON.stringify({ tokens: [] }), { status: 200 }));
-
-    await waitFor(() => expect(screen.getByText("Laptop")).toBeInTheDocument());
-    expect(screen.queryByText("No API tokens yet.")).not.toBeInTheDocument();
-  });
-
-  it("hides API token plaintext and lists metadata if the account menu reopens before creation finishes", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
-    let createdListed = false;
-    let resolveCreate: ((response: Response) => void) | undefined;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(
-          JSON.stringify({
-            tokens: createdListed ? [{ id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }] : []
-          }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Promise<Response>((resolve) => {
-          resolveCreate = (response) => {
-            createdListed = true;
-            resolve(response);
-          };
-        });
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-
-    const account = await screen.findByRole("button", { name: "Account" });
-    fireEvent.click(account);
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByRole("button", { name: "Creating" })).toBeInTheDocument();
-    fireEvent.click(account);
-    fireEvent.click(account);
-
-    resolveCreate?.(
-      new Response(
-        JSON.stringify({
-          token: "psg_delayed_secret",
-          apiToken: { id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }
-        }),
-        { status: 201 }
-      )
-    );
-
-    expect(await screen.findByText("Laptop")).toBeInTheDocument();
-    expect(screen.queryByText("psg_delayed_secret")).not.toBeInTheDocument();
-    expect(writeText).not.toHaveBeenCalledWith("psg_delayed_secret");
-  });
-
-  it("clears stale token metadata after sign-out", async () => {
-    let user: { id: string; email: string } | null = { id: "user-1", email: "one@example.com" };
-    let resolveCreate: ((response: Response) => void) | undefined;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(JSON.stringify(user ? { authenticated: true, user } : { authenticated: false }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Promise<Response>((resolve) => {
-          resolveCreate = resolve;
-        });
-      }
-      if (url === "/api/v1/auth/logout") {
-        user = null;
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Old laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByRole("button", { name: "Creating" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
-
-    resolveCreate?.(
-      new Response(
-        JSON.stringify({
-          token: "psg_old_user_secret",
-          apiToken: { id: "token-1", name: "Old laptop", createdAt: "2026-06-28T12:00:00Z" }
-        }),
-        { status: 201 }
-      )
-    );
-
-    expect(await screen.findByText("Redirecting to sign in")).toBeInTheDocument();
-    expect(screen.queryByText("Old laptop")).not.toBeInTheDocument();
-    expect(screen.queryByText("psg_old_user_secret")).not.toBeInTheDocument();
-  });
-
-  it("does not show API token plaintext after refresh", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
-    const firstFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
-      }
-      if (url === "/api/v1/api-tokens" && init?.method === "POST") {
-        return new Response(
-          JSON.stringify({
-            token: "psg_refresh_secret",
-            apiToken: { id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }
-          }),
-          { status: 201 }
-        );
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", firstFetch);
-    const first = render(<Write />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Laptop" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create token" }));
-    expect(await screen.findByText("psg_refresh_secret")).toBeInTheDocument();
-    first.unmount();
-
-    const refreshFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(
-          JSON.stringify({ tokens: [{ id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }] }),
-          { status: 200 }
-        );
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", refreshFetch);
-
-    render(<Write />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(await screen.findByText("Laptop")).toBeInTheDocument();
-    expect(screen.queryByText("psg_refresh_secret")).not.toBeInTheDocument();
-  });
-
-  it("revokes an API token from the account menu", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs" && !init?.method) {
-        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
-          status: 200
-        });
-      }
-      if (url === "/api/v1/api-tokens" && !init?.method) {
-        return new Response(
-          JSON.stringify({ tokens: [{ id: "token-1", name: "Laptop", createdAt: "2026-06-28T12:00:00Z" }] }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/api-tokens/token-1" && init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(await screen.findByText("Laptop")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => expect(screen.queryByText("Laptop")).not.toBeInTheDocument());
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/api-tokens/token-1", {
-      method: "DELETE",
-      credentials: "include"
-    });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/api-tokens", expect.anything());
   });
 
   it("redirects signed-out users away from the editor", async () => {
@@ -1020,7 +743,11 @@ describe("Write (editor)", () => {
       const url = String(input);
       if (url === "/api/v1/me") {
         return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          JSON.stringify({
+            authenticated: true,
+            user: { id: "user-1", email: "writer@example.com" },
+            account: proAccount
+          }),
           { status: 200 }
         );
       }
@@ -1049,7 +776,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByRole("button", { name: "Unshare" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("unshares a signed-in document", async () => {
@@ -1077,10 +804,11 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    const unshare = await screen.findByRole("button", { name: "Unshare" });
-    fireEvent.click(unshare);
+    const shared = await screen.findByRole("button", { name: "Shared" });
+    expect(shared).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(shared);
 
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Unshare" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false"));
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
       method: "DELETE",
       credentials: "include"

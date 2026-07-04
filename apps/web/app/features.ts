@@ -1,14 +1,29 @@
-// Feature flags gated by plan. This is the single place that maps a feature to
-// the minimum plan that unlocks it. Today the plan is a local stand-in; once
-// auth (#26) and Stripe (#29) land, the plan comes from server entitlements and
-// the rest of this logic stays the same.
-
 export type Plan = "free" | "pro";
 
-export type Feature = "darkMode";
+export type Feature =
+  | "savedDocuments"
+  | "markdownPreview"
+  | "darkMode"
+  | "shareLinks"
+  | "rawMarkdownUrls"
+  | "exportMarkdown"
+  | "apiTokens"
+  | "customThemes";
 
 export const FEATURE_REQUIREMENTS: Record<Feature, Plan> = {
-  darkMode: "free"
+  savedDocuments: "free",
+  markdownPreview: "free",
+  darkMode: "free",
+  shareLinks: "pro",
+  rawMarkdownUrls: "pro",
+  exportMarkdown: "pro",
+  apiTokens: "pro",
+  customThemes: "pro"
+};
+
+export const PLAN_FEATURES: Record<Plan, string[]> = {
+  free: ["5 saved documents", "Preview, Mermaid, and copy", "Light and dark mode"],
+  pro: ["1,000 saved documents", "Share read-only links", "Export and raw .md URLs", "CLI and API for agents"]
 };
 
 const PLAN_RANK: Record<Plan, number> = {

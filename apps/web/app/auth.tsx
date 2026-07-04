@@ -7,9 +7,30 @@ type User = {
   email: string;
 };
 
+export type Account = {
+  plan: "free" | "pro";
+  source: string;
+  limits: {
+    maxSavedDocs: number;
+  };
+  usage: {
+    savedDocs: number;
+  };
+  subscription: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    status?: string;
+    priceId?: string;
+    currentPeriodEnd?: string;
+    cancelAtPeriodEnd: boolean;
+  };
+};
+
 type AuthValue = {
   user: User | null;
+  account: Account | null;
   loading: boolean;
+  refreshAccount: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -18,7 +39,16 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const loadMe = useCallback(async () => {
+    const res = await fetch("/api/v1/me", { credentials: "include" });
+    if (!res.ok) return;
+    const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
+    setUser(body.authenticated ? body.user ?? null : null);
+    setAccount(body.authenticated ? body.account ?? null : null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,8 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const res = await fetch("/api/v1/me", { credentials: "include" });
         if (!res.ok) return;
-        const body = (await res.json()) as { authenticated?: boolean; user?: User };
-        if (!cancelled) setUser(body.authenticated ? body.user ?? null : null);
+        const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
+        if (!cancelled) {
+          setUser(body.authenticated ? body.user ?? null : null);
+          setAccount(body.authenticated ? body.account ?? null : null);
+        }
       } catch {
         // Treat auth lookup failures as signed out.
       } finally {
@@ -37,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadMe]);
 
   const submitCredentials = useCallback(async (path: string, email: string, password: string) => {
     const res = await fetch(path, {
@@ -51,7 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
     }
     setUser(body.user ?? null);
-  }, []);
+    setAccount(body.account ?? null);
+    void loadMe().catch(() => undefined);
+  }, [loadMe]);
 
   const signIn = useCallback(
     (email: string, password: string) => submitCredentials("/api/v1/auth/login", email, password),
@@ -65,9 +100,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(typeof body.error === "string" ? body.error : "Sign out failed");
     }
     setUser(null);
+    setAccount(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, signIn, signOut }), [user, loading, signIn, signOut]);
+  const refreshAccount = useCallback(async () => {
+    await loadMe();
+  }, [loadMe]);
+
+  const value = useMemo(
+    () => ({ user, account, loading, refreshAccount, signIn, signOut }),
+    [user, account, loading, refreshAccount, signIn, signOut]
+  );
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

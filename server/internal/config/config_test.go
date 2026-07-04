@@ -10,6 +10,9 @@ func TestFromEnvDefaultsPort(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 
 	cfg := FromEnv()
+	if cfg.AppEnv != "" {
+		t.Fatalf("AppEnv = %q, want empty", cfg.AppEnv)
+	}
 	if cfg.Port != "8080" {
 		t.Fatalf("Port = %q, want 8080", cfg.Port)
 	}
@@ -37,5 +40,36 @@ func TestFromEnvRequiresExplicitProductionSessionSecret(t *testing.T) {
 	}
 	if !cfg.CookieSecure {
 		t.Fatal("CookieSecure = false, want true")
+	}
+}
+
+func TestValidateServeRequiresProductionBillingConfig(t *testing.T) {
+	cfg := Config{
+		AppEnv:        "production",
+		DatabaseURL:   "postgres://example",
+		SessionSecret: "secret",
+		Billing: BillingConfig{
+			StripeSecretKey:     "sk_live_test",
+			StripeMonthlyPrice:  "price_1TpAeQRiiEo9jrWNlLdI9HwB",
+			StripeWebhookSecret: "whsec_live_test",
+			AppBaseURL:          "https://passage.md",
+		},
+	}
+
+	err := cfg.ValidateServe()
+	if err == nil || err.Error() != "STRIPE_MONTHLY_PRICE_ID must be set explicitly in production" {
+		t.Fatalf("ValidateServe error = %v", err)
+	}
+
+	cfg.Billing.StripeMonthlyPrice = "price_live_123"
+	cfg.Billing.AppBaseURL = "http://localhost:8080"
+	err = cfg.ValidateServe()
+	if err == nil || err.Error() != "APP_BASE_URL must be set to the production URL" {
+		t.Fatalf("ValidateServe localhost error = %v", err)
+	}
+
+	cfg.Billing.AppBaseURL = "https://passage.md"
+	if err := cfg.ValidateServe(); err != nil {
+		t.Fatalf("ValidateServe = %v", err)
 	}
 }
