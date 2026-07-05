@@ -228,6 +228,26 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
   });
 
+  it("does not render sidebar tag chips for documents with many tags", async () => {
+    stubSignedInFetch([
+      {
+        id: "doc-many-tags",
+        body: "---\ntags: [templates, youtube, scripts, ideas, hooks, clips, shorts, newsletter]\n---\n\n# YouTube Video Template\n\nHook"
+      }
+    ]);
+
+    await renderWrite();
+
+    expect(await screen.findByRole("button", { name: /YouTube Video Template/ })).toBeInTheDocument();
+    expect(document.querySelector(".docRowTag")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
+      target: { value: "newsletter" }
+    });
+
+    expect(screen.getByRole("button", { name: /YouTube Video Template/ })).toBeInTheDocument();
+  });
+
   it("saves lowercase document tags and rejects invalid tags", async () => {
     await renderWrite();
     await screen.findByText("Saved");
