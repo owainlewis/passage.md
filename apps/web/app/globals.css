@@ -318,26 +318,6 @@ button {
   text-overflow: ellipsis;
 }
 
-.docRowTags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
-}
-
-.docRowTag {
-  max-width: 100%;
-  padding: 2px 5px;
-  border-radius: 6px;
-  background: var(--hover-soft);
-  color: var(--muted);
-  font-size: 0.68rem;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .docRowDelete {
   flex: 0 0 auto;
   width: 18px;
@@ -514,38 +494,6 @@ button {
   color: #9a4a36;
   font-size: 0.72rem;
   line-height: 1.35;
-}
-
-.tagFilter {
-  min-width: 0;
-  display: flex;
-  gap: 6px;
-  padding: 0 0 2px;
-  overflow-x: auto;
-}
-
-.tagChip {
-  flex: 0 0 auto;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
-  padding: 5px 9px;
-  font-size: 0.75rem;
-  font-weight: 550;
-  line-height: 1;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-}
-
-.tagChip:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.tagChip.active {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--hairline));
-  background: var(--accent-tint);
-  color: var(--accent);
 }
 
 /* -------------------------------------------------------------------- main */

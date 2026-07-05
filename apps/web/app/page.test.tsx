@@ -273,7 +273,7 @@ describe("Write (editor)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Launch note\n\nRoadmap coverage." }
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Filter documents" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "roadmap" }
     });
 
@@ -308,7 +308,9 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Agent notes/ });
 
-    fireEvent.click(screen.getByRole("button", { name: "scripts" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
+      target: { value: "scripts" }
+    });
 
     expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
@@ -322,8 +324,11 @@ describe("Write (editor)", () => {
     fireEvent.change(tags, { target: { value: "notes, scripts" } });
     fireEvent.blur(tags);
 
-    expect(await screen.findByRole("button", { name: "notes" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "scripts" })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
+      target: { value: "scripts" }
+    });
+
+    expect(screen.getByRole("button", { name: /Markdown for agents and humans/ })).toBeInTheDocument();
 
     fireEvent.change(tags, { target: { value: "Notes, scripts" } });
     fireEvent.blur(tags);
