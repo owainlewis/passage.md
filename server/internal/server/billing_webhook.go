@@ -22,8 +22,12 @@ func (a *App) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
 		return
 	}
-	if a.billingConfig.StripeWebhookSecret == "" {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe webhook is not configured"})
+	if !a.billingConfig.StripeBillingEnabled {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Stripe billing is disabled"})
+		return
+	}
+	if !a.billingConfig.StripeConfigured() {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe billing is not configured"})
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))

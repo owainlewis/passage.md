@@ -204,8 +204,7 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if a.billingConfig.StripeSecretKey == "" || a.billingConfig.StripeMonthlyPrice == "" {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe billing is not configured"})
+		if !a.requireStripeBilling(w) {
 			return
 		}
 		account, err := a.billing.Account(r.Context(), user)
@@ -251,8 +250,7 @@ func (a *App) createPortalSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if a.billingConfig.StripeSecretKey == "" {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe billing is not configured"})
+		if !a.requireStripeBilling(w) {
 			return
 		}
 		account, err := a.billing.Account(r.Context(), user)
@@ -415,6 +413,18 @@ func (a *App) requireDocumentService(w http.ResponseWriter) bool {
 func (a *App) requireBillingService(w http.ResponseWriter) bool {
 	if a.auth == nil || a.billing == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
+		return false
+	}
+	return true
+}
+
+func (a *App) requireStripeBilling(w http.ResponseWriter) bool {
+	if !a.billingConfig.StripeBillingEnabled {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Stripe billing is disabled"})
+		return false
+	}
+	if !a.billingConfig.StripeConfigured() {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe billing is not configured"})
 		return false
 	}
 	return true

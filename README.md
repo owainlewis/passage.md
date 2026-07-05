@@ -91,6 +91,9 @@ The Go server runs at `http://localhost:3000` by default and serves `/api/health
 
 `SESSION_SECRET` must be set explicitly when `APP_ENV=production`.
 
+Stripe billing is off by default.
+Set `STRIPE_BILLING_ENABLED=true` only after `STRIPE_SECRET_KEY`, `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and `APP_BASE_URL` are configured.
+
 For frontend-only UI iteration, `npm run dev:web` starts Next.js at `http://localhost:3001`.
 
 That mode is not the local acceptance path because it does not run the Go API or Postgres.

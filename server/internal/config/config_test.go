@@ -43,33 +43,58 @@ func TestFromEnvRequiresExplicitProductionSessionSecret(t *testing.T) {
 	}
 }
 
-func TestValidateServeRequiresProductionBillingConfig(t *testing.T) {
+func TestValidateServeAllowsProductionWithoutStripeWhenBillingDisabled(t *testing.T) {
 	cfg := Config{
 		AppEnv:        "production",
 		DatabaseURL:   "postgres://example",
 		SessionSecret: "secret",
 		Billing: BillingConfig{
-			StripeSecretKey:     "sk_live_test",
-			StripeMonthlyPrice:  "price_1TpAeQRiiEo9jrWNlLdI9HwB",
-			StripeWebhookSecret: "whsec_live_test",
-			AppBaseURL:          "https://passage.md",
+			StripeBillingEnabled: false,
+		},
+	}
+
+	if err := cfg.ValidateServe(); err != nil {
+		t.Fatalf("ValidateServe = %v", err)
+	}
+}
+
+func TestValidateServeRequiresStripeConfigWhenBillingEnabled(t *testing.T) {
+	cfg := Config{
+		AppEnv:        "production",
+		DatabaseURL:   "postgres://example",
+		SessionSecret: "secret",
+		Billing: BillingConfig{
+			StripeBillingEnabled: true,
+			StripeSecretKey:      "sk_live_test",
+			StripeMonthlyPrice:   "price_1TpAeQRiiEo9jrWNlLdI9HwB",
+			StripeWebhookSecret:  "whsec_live_test",
+			AppBaseURL:           "https://passage.md",
 		},
 	}
 
 	err := cfg.ValidateServe()
-	if err == nil || err.Error() != "STRIPE_MONTHLY_PRICE_ID must be set explicitly in production" {
+	if err == nil || err.Error() != "STRIPE_MONTHLY_PRICE_ID must be set explicitly when Stripe billing is enabled" {
 		t.Fatalf("ValidateServe error = %v", err)
 	}
 
 	cfg.Billing.StripeMonthlyPrice = "price_live_123"
 	cfg.Billing.AppBaseURL = "http://localhost:8080"
 	err = cfg.ValidateServe()
-	if err == nil || err.Error() != "APP_BASE_URL must be set to the production URL" {
+	if err == nil || err.Error() != "APP_BASE_URL must be set to the production URL when Stripe billing is enabled" {
 		t.Fatalf("ValidateServe localhost error = %v", err)
 	}
 
 	cfg.Billing.AppBaseURL = "https://passage.md"
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatalf("ValidateServe = %v", err)
+	}
+}
+
+func TestFromEnvEnablesStripeBillingExplicitly(t *testing.T) {
+	t.Setenv("STRIPE_BILLING_ENABLED", "true")
+
+	cfg := FromEnv()
+	if !cfg.Billing.StripeBillingEnabled {
+		t.Fatal("StripeBillingEnabled = false, want true")
 	}
 }

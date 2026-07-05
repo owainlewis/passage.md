@@ -18,13 +18,14 @@ type Config struct {
 }
 
 type BillingConfig struct {
-	FreeMaxSavedDocs    int
-	ProMaxSavedDocs     int
-	OwnerEmails         []string
-	StripeSecretKey     string
-	StripeMonthlyPrice  string
-	StripeWebhookSecret string
-	AppBaseURL          string
+	StripeBillingEnabled bool
+	FreeMaxSavedDocs     int
+	ProMaxSavedDocs      int
+	OwnerEmails          []string
+	StripeSecretKey      string
+	StripeMonthlyPrice   string
+	StripeWebhookSecret  string
+	AppBaseURL           string
 }
 
 func FromEnv() Config {
@@ -41,13 +42,14 @@ func FromEnv() Config {
 		SessionSecret: sessionSecret,
 		CookieSecure:  appEnv == "production",
 		Billing: BillingConfig{
-			FreeMaxSavedDocs:    intOrDefault(os.Getenv("PASSAGE_FREE_MAX_SAVED_DOCS"), 5),
-			ProMaxSavedDocs:     intOrDefault(os.Getenv("PASSAGE_PRO_MAX_SAVED_DOCS"), 1000),
-			OwnerEmails:         emailListOrDefault(os.Getenv("PASSAGE_OWNER_EMAILS"), []string{"owain@owainlewis.com"}),
-			StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
-			StripeMonthlyPrice:  valueOrDefault(os.Getenv("STRIPE_MONTHLY_PRICE_ID"), "price_1TpAeQRiiEo9jrWNlLdI9HwB"),
-			StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
-			AppBaseURL:          valueOrDefault(os.Getenv("APP_BASE_URL"), "http://localhost:8080"),
+			StripeBillingEnabled: boolFromEnv(os.Getenv("STRIPE_BILLING_ENABLED")),
+			FreeMaxSavedDocs:     intOrDefault(os.Getenv("PASSAGE_FREE_MAX_SAVED_DOCS"), 5),
+			ProMaxSavedDocs:      intOrDefault(os.Getenv("PASSAGE_PRO_MAX_SAVED_DOCS"), 1000),
+			OwnerEmails:          emailListOrDefault(os.Getenv("PASSAGE_OWNER_EMAILS"), []string{"owain@owainlewis.com"}),
+			StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
+			StripeMonthlyPrice:   valueOrDefault(os.Getenv("STRIPE_MONTHLY_PRICE_ID"), "price_1TpAeQRiiEo9jrWNlLdI9HwB"),
+			StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
+			AppBaseURL:           valueOrDefault(os.Getenv("APP_BASE_URL"), "http://localhost:8080"),
 		},
 	}
 }
@@ -59,21 +61,31 @@ func (c Config) ValidateServe() error {
 	if c.DatabaseURL == "" {
 		return errors.New("DATABASE_URL is required")
 	}
-	if c.AppEnv == "production" {
+	if c.Billing.StripeBillingEnabled {
 		if c.Billing.StripeSecretKey == "" {
-			return errors.New("STRIPE_SECRET_KEY is required in production")
+			return errors.New("STRIPE_SECRET_KEY is required when Stripe billing is enabled")
 		}
 		if c.Billing.StripeMonthlyPrice == "" || c.Billing.StripeMonthlyPrice == "price_1TpAeQRiiEo9jrWNlLdI9HwB" {
-			return errors.New("STRIPE_MONTHLY_PRICE_ID must be set explicitly in production")
+			return errors.New("STRIPE_MONTHLY_PRICE_ID must be set explicitly when Stripe billing is enabled")
 		}
 		if c.Billing.StripeWebhookSecret == "" {
-			return errors.New("STRIPE_WEBHOOK_SECRET is required in production")
+			return errors.New("STRIPE_WEBHOOK_SECRET is required when Stripe billing is enabled")
 		}
 		if c.Billing.AppBaseURL == "" || strings.HasPrefix(c.Billing.AppBaseURL, "http://localhost") {
-			return errors.New("APP_BASE_URL must be set to the production URL")
+			return errors.New("APP_BASE_URL must be set to the production URL when Stripe billing is enabled")
 		}
 	}
 	return nil
+}
+
+func (c BillingConfig) StripeConfigured() bool {
+	return c.StripeBillingEnabled &&
+		c.StripeSecretKey != "" &&
+		c.StripeMonthlyPrice != "" &&
+		c.StripeMonthlyPrice != "price_1TpAeQRiiEo9jrWNlLdI9HwB" &&
+		c.StripeWebhookSecret != "" &&
+		c.AppBaseURL != "" &&
+		!strings.HasPrefix(c.AppBaseURL, "http://localhost")
 }
 
 func valueOrDefault(value string, fallback string) string {
@@ -107,4 +119,13 @@ func emailListOrDefault(value string, fallback []string) []string {
 		return fallback
 	}
 	return emails
+}
+
+func boolFromEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

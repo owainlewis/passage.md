@@ -422,12 +422,14 @@ func TestBillingCheckoutCreatesMonthlyStripeSession(t *testing.T) {
 		billing: billing.NewService(billingStore, routeBillingConfig()),
 		stripe:  billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
 		billingConfig: config.BillingConfig{
-			FreeMaxSavedDocs:   5,
-			ProMaxSavedDocs:    1000,
-			OwnerEmails:        []string{"owain@owainlewis.com"},
-			StripeSecretKey:    "sk_test_123",
-			StripeMonthlyPrice: "price_1TpAeQRiiEo9jrWNlLdI9HwB",
-			AppBaseURL:         "https://passage.test",
+			StripeBillingEnabled: true,
+			FreeMaxSavedDocs:     5,
+			ProMaxSavedDocs:      1000,
+			OwnerEmails:          []string{"owain@owainlewis.com"},
+			StripeSecretKey:      "sk_test_123",
+			StripeMonthlyPrice:   "price_test",
+			StripeWebhookSecret:  "whsec_test",
+			AppBaseURL:           "https://passage.test",
 		},
 	}
 
@@ -449,7 +451,7 @@ func TestBillingCheckoutCreatesMonthlyStripeSession(t *testing.T) {
 	if got := billingStore.states["user-1"].StripeSubscriptionStatus; got != "" {
 		t.Fatalf("checkout wrote subscription status = %q", got)
 	}
-	if got := checkoutForm.Get("line_items[0][price]"); got != "price_1TpAeQRiiEo9jrWNlLdI9HwB" {
+	if got := checkoutForm.Get("line_items[0][price]"); got != "price_test" {
 		t.Fatalf("checkout price = %q", got)
 	}
 	if got := checkoutForm.Get("success_url"); got != "https://passage.test/account?billing=success" {
@@ -481,8 +483,11 @@ func TestBillingPortalCreatesStripePortalSession(t *testing.T) {
 		billing: billing.NewService(billingStore, routeBillingConfig()),
 		stripe:  billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
 		billingConfig: config.BillingConfig{
-			StripeSecretKey: "sk_test_123",
-			AppBaseURL:      "https://passage.test",
+			StripeBillingEnabled: true,
+			StripeSecretKey:      "sk_test_123",
+			StripeMonthlyPrice:   "price_test",
+			StripeWebhookSecret:  "whsec_test",
+			AppBaseURL:           "https://passage.test",
 		},
 	}
 
@@ -509,7 +514,7 @@ func TestBillingEndpointsRequireSession(t *testing.T) {
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(newRouteBillingStore(), routeBillingConfig()),
 		stripe:        billing.NewStripeClient("sk_test_123", "https://stripe.test", nil),
-		billingConfig: config.BillingConfig{StripeSecretKey: "sk_test_123", StripeMonthlyPrice: "price_test"},
+		billingConfig: routeStripeBillingConfig(),
 	}
 
 	rec := httptest.NewRecorder()
@@ -521,6 +526,29 @@ func TestBillingEndpointsRequireSession(t *testing.T) {
 	}
 }
 
+func TestStripeBillingEndpointsReturnUnavailableWhenDisabled(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	app := &App{
+		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:    auth.NewService(authStore, "test-secret", false),
+		billing: billing.NewService(newRouteBillingStore(), routeBillingConfig()),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/checkout", nil)
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Stripe billing is disabled") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
 func TestStripeWebhookUpdatesSubscriptionEntitlement(t *testing.T) {
 	authStore := newRouteAuthStore()
 	billingStore := newRouteBillingStore()
@@ -529,7 +557,7 @@ func TestStripeWebhookUpdatesSubscriptionEntitlement(t *testing.T) {
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(authStore, "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
-		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+		billingConfig: routeStripeBillingConfig(),
 	}
 	now := time.Now().UTC()
 	body := []byte(`{
@@ -579,7 +607,7 @@ func TestStripeCheckoutWebhookDoesNotOverwriteSubscriptionState(t *testing.T) {
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
-		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+		billingConfig: routeStripeBillingConfig(),
 	}
 	now := time.Now().UTC()
 	body := []byte(`{
@@ -623,7 +651,7 @@ func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
-		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+		billingConfig: routeStripeBillingConfig(),
 	}
 	now := time.Now().UTC()
 	body := []byte(`{
@@ -660,7 +688,7 @@ func TestStripeWebhookReadsCurrentStripeSubscriptionShape(t *testing.T) {
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
-		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+		billingConfig: routeStripeBillingConfig(),
 	}
 	now := time.Now().UTC()
 	periodEnd := now.Add(30 * 24 * time.Hour).Unix()
@@ -706,7 +734,7 @@ func TestStripeWebhookRejectsInvalidSignatureWithoutStateChange(t *testing.T) {
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
-		billingConfig: config.BillingConfig{StripeWebhookSecret: "whsec_test"},
+		billingConfig: routeStripeBillingConfig(),
 	}
 	body := []byte(`{"id":"evt_bad","type":"customer.subscription.updated","created":1,"data":{"object":{"id":"sub_test","customer":"cus_test","status":"active"}}}`)
 
@@ -929,6 +957,16 @@ func routeBillingConfig() config.BillingConfig {
 		ProMaxSavedDocs:  1000,
 		OwnerEmails:      []string{"owain@owainlewis.com"},
 	}
+}
+
+func routeStripeBillingConfig() config.BillingConfig {
+	cfg := routeBillingConfig()
+	cfg.StripeBillingEnabled = true
+	cfg.StripeSecretKey = "sk_test_123"
+	cfg.StripeMonthlyPrice = "price_test"
+	cfg.StripeWebhookSecret = "whsec_test"
+	cfg.AppBaseURL = "https://passage.test"
+	return cfg
 }
 
 func (s *routeBillingStore) FindUserByEmail(ctx context.Context, email string) (auth.User, error) {
