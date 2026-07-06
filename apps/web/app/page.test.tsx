@@ -316,6 +316,28 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
   });
 
+  it("filters the document list with one selected tag", async () => {
+    stubSignedInFetch([
+      { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
+      { id: "doc-scripts", body: "---\ntags: [scripts]\n---\n\n# Video script\n\nOpening line." }
+    ]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Agent notes/ });
+
+    const scriptsTag = screen.getByRole("button", { name: "scripts" });
+    fireEvent.click(scriptsTag);
+
+    expect(scriptsTag).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
+
+    fireEvent.click(scriptsTag);
+
+    expect(scriptsTag).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
+  });
+
   it("saves lowercase document tags and rejects invalid tags", async () => {
     await renderWrite();
     await screen.findByText("Saved");

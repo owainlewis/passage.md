@@ -437,6 +437,74 @@ button {
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
+.tagFilter {
+  min-width: 268px;
+  padding: 0 10px 10px;
+}
+
+.tagFilterHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 7px;
+}
+
+.tagFilterHead span {
+  color: var(--faint);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.tagFilterClear {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.tagFilterClear:hover,
+.tagFilterClear:focus-visible {
+  color: var(--ink);
+}
+
+.tagFilterList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tagFilterChip {
+  min-height: 28px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tagFilterChip:hover,
+.tagFilterChip:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--hairline));
+  color: var(--ink);
+}
+
+.tagFilterChip.active {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--hairline));
+  background: var(--accent-tint);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
 .docListEmpty {
   margin: 8px 12px;
   font-size: 0.8rem;

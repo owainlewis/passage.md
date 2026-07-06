@@ -202,6 +202,7 @@ export default function Editor() {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [selectedTag, setSelectedTag] = useState("");
   const [tagDraft, setTagDraft] = useState<{ docId: string; value: string }>({ docId: "", value: "" });
   const [tagError, setTagError] = useState<{ docId: string; message: string }>({ docId: "", message: "" });
   const [theme, setTheme] = useState<Theme>("light");
@@ -397,6 +398,7 @@ export default function Editor() {
       updateEditorURL(doc, "push");
       setMode("edit");
       setFilter("");
+      setSelectedTag("");
       setSaveState("saved");
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (err) {
@@ -541,17 +543,20 @@ export default function Editor() {
 
   const words = wordCount(active.body);
   const title = titleOf(active.body);
+  const sidebarTags = Array.from(new Set(docs.flatMap((doc) => parseTags(doc.body)))).sort();
 
   // Naive in-memory search over title, body, and tags, with pinned docs floated up.
   // Array.sort is stable, so unpinned docs keep their existing order.
   const query = filter.trim().toLowerCase();
   const visibleDocs = docs
     .filter((d) => {
+      const tags = parseTags(d.body);
+      if (selectedTag && !tags.includes(selectedTag)) return false;
       if (!query) return true;
       return (
         titleOf(d.body).toLowerCase().includes(query) ||
         bodyWithoutFrontmatter(d.body).toLowerCase().includes(query) ||
-        parseTags(d.body).some((tag) => tag.includes(query))
+        tags.some((tag) => tag.includes(query))
       );
     })
     .slice()
@@ -579,6 +584,34 @@ export default function Editor() {
             />
           </div>
         </div>
+        {sidebarTags.length > 0 && (
+          <div className="tagFilter" aria-label="Filter by tag">
+            <div className="tagFilterHead">
+              <span>Tags</span>
+              {selectedTag && (
+                <button type="button" className="tagFilterClear" onClick={() => setSelectedTag("")}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="tagFilterList">
+              {sidebarTags.map((tag) => {
+                const activeTag = selectedTag === tag;
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    className={`tagFilterChip ${activeTag ? "active" : ""}`}
+                    aria-pressed={activeTag}
+                    onClick={() => setSelectedTag((current) => (current === tag ? "" : tag))}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="docListLabel">
           <span>Documents</span>
           <span className="docCount">{docs.length}</span>
@@ -628,7 +661,7 @@ export default function Editor() {
         <div className="sidebarFoot">
           <div className="tagEditor">
             <label className="tagField">
-              <span>Tags</span>
+              <span>Doc tags</span>
               <input
                 className="tagInput"
                 type="text"
