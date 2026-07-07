@@ -413,6 +413,7 @@ describe("Write (editor)", () => {
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
     await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("link", { name: "Open public document" })).toHaveAttribute("href", "/d/public-2");
   });
 
   it("blocks free users at the saved document limit", async () => {

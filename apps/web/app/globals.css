@@ -678,6 +678,10 @@ button {
   background: var(--hover);
 }
 
+.publicDocLink {
+  text-decoration: none;
+}
+
 .shareToggle[aria-pressed="true"] {
   background: var(--accent-tint);
   color: var(--accent);
