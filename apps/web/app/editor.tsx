@@ -308,6 +308,7 @@ export default function Editor() {
   const tagDraftValue = tagDraft.docId === active.id ? tagDraft.value : activeTags.join(", ");
   const tagErrorMessage = tagError.docId === active.id ? tagError.message : "";
   const activeShared = isShared(active);
+  const publicDocPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
   const shareButtonLabel =
     shareState === "toolong"
       ? "Too long"
@@ -753,6 +754,17 @@ export default function Editor() {
             >
               {shareButtonLabel}
             </button>
+            {publicDocPath && (
+              <Link
+                className="textButton publicDocLink"
+                href={publicDocPath}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open public document"
+              >
+                View
+              </Link>
+            )}
             <button type="button" className="textButton" onClick={exportDoc}>
               Export
             </button>
