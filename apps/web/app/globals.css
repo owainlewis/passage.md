@@ -437,7 +437,8 @@ button {
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
-.tagFilter {
+.tagFilter,
+.folderFilter {
   min-width: 268px;
   padding: 0 10px 10px;
 }
@@ -470,6 +471,106 @@ button {
 .tagFilterClear:hover,
 .tagFilterClear:focus-visible {
   color: var(--ink);
+}
+
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.folderRow {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px 0 0;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.folderRow:hover,
+.folderRow:has(:focus-visible) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.folderRow.active {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.folderRow.disabled {
+  color: var(--faint);
+}
+
+.folderRow.disabled:hover {
+  background: transparent;
+  color: var(--faint);
+}
+
+.folderRowSelect {
+  min-width: 0;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 6px 4px 6px 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folderRowSelect:disabled {
+  cursor: default;
+}
+
+.folderRowIcon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.folderRowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderRowCount {
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--faint);
+  padding: 0 6px;
+  font-size: 0.6875rem;
+  font-weight: 650;
+}
+
+.folderRow.active .folderRowCount {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--hairline));
+  color: color-mix(in srgb, var(--accent) 72%, var(--muted));
 }
 
 .tagFilterList {

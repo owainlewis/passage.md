@@ -65,3 +65,15 @@ describe("tags", () => {
     expect(bodyWithoutFrontmatter(body)).toBe("# Launch note\n\nBody");
   });
 });
+
+describe("legacy folder frontmatter", () => {
+  it("removes folder metadata when tags are saved", () => {
+    const body = bodyWithTags("---\nfolder: scripts\n---\n\n# Launch note\n\nBody", ["notes"]);
+
+    expect(body).toBe("---\ntags: [notes]\n---\n\n# Launch note\n\nBody");
+    expect(titleOf(body)).toBe("Launch note");
+    expect(snippetOf(body)).toBe("Body");
+    expect(wordCount(body)).toBe(4);
+    expect(bodyWithoutFrontmatter(body)).toBe("# Launch note\n\nBody");
+  });
+});

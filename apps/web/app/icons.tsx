@@ -32,6 +32,19 @@ export function DocIcon() {
   );
 }
 
+export function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+      <path
+        d="M3.75 6.75a1.5 1.5 0 0 1 1.5-1.5h4.45l1.65 2h7.4a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V6.75Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
