@@ -251,6 +251,47 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	assertPublicSecurityHeaders(t, raw)
 }
 
+func TestPublicRendersMermaidBlocks(t *testing.T) {
+	publicID := "abcdefghijklmnopqrstuv"
+	store := &fakeStore{
+		publicDoc: Document{
+			ID:       "11111111-1111-1111-1111-111111111111",
+			PublicID: publicID,
+			Title:    "Diagram",
+			Body: "# Diagram\n\n```mermaid\nflowchart LR\n" +
+				"    %% <script>alert(1)</script>\n" +
+				"    A[\"Start\"] --> B[\"Done\"]\n" +
+				"```\n\n```go\nfmt.Println(\"still code\")\n```",
+		},
+	}
+	handler := NewHandler(store)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+publicID, nil)
+	req.SetPathValue("token", publicID)
+	handler.Public(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("html status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `<figure class="mermaidFigure"><div class="mermaid">flowchart LR`) {
+		t.Fatalf("html does not contain renderable mermaid block: %s", body)
+	}
+	if strings.Contains(body, `<pre><code class="language-mermaid"`) {
+		t.Fatalf("html still contains unrendered mermaid code block: %s", body)
+	}
+	if !strings.Contains(body, `cdn.jsdelivr.net/npm/mermaid@11.16.0`) {
+		t.Fatalf("html does not load mermaid: %s", body)
+	}
+	if strings.Contains(body, `<script>alert(1)</script>`) {
+		t.Fatalf("html contains unescaped mermaid content: %s", body)
+	}
+	if !strings.Contains(body, `<pre><code class="language-go">fmt.Println(&#34;still code&#34;)`) {
+		t.Fatalf("html did not preserve normal code block: %s", body)
+	}
+}
+
 type fakeStore struct {
 	ownerID    string
 	body       string
