@@ -441,9 +441,17 @@ export default function Editor() {
     setDocs((prev) => {
       const next = prev.filter((d) => d.id !== id);
       const remaining = next.length > 0 ? next : seedDocs();
+      const selectedFolderHasDocs = remaining.some((remainingDoc) => docMatchesFolder(remainingDoc, selectedFolder));
+      const replacement =
+        remaining.find((remainingDoc) => remainingDoc.id === activeId) ??
+        remaining.find((remainingDoc) => docMatchesFolder(remainingDoc, selectedFolder)) ??
+        remaining[0];
       if (id === activeId) {
-        setActiveId(remaining[0].id);
-        updateEditorURL(remaining[0], "replace");
+        setActiveId(replacement.id);
+        updateEditorURL(replacement, "replace");
+      }
+      if (!selectedFolderHasDocs) {
+        setSelectedFolder(isShared(replacement) ? SHARED_FOLDER : PRIVATE_FOLDER);
       }
       return remaining;
     });

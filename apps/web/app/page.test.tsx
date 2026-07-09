@@ -417,6 +417,24 @@ describe("Write (editor)", () => {
     expect(screen.queryByText("No documents match.")).not.toBeInTheDocument();
   });
 
+  it("moves to Shared after deleting the last private document", async () => {
+    stubSignedInFetch([
+      { id: "doc-private", body: "# Private note\n\nDraft." },
+      { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
+    ]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Private note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
+    expect(screen.getByRole("button", { name: "Open Private folder" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
+  });
+
   it("orders documents by latest with pinned documents first", async () => {
     stubSignedInFetch([
       {
