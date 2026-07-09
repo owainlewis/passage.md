@@ -2,17 +2,23 @@ package documents
 
 import (
 	"bytes"
-	"html/template"
+	stdhtml "html"
+	htmltemplate "html/template"
+	"strings"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/util"
 )
 
 var publicMarkdown = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithRendererOptions(renderer.WithNodeRenderers(util.Prioritized(mermaidCodeBlockRenderer{}, 500))),
 )
 
-var publicTemplate = template.Must(template.New("public").Parse(`<!doctype html>
+var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -73,6 +79,17 @@ var publicTemplate = template.Must(template.New("public").Parse(`<!doctype html>
       padding: 0;
       font-size: 0.88rem;
     }
+    .mermaidFigure {
+      margin: 1.8em 0;
+      text-align: center;
+    }
+    .mermaidFigure svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .mermaid {
+      text-align: center;
+    }
     blockquote {
       border-left: 3px solid var(--hairline);
       padding-left: 18px;
@@ -92,6 +109,17 @@ var publicTemplate = template.Must(template.New("public").Parse(`<!doctype html>
 </head>
 <body>
   <main>{{ .Body }}</main>
+  {{ if .HasMermaid }}
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "neutral"
+    });
+    await mermaid.run({ querySelector: ".mermaid" });
+  </script>
+  {{ end }}
 </body>
 </html>`))
 
@@ -102,11 +130,57 @@ func renderPublicHTML(doc Document) ([]byte, error) {
 	}
 	var page bytes.Buffer
 	err := publicTemplate.Execute(&page, struct {
-		Title string
-		Body  template.HTML
+		Title      string
+		Body       htmltemplate.HTML
+		HasMermaid bool
 	}{
-		Title: doc.Title,
-		Body:  template.HTML(rendered.String()),
+		Title:      doc.Title,
+		Body:       htmltemplate.HTML(rendered.String()),
+		HasMermaid: bytes.Contains(rendered.Bytes(), []byte(`class="mermaid"`)),
 	})
 	return page.Bytes(), err
+}
+
+type mermaidCodeBlockRenderer struct{}
+
+func (r mermaidCodeBlockRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
+}
+
+func (r mermaidCodeBlockRenderer) renderFencedCodeBlock(
+	w util.BufWriter, source []byte, node ast.Node, entering bool,
+) (ast.WalkStatus, error) {
+	n := node.(*ast.FencedCodeBlock)
+	language := string(n.Language(source))
+	if strings.EqualFold(strings.TrimSpace(language), "mermaid") {
+		if entering {
+			_, _ = w.WriteString(`<figure class="mermaidFigure"><div class="mermaid">`)
+			writeEscapedCodeBlockLines(w, source, n)
+		} else {
+			_, _ = w.WriteString("</div></figure>\n")
+		}
+		return ast.WalkContinue, nil
+	}
+
+	if entering {
+		_, _ = w.WriteString("<pre><code")
+		if language != "" {
+			_, _ = w.WriteString(` class="language-`)
+			_, _ = w.WriteString(stdhtml.EscapeString(language))
+			_, _ = w.WriteString(`"`)
+		}
+		_ = w.WriteByte('>')
+		writeEscapedCodeBlockLines(w, source, n)
+	} else {
+		_, _ = w.WriteString("</code></pre>\n")
+	}
+	return ast.WalkContinue, nil
+}
+
+func writeEscapedCodeBlockLines(w util.BufWriter, source []byte, node ast.Node) {
+	lines := node.Lines()
+	for i := range lines.Len() {
+		segment := lines.At(i)
+		_, _ = w.WriteString(stdhtml.EscapeString(string(segment.Value(source))))
+	}
 }
