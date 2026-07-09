@@ -437,7 +437,6 @@ button {
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
-.tagFilter,
 .folderFilter {
   min-width: 268px;
   padding: 0 10px 10px;
@@ -573,71 +572,28 @@ button {
   color: color-mix(in srgb, var(--accent) 72%, var(--muted));
 }
 
-.tagFilterList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tagFilterChip {
-  min-height: 28px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
-  padding: 4px 10px;
-  font-family: var(--sans);
-  font-size: 0.78rem;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
-}
-
-.tagFilterChip:hover,
-.tagFilterChip:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--hairline));
-  color: var(--ink);
-}
-
-.tagFilterChip.active {
-  border-color: color-mix(in srgb, var(--accent) 60%, var(--hairline));
-  background: var(--accent-tint);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
-}
-
-.docListEmpty {
-  margin: 8px 12px;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.tagEditor {
+.tagPanel {
   min-width: 0;
-  padding: 0;
+  display: grid;
+  gap: 7px;
 }
 
-.tagField {
+.tagFilterField {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  align-items: center;
 }
 
-.tagField span {
-  padding: 0 2px;
-  color: var(--faint);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+.tagFilterField:focus-within .filterIcon {
+  color: var(--muted);
 }
 
-.tagInput {
+.tagFilterInput {
   width: 100%;
   border: 1px solid var(--hairline);
   background: var(--bg);
   border-radius: 9px;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 31px;
   font-family: var(--sans);
   font-size: 0.8125rem;
   color: var(--ink);
@@ -645,24 +601,19 @@ button {
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.tagInput::placeholder {
+.tagFilterInput::placeholder {
   color: var(--faint);
 }
 
-.tagInput:focus {
+.tagFilterInput:focus {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--hairline));
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
-.tagInput[aria-invalid="true"] {
-  border-color: #b65d46;
-}
-
-.tagError {
-  margin: 6px 2px 0;
-  color: #9a4a36;
-  font-size: 0.72rem;
-  line-height: 1.35;
+.docListEmpty {
+  margin: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
 /* -------------------------------------------------------------------- main */

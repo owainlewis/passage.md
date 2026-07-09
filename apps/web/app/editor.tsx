@@ -5,9 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useAuth } from "./auth";
 import { Brand } from "./brand";
 import {
-  bodyWithTags,
   bodyWithoutFrontmatter,
-  parseTagInput,
   parseTags,
   snippetOf,
   titleOf,
@@ -227,9 +225,7 @@ export default function Editor() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [selectedFolder, setSelectedFolder] = useState(PRIVATE_FOLDER);
-  const [selectedTag, setSelectedTag] = useState("");
-  const [tagDraft, setTagDraft] = useState<{ docId: string; value: string }>({ docId: "", value: "" });
-  const [tagError, setTagError] = useState<{ docId: string; message: string }>({ docId: "", message: "" });
+  const [tagFilter, setTagFilter] = useState("");
   const [theme, setTheme] = useState<Theme>("light");
   const [authError, setAuthError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("loading");
@@ -331,9 +327,6 @@ export default function Editor() {
   }, [darkActive]);
 
   const active = docs.find((d) => d.id === activeId) ?? docs[0];
-  const activeTags = parseTags(active.body);
-  const tagDraftValue = tagDraft.docId === active.id ? tagDraft.value : activeTags.join(", ");
-  const tagErrorMessage = tagError.docId === active.id ? tagError.message : "";
   const activeShared = isShared(active);
   const publicDocPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
   const shareButtonLabel =
@@ -400,17 +393,6 @@ export default function Editor() {
     updateEditorURL(doc, "push");
   }
 
-  function saveTags(input = tagDraftValue) {
-    const parsed = parseTagInput(input);
-    if (parsed.invalid.length > 0) {
-      setTagError({ docId: active.id, message: "Use lowercase a-z and hyphen only." });
-      return;
-    }
-    setTagError({ docId: active.id, message: "" });
-    setTagDraft({ docId: active.id, value: parsed.tags.join(", ") });
-    updateBody(bodyWithTags(active.body, parsed.tags));
-  }
-
   async function createDoc() {
     if (docs.length >= entitlements.maxSavedDocs) {
       const prefix = entitlements.plan === "free" ? "Free includes" : "Your plan includes";
@@ -427,7 +409,7 @@ export default function Editor() {
       setMode("edit");
       setFilter("");
       setSelectedFolder(PRIVATE_FOLDER);
-      setSelectedTag("");
+      setTagFilter("");
       setSaveState("saved");
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (err) {
@@ -582,19 +564,19 @@ export default function Editor() {
     setMenuOpen(false);
   }
 
+  function docMatchesFolder(doc: Doc, folderId: string) {
+    if (folderId === SHARED_FOLDER) return isShared(doc);
+    return !isShared(doc);
+  }
+
   const words = wordCount(active.body);
   const title = titleOf(active.body);
-  const sidebarTags = Array.from(new Set(docs.flatMap((doc) => parseTags(doc.body)))).sort();
+  const tagFilterQuery = tagFilter.trim().toLowerCase();
   const showSaveState = saveState !== "saved";
   const folderRows = [
     { id: PRIVATE_FOLDER, label: "Private", count: docs.filter((doc) => !isShared(doc)).length },
     { id: SHARED_FOLDER, label: "Shared", count: docs.filter(isShared).length }
   ];
-
-  function docMatchesFolder(doc: Doc, folderId: string) {
-    if (folderId === SHARED_FOLDER) return isShared(doc);
-    return !isShared(doc);
-  }
 
   // Naive in-memory search over title, body, and tags.
   const query = filter.trim().toLowerCase();
@@ -611,7 +593,7 @@ export default function Editor() {
     .filter(({ doc }) => {
       const tags = parseTags(doc.body);
       if (!docMatchesFolder(doc, selectedFolder)) return false;
-      if (selectedTag && !tags.includes(selectedTag)) return false;
+      if (tagFilterQuery && !tags.some((tag) => tag.includes(tagFilterQuery))) return false;
       if (!query) return true;
       return (
         titleOf(doc.body).toLowerCase().includes(query) ||
@@ -623,6 +605,9 @@ export default function Editor() {
     .map(({ doc }) => doc);
 
   function selectFolder(folderId: string) {
+    if (folderId !== selectedFolder) {
+      clearTagFilter();
+    }
     if (docMatchesFolder(active, folderId)) {
       setSelectedFolder(folderId);
       return;
@@ -633,6 +618,10 @@ export default function Editor() {
     if (!nextDoc) return;
     setSelectedFolder(folderId);
     selectDoc(nextDoc);
+  }
+
+  function clearTagFilter() {
+    setTagFilter("");
   }
 
   if (saveState === "loading") {
@@ -695,34 +684,6 @@ export default function Editor() {
             })}
           </div>
         </div>
-        {sidebarTags.length > 0 && (
-          <div className="tagFilter" aria-label="Filter by tag">
-            <div className="tagFilterHead">
-              <span>Tags</span>
-              {selectedTag && (
-                <button type="button" className="tagFilterClear" onClick={() => setSelectedTag("")}>
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="tagFilterList">
-              {sidebarTags.map((tag) => {
-                const activeTag = selectedTag === tag;
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={`tagFilterChip ${activeTag ? "active" : ""}`}
-                    aria-pressed={activeTag}
-                    onClick={() => setSelectedTag((current) => (current === tag ? "" : tag))}
-                  >
-                    {tag}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
         <div className="docListLabel">
           <span>Documents</span>
           <span className="docCount">{visibleDocs.length}</span>
@@ -768,27 +729,34 @@ export default function Editor() {
           {visibleDocs.length === 0 && <p className="docListEmpty">No documents match.</p>}
         </nav>
         <div className="sidebarFoot">
-          <div className="tagEditor">
-            <label className="tagField">
-              <span>Doc tags</span>
+          <div className="tagPanel" aria-label="Filter by tag">
+            <div className="tagFilterHead">
+              <span>Tags</span>
+              {tagFilterQuery && (
+                <button type="button" className="tagFilterClear" onClick={clearTagFilter}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="tagFilterField">
+              <span className="filterIcon">
+                <SearchIcon />
+              </span>
               <input
-                className="tagInput"
+                className="tagFilterInput"
                 type="text"
-                name="document-tags"
-                placeholder="notes, scripts"
-                aria-label="Document tags"
-                aria-invalid={tagErrorMessage ? "true" : "false"}
-                value={tagDraftValue}
-                onChange={(e) => setTagDraft({ docId: active.id, value: e.target.value })}
-                onBlur={(e) => saveTags(e.currentTarget.value)}
+                name="filter-tags"
+                placeholder="Filter by tag"
+                aria-label="Filter by tag"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.currentTarget.blur();
+                  if (e.key === "Escape") {
+                    clearTagFilter();
                   }
                 }}
               />
-            </label>
-            {tagErrorMessage && <p className="tagError">{tagErrorMessage}</p>}
+            </div>
           </div>
           <div className="themeToggle">
             <span className={theme === "light" ? "themeLabel active" : "themeLabel"}>Light</span>
