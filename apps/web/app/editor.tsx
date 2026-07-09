@@ -6,7 +6,19 @@ import { useAuth } from "./auth";
 import { Brand } from "./brand";
 import { bodyWithTags, bodyWithoutFrontmatter, parseTagInput, parseTags, snippetOf, titleOf, wordCount } from "./doc-utils";
 import { useEntitlements } from "./entitlements";
-import { DocIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, UserIcon } from "./icons";
+import {
+  DocIcon,
+  DownloadIcon,
+  EyeIcon,
+  PencilIcon,
+  PinIcon,
+  PlusIcon,
+  SaveStatusIcon,
+  SearchIcon,
+  ShareIcon,
+  SidebarIcon,
+  UserIcon
+} from "./icons";
 import { MarkdownView } from "./markdown-view";
 
 type Theme = "light" | "dark";
@@ -545,6 +557,7 @@ export default function Editor() {
   const words = wordCount(active.body);
   const title = titleOf(active.body);
   const sidebarTags = Array.from(new Set(docs.flatMap((doc) => parseTags(doc.body)))).sort();
+  const showSaveState = saveState !== "saved";
 
   // Naive in-memory search over title, body, and tags, with pinned docs floated up.
   // Array.sort is stable, so unpinned docs keep their existing order.
@@ -621,11 +634,8 @@ export default function Editor() {
           {visibleDocs.map((doc) => {
             const isActive = doc.id === active.id;
             return (
-              <div
-                key={doc.id}
-                className={`docRow ${isActive ? "active" : ""} ${doc.pinned ? "pinned" : ""}`}
-              >
-                  <button type="button" className="docRowSelect" onClick={() => selectDoc(doc)}>
+              <div key={doc.id} className={`docRow ${isActive ? "active" : ""} ${doc.pinned ? "pinned" : ""}`}>
+                <button type="button" className="docRowSelect" onClick={() => selectDoc(doc)}>
                   <span className="docRowIcon">
                     <DocIcon />
                   </span>
@@ -721,53 +731,6 @@ export default function Editor() {
           </h1>
 
           <div className="topCluster end">
-            <div className="modeToggle" role="group" aria-label="View mode">
-              <button
-                type="button"
-                className={mode === "edit" ? "on" : ""}
-                aria-pressed={mode === "edit"}
-                onClick={() => setMode("edit")}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className={mode === "preview" ? "on" : ""}
-                aria-pressed={mode === "preview"}
-                onClick={() => setMode("preview")}
-              >
-                Preview
-              </button>
-            </div>
-            <button
-              type="button"
-              className="textButton shareToggle"
-              aria-pressed={activeShared}
-              onClick={() => void (activeShared ? unshareDoc() : shareDoc())}
-              title={
-                shareState === "toolong"
-                  ? "This document is too long to share as a link"
-                  : activeShared
-                    ? "Click to unshare"
-                    : undefined
-              }
-            >
-              {shareButtonLabel}
-            </button>
-            {publicDocPath && (
-              <Link
-                className="textButton publicDocLink"
-                href={publicDocPath}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Open public document"
-              >
-                View
-              </Link>
-            )}
-            <button type="button" className="textButton" onClick={exportDoc}>
-              Export
-            </button>
             <div className="userMenuWrap">
               <button
                 type="button"
@@ -826,12 +789,74 @@ export default function Editor() {
         </section>
 
         <footer className="statusBar" aria-label="Editor status">
-          <span className="statusMode">{mode === "edit" ? "Editing" : "Preview"}</span>
-          <span className="statusWords">{words === 1 ? "1 word" : `${words} words`}</span>
-          <span className="statusSave">
-            <span className="saveDot" aria-hidden="true" />
-            {saveLabel(saveState)}
-          </span>
+          <div className="statusDock">
+            <div className="dockGroup dockGroupMode">
+              <div className="modeToggle" role="group" aria-label="View mode">
+                <button
+                  type="button"
+                  className={mode === "edit" ? "on" : ""}
+                  aria-pressed={mode === "edit"}
+                  onClick={() => setMode("edit")}
+                >
+                  <PencilIcon />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  className={mode === "preview" ? "on" : ""}
+                  aria-pressed={mode === "preview"}
+                  onClick={() => setMode("preview")}
+                >
+                  <EyeIcon />
+                  <span>Preview</span>
+                </button>
+              </div>
+            </div>
+            <div className="dockGroup dockGroupMeta">
+              {showSaveState && (
+                <span className="statusPill statusSave">
+                  <SaveStatusIcon />
+                  {saveLabel(saveState)}
+                </span>
+              )}
+              <span className="statusPill">{words === 1 ? "1 word" : `${words} words`}</span>
+              {activeShared && <span className="statusPill accentPill">Public link</span>}
+            </div>
+            <div className="dockGroup dockGroupActions">
+              <button
+                type="button"
+                className="dockButton shareToggle"
+                aria-pressed={activeShared}
+                onClick={() => void (activeShared ? unshareDoc() : shareDoc())}
+                title={
+                  shareState === "toolong"
+                    ? "This document is too long to share as a link"
+                    : activeShared
+                      ? "Click to unshare"
+                      : undefined
+                }
+              >
+                <ShareIcon />
+                <span>{shareButtonLabel}</span>
+              </button>
+              {publicDocPath && (
+                <Link
+                  className="dockButton publicDocLink"
+                  href={publicDocPath}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Open public document"
+                >
+                  <EyeIcon />
+                  <span>View</span>
+                </Link>
+              )}
+              <button type="button" className="dockButton" onClick={exportDoc}>
+                <DownloadIcon />
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
         </footer>
       </div>
     </div>

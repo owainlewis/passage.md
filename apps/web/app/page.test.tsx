@@ -212,11 +212,12 @@ describe("Account", () => {
 });
 
 describe("Write (editor)", () => {
-  it("renders the writing shell in preview with a server save state", async () => {
+  it("hides the save status once server state is current", async () => {
     await renderWrite();
 
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
-    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Loading saved docs")).not.toBeInTheDocument());
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
   });
 
   it("seeds a starter document titled from its first heading", async () => {
@@ -340,7 +341,7 @@ describe("Write (editor)", () => {
 
   it("saves lowercase document tags and rejects invalid tags", async () => {
     await renderWrite();
-    await screen.findByText("Saved");
+    await screen.findByRole("button", { name: /Markdown for agents and humans/ });
 
     const tags = screen.getByRole("textbox", { name: "Document tags" });
     fireEvent.change(tags, { target: { value: "notes, scripts" } });
@@ -389,7 +390,8 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
     getItem.mockRestore();
   });
 
@@ -635,7 +637,8 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Loading saved docs")).not.toBeInTheDocument());
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs", { credentials: "include" });
   });
 

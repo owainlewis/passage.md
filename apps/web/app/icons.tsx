@@ -66,3 +66,50 @@ export function UserIcon() {
     </svg>
   );
 }
+
+export function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <path d="M4.5 19.5 6 14l9.9-9.9a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8L10 18l-5.5 1.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="m14.5 5.5 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <path d="M3.8 12s3-5.5 8.2-5.5 8.2 5.5 8.2 5.5-3 5.5-8.2 5.5S3.8 12 3.8 12Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.4" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+export function ShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <circle cx="18" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="6" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="18" cy="18.5" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="m8.4 10.9 7.2-4M8.4 13.1l7.2 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <path d="M12 4.5v9.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="m8.4 10.6 3.6 3.6 3.6-3.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 17.5v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function SaveStatusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+      <path d="M5.2 12.5 9.3 16.6 18.8 7.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
