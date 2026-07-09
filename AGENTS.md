@@ -108,6 +108,24 @@ When picking work:
 - Move only the active issue to `In Progress`.
 - Keep finished evidence in the issue or PR, not in a local roadmap file.
 
+## Git Workflow
+
+Every branch must be tied to a GitHub issue number.
+
+Branch name format: `codex/issue-<number>-<short-slug>`.
+
+Example: `codex/issue-87-mermaid-diagrams`.
+
+If no issue exists yet for the work, create one first with `gh issue create`, then branch from its number.
+
+Never leave a topic branch without an issue number, even for small fixes.
+
+Open a pull request for every change headed to `main`.
+
+Do not merge locally and push straight to `main`.
+
+Reference the closing issue in the PR body, for example `Closes #87`.
+
 ## Writing Style
 
 Be concise, direct, and useful.
