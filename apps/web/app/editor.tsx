@@ -4,9 +4,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { Brand } from "./brand";
-import { bodyWithTags, bodyWithoutFrontmatter, parseTagInput, parseTags, snippetOf, titleOf, wordCount } from "./doc-utils";
+import {
+  bodyWithTags,
+  bodyWithoutFrontmatter,
+  parseTagInput,
+  parseTags,
+  snippetOf,
+  titleOf,
+  wordCount
+} from "./doc-utils";
 import { useEntitlements } from "./entitlements";
-import { DocIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, UserIcon } from "./icons";
+import { DocIcon, FolderIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, UserIcon } from "./icons";
 import { MarkdownView } from "./markdown-view";
 
 type Theme = "light" | "dark";
@@ -29,6 +37,7 @@ type Doc = {
   pinned?: boolean;
   shareToken?: string | null;
   sharedAt?: string | null;
+  updatedAt?: string;
 };
 
 function isShared(doc: Doc) {
@@ -38,6 +47,8 @@ function isShared(doc: Doc) {
 type Mode = "edit" | "preview";
 type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
 type SaveState = "loading" | "saving" | "saved" | "error";
+const PRIVATE_FOLDER = "private";
+const SHARED_FOLDER = "shared";
 
 const welcomeBody = `# Markdown for agents and humans
 
@@ -202,6 +213,7 @@ export default function Editor() {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState(PRIVATE_FOLDER);
   const [selectedTag, setSelectedTag] = useState("");
   const [tagDraft, setTagDraft] = useState<{ docId: string; value: string }>({ docId: "", value: "" });
   const [tagError, setTagError] = useState<{ docId: string; message: string }>({ docId: "", message: "" });
@@ -243,7 +255,9 @@ export default function Editor() {
         if (cancelled) return;
         const urlDoc = savedDocs.find((doc) => doc.publicId === initialURLPublicId.current);
         setDocs(savedDocs);
-        setActiveId((urlDoc ?? savedDocs[0]).id);
+        const nextActive = urlDoc ?? savedDocs[0];
+        setActiveId(nextActive.id);
+        setSelectedFolder(isShared(nextActive) ? SHARED_FOLDER : PRIVATE_FOLDER);
         setSaveState("saved");
         setPendingSave(null);
       } catch {
@@ -399,6 +413,7 @@ export default function Editor() {
       updateEditorURL(doc, "push");
       setMode("edit");
       setFilter("");
+      setSelectedFolder(PRIVATE_FOLDER);
       setSelectedTag("");
       setSaveState("saved");
       requestAnimationFrame(() => textareaRef.current?.focus());
@@ -468,16 +483,18 @@ export default function Editor() {
       let htmlPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
       if (!htmlPath) {
         const share = await apiShareDoc(active.id);
+        const updatedAt = new Date().toISOString();
         htmlPath = share.htmlPath;
         setDocs((prev) =>
           prev.map((doc) =>
             doc.id === active.id
-              ? { ...doc, publicId: share.publicId ?? doc.publicId, shareToken: share.token, sharedAt: new Date().toISOString() }
+              ? { ...doc, publicId: share.publicId ?? doc.publicId, shareToken: share.token, sharedAt: updatedAt, updatedAt }
               : doc
           )
         );
       }
       await copyURL(new URL(htmlPath, window.location.origin).toString());
+      setSelectedFolder(SHARED_FOLDER);
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {
@@ -507,9 +524,11 @@ export default function Editor() {
     window.clearTimeout(copyTimer.current);
     try {
       await apiUnshareDoc(active.id);
+      const updatedAt = new Date().toISOString();
       setDocs((prev) =>
-        prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null } : doc))
+        prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null, updatedAt } : doc))
       );
+      setSelectedFolder(PRIVATE_FOLDER);
       setShareState("unshared");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {
@@ -545,23 +564,58 @@ export default function Editor() {
   const words = wordCount(active.body);
   const title = titleOf(active.body);
   const sidebarTags = Array.from(new Set(docs.flatMap((doc) => parseTags(doc.body)))).sort();
+  const folderRows = [
+    { id: PRIVATE_FOLDER, label: "Private", count: docs.filter((doc) => !isShared(doc)).length },
+    { id: SHARED_FOLDER, label: "Shared", count: docs.filter(isShared).length }
+  ];
 
-  // Naive in-memory search over title, body, and tags, with pinned docs floated up.
-  // Array.sort is stable, so unpinned docs keep their existing order.
+  function docMatchesFolder(doc: Doc, folderId: string) {
+    if (folderId === SHARED_FOLDER) return isShared(doc);
+    return !isShared(doc);
+  }
+
+  // Naive in-memory search over title, body, and tags.
   const query = filter.trim().toLowerCase();
-  const visibleDocs = docs
-    .filter((d) => {
-      const tags = parseTags(d.body);
+  const indexedDocs = docs.map((doc, index) => ({ doc, index }));
+  const compareDocsBySidebarOrder = (a: (typeof indexedDocs)[number], b: (typeof indexedDocs)[number]) => {
+    const pinned = Number(Boolean(b.doc.pinned)) - Number(Boolean(a.doc.pinned));
+    if (pinned) return pinned;
+    const aUpdated = a.doc.updatedAt ? Date.parse(a.doc.updatedAt) : 0;
+    const bUpdated = b.doc.updatedAt ? Date.parse(b.doc.updatedAt) : 0;
+    if (aUpdated || bUpdated) return bUpdated - aUpdated;
+    return a.index - b.index;
+  };
+  const visibleDocs = indexedDocs
+    .filter(({ doc }) => {
+      const tags = parseTags(doc.body);
+      if (!docMatchesFolder(doc, selectedFolder)) return false;
       if (selectedTag && !tags.includes(selectedTag)) return false;
       if (!query) return true;
       return (
-        titleOf(d.body).toLowerCase().includes(query) ||
-        bodyWithoutFrontmatter(d.body).toLowerCase().includes(query) ||
+        titleOf(doc.body).toLowerCase().includes(query) ||
+        bodyWithoutFrontmatter(doc.body).toLowerCase().includes(query) ||
         tags.some((tag) => tag.includes(query))
       );
     })
-    .slice()
-    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+    .sort(compareDocsBySidebarOrder)
+    .map(({ doc }) => doc);
+
+  function selectFolder(folderId: string) {
+    if (docMatchesFolder(active, folderId)) {
+      setSelectedFolder(folderId);
+      return;
+    }
+    const nextDoc = indexedDocs
+      .filter(({ doc }) => docMatchesFolder(doc, folderId))
+      .sort(compareDocsBySidebarOrder)[0]?.doc;
+    if (!nextDoc) return;
+    setSelectedFolder(folderId);
+    selectDoc(nextDoc);
+  }
+
+  if (saveState === "loading") {
+    return <main className="routeStatus">Loading saved docs</main>;
+  }
 
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
@@ -583,6 +637,40 @@ export default function Editor() {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
+          </div>
+        </div>
+        <div className="folderFilter" aria-label="Folders">
+          <div className="tagFilterHead">
+            <span>Folders</span>
+          </div>
+          <div className="folderList">
+            {folderRows.map((folder) => {
+              const activeFolderFilter = selectedFolder === folder.id;
+              const disabled = folder.count === 0;
+              return (
+                <div
+                  key={folder.id || "all-documents"}
+                  className={`folderRow ${activeFolderFilter ? "active" : ""} ${disabled ? "disabled" : ""}`}
+                >
+                  <button
+                    type="button"
+                    className="folderRowSelect"
+                    disabled={disabled}
+                    aria-current={activeFolderFilter ? "page" : undefined}
+                    aria-label={`Open ${folder.label} folder`}
+                    onClick={() => selectFolder(folder.id)}
+                  >
+                    <span className="folderRowIcon">
+                      <FolderIcon />
+                    </span>
+                    <span className="folderRowName">{folder.label}</span>
+                    <span className="folderRowCount" aria-hidden="true">
+                      {folder.count}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
         {sidebarTags.length > 0 && (
@@ -615,7 +703,7 @@ export default function Editor() {
         )}
         <div className="docListLabel">
           <span>Documents</span>
-          <span className="docCount">{docs.length}</span>
+          <span className="docCount">{visibleDocs.length}</span>
         </div>
         <nav className="docList">
           {visibleDocs.map((doc) => {
@@ -625,7 +713,7 @@ export default function Editor() {
                 key={doc.id}
                 className={`docRow ${isActive ? "active" : ""} ${doc.pinned ? "pinned" : ""}`}
               >
-                  <button type="button" className="docRowSelect" onClick={() => selectDoc(doc)}>
+                <button type="button" className="docRowSelect" onClick={() => selectDoc(doc)}>
                   <span className="docRowIcon">
                     <DocIcon />
                   </span>
