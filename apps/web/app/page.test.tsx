@@ -355,7 +355,7 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
   });
 
-  it("filters the document list with one selected tag", async () => {
+  it("filters the document list by typing in the tag filter", async () => {
     stubSignedInFetch([
       { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
       { id: "doc-scripts", body: "---\ntags: [scripts]\n---\n\n# Video script\n\nOpening line." }
@@ -364,16 +364,15 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Agent notes/ });
 
-    const scriptsTag = screen.getByRole("button", { name: "scripts" });
-    fireEvent.click(scriptsTag);
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter by tag" }), {
+      target: { value: "script" }
+    });
 
-    expect(scriptsTag).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
 
-    fireEvent.click(scriptsTag);
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
-    expect(scriptsTag).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
   });
 
@@ -401,6 +400,28 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Published.").length).toBeGreaterThan(0);
+  });
+
+  it("clears the typed tag filter when changing folders", async () => {
+    stubSignedInFetch([
+      { id: "doc-private", body: "---\ntags: [notes]\n---\n\n# Private note\n\nDraft." },
+      { id: "doc-shared", body: "---\ntags: [published]\n---\n\n# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
+    ]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Private note/ });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter by tag" }), {
+      target: { value: "notes" }
+    });
+
+    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Shared note/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Shared folder" }));
+
+    expect(screen.getByRole("textbox", { name: "Filter by tag" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
   });
 
   it("keeps empty system folders visible but disabled", async () => {
@@ -539,24 +560,12 @@ describe("Write (editor)", () => {
     expect(rows[1]).toContain("Private note");
   });
 
-  it("saves lowercase document tags and rejects invalid tags", async () => {
+  it("keeps the footer tag control filter-only", async () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Markdown for agents and humans/ });
 
-    const tags = screen.getByRole("textbox", { name: "Document tags" });
-    fireEvent.change(tags, { target: { value: "notes, scripts" } });
-    fireEvent.blur(tags);
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
-      target: { value: "scripts" }
-    });
-
-    expect(screen.getByRole("button", { name: /Markdown for agents and humans/ })).toBeInTheDocument();
-
-    fireEvent.change(tags, { target: { value: "Notes, scripts" } });
-    fireEvent.blur(tags);
-
-    expect(await screen.findByText("Use lowercase a-z and hyphen only.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Filter by tag" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Document tags" })).not.toBeInTheDocument();
   });
 
   it("keeps document row actions as native keyboard-reachable buttons", async () => {
