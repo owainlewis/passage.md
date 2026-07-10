@@ -120,13 +120,13 @@ Private or unshared public docs return 404 from public routes.
 Human HTML view:
 
 ```txt
-https://passage.md/d/share_abc123
+https://passage.md/d/abcdefghijklmnopqrstuv
 ```
 
 Raw Markdown view:
 
 ```txt
-https://passage.md/d/share_abc123.md
+https://passage.md/d/abcdefghijklmnopqrstuv.md
 ```
 
 The raw `.md` route is required because agents need stable Markdown context URLs.

@@ -67,7 +67,7 @@ Sharing returns both an HTML page path and a raw Markdown path.
 The raw path uses this shape:
 
 ```text
-/d/<share-token>.md
+/d/<public-id>.md
 ```
 
 Only share a document when that raw URL should be public to anyone who has the link.
