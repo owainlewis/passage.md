@@ -886,7 +886,6 @@ export default function Editor() {
                 </span>
               )}
               <span className="statusPill">{words === 1 ? "1 word" : `${words} words`}</span>
-              {activeShared && <span className="statusPill accentPill">Public link</span>}
             </div>
             <div className="dockGroup dockGroupActions">
               <button
