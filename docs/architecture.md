@@ -74,8 +74,8 @@ DELETE /api/v1/docs/:id/share
 GET    /api/v1/api-tokens
 POST   /api/v1/api-tokens
 DELETE /api/v1/api-tokens/:id
-GET    /d/:token
-GET    /d/:token.md
+GET    /d/:publicId
+GET    /d/:publicId.md
 ```
 
 Stable CLI contract changes are tracked in GitHub Issues.
@@ -125,7 +125,7 @@ Entitlement and billing behavior is server-enforced.
 
 Saved docs are private by default.
 
-Owners can explicitly share saved documents by opaque token URL.
+Owners can explicitly share saved documents by public ID URL.
 
 Shared documents have:
 

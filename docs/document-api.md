@@ -171,9 +171,9 @@ Document objects use this shape:
 ```json
 {
   "id": "11111111-1111-1111-1111-111111111111",
+  "publicId": "abcdefghijklmnopqrstuv",
   "title": "Example",
   "body": "# Example\n\nMarkdown body.",
-  "shareToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "sharedAt": "2026-06-28T12:00:00Z",
   "createdAt": "2026-06-28T12:00:00Z",
   "updatedAt": "2026-06-28T12:00:00Z"
@@ -183,13 +183,18 @@ Document objects use this shape:
 Fields:
 
 - `id`: document UUID.
+- `publicId`: stable public URL identifier.
 - `title`: server-derived title from the Markdown body.
 - `body`: full Markdown body.
-- `shareToken`: optional public share token.
+- `shareToken`: optional legacy public share token.
 - `sharedAt`: optional share creation timestamp.
 - `createdAt`: creation timestamp.
 - `updatedAt`: last update timestamp.
 - `archivedAt`: omitted on active document responses.
+
+New clients should use `publicId` when building public document URLs.
+
+Legacy `shareToken` values may still appear for older shared documents.
 
 `title` is derived from the first non-empty Markdown line.
 
@@ -219,6 +224,7 @@ Content-Type: application/json
   "documents": [
     {
       "id": "11111111-1111-1111-1111-111111111111",
+      "publicId": "abcdefghijklmnopqrstuv",
       "title": "Example",
       "body": "# Example",
       "createdAt": "2026-06-28T12:00:00Z",
@@ -255,6 +261,7 @@ Content-Type: application/json
 ```json
 {
   "id": "11111111-1111-1111-1111-111111111111",
+  "publicId": "abcdefghijklmnopqrstuv",
   "title": "New document",
   "body": "# New document\n\nMarkdown body.",
   "createdAt": "2026-06-28T12:00:00Z",
@@ -287,6 +294,7 @@ Content-Type: application/json
 ```json
 {
   "id": "11111111-1111-1111-1111-111111111111",
+  "publicId": "abcdefghijklmnopqrstuv",
   "title": "Example",
   "body": "# Example",
   "createdAt": "2026-06-28T12:00:00Z",
@@ -321,6 +329,7 @@ Content-Type: application/json
 ```json
 {
   "id": "11111111-1111-1111-1111-111111111111",
+  "publicId": "abcdefghijklmnopqrstuv",
   "title": "Revised document",
   "body": "# Revised document\n\nUpdated Markdown body.",
   "createdAt": "2026-06-28T12:00:00Z",
@@ -360,7 +369,7 @@ Malformed UUIDs, archived documents, missing documents, and documents owned by a
 POST /api/v1/docs/{id}/share
 ```
 
-Creates or reuses a public share token for an owned active document.
+Creates or reuses public share URLs for an owned active document.
 
 Response:
 
@@ -371,15 +380,20 @@ Content-Type: application/json
 
 ```json
 {
-  "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "htmlPath": "/d/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "markdownPath": "/d/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md"
+  "token": "abcdefghijklmnopqrstuv",
+  "publicId": "abcdefghijklmnopqrstuv",
+  "htmlPath": "/d/abcdefghijklmnopqrstuv",
+  "markdownPath": "/d/abcdefghijklmnopqrstuv.md"
 }
 ```
 
 The paths are relative to the same origin.
 
 CLI clients may turn them into absolute URLs by joining them with the configured API base origin.
+
+New clients should use `publicId`, `htmlPath`, and `markdownPath`.
+
+The `token` field is kept for backwards compatibility.
 
 Malformed UUIDs, archived documents, missing documents, and documents owned by another user all return `404`.
 
@@ -404,7 +418,7 @@ Malformed UUIDs, archived documents, missing documents, and documents owned by a
 ## Public HTML
 
 ```http
-GET /d/{token}
+GET /d/{publicId}
 ```
 
 Returns a read-only rendered HTML page for a shared document.
@@ -419,7 +433,9 @@ Referrer-Policy: no-referrer
 X-Content-Type-Options: nosniff
 ```
 
-Missing, malformed, revoked, or archived shares return `404`.
+Missing, malformed, revoked, or archived public IDs return `404`.
+
+Legacy share token URLs are still accepted while older shares exist.
 
 The HTML route is for humans.
 
@@ -428,7 +444,7 @@ Agents should prefer the raw Markdown route.
 ## Public Raw Markdown
 
 ```http
-GET /d/{token}.md
+GET /d/{publicId}.md
 ```
 
 Returns the exact Markdown body for a shared document.
@@ -451,7 +467,9 @@ Response body:
 Markdown body.
 ```
 
-Missing, malformed, revoked, or archived shares return `404`.
+Missing, malformed, revoked, or archived public IDs return `404`.
+
+Legacy share token URLs are still accepted while older shares exist.
 
 ## Status Summary
 

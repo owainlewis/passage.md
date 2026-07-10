@@ -122,7 +122,7 @@ passage list --json`}</code>
           </p>
           <pre>
             <code>{`# Share returns htmlPath and markdownPath
-/d/<share-token>.md
+/d/<public-id>.md
 
 # Unshare revokes both URLs`}</code>
           </pre>
