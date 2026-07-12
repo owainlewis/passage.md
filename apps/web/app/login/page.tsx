@@ -44,7 +44,7 @@ function LoginForm() {
     event.preventDefault();
     setError("");
     try {
-      await auth.requestMagicLink(email);
+      await auth.requestMagicLink(email, next);
       setMagicLinkSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Magic link request failed");

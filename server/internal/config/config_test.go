@@ -50,11 +50,29 @@ func TestValidateServeAllowsProductionWithoutStripeWhenBillingDisabled(t *testin
 		SessionSecret: "secret",
 		Billing: BillingConfig{
 			StripeBillingEnabled: false,
+			AppBaseURL:           "https://passage.md",
 		},
 	}
 
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatalf("ValidateServe = %v", err)
+	}
+}
+
+func TestValidateServeRequiresProductionAppBaseURL(t *testing.T) {
+	cfg := Config{
+		AppEnv:        "production",
+		DatabaseURL:   "postgres://example",
+		SessionSecret: "secret",
+		Billing: BillingConfig{
+			StripeBillingEnabled: false,
+			AppBaseURL:           "http://localhost:8080",
+		},
+	}
+
+	err := cfg.ValidateServe()
+	if err == nil || err.Error() != "APP_BASE_URL must be set to the production URL in production" {
+		t.Fatalf("ValidateServe error = %v", err)
 	}
 }
 

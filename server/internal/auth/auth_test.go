@@ -310,6 +310,54 @@ func TestRequestMagicLinkSendsLinkForExistingUser(t *testing.T) {
 	}
 }
 
+func TestRequestMagicLinkPreservesSafeNextPath(t *testing.T) {
+	store := newMemoryStore()
+	sender := &fakeMagicLinkSender{}
+	service := NewService(store, "test-secret", false, WithMagicLinkSender(sender), WithAppBaseURL("http://passage.test"))
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq.Header.Set("Content-Type", "application/json")
+	service.Register(register, registerReq)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", strings.NewReader(`{"email":"u@example.com","next":"/account?billing=success"}`))
+	req.Header.Set("Content-Type", "application/json")
+	service.RequestMagicLink(rec, req)
+
+	link, err := url.Parse(sender.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := link.Query().Get("next"); got != "/account?billing=success" {
+		t.Fatalf("next = %q, want account path", got)
+	}
+}
+
+func TestRequestMagicLinkDropsUnsafeNextPath(t *testing.T) {
+	store := newMemoryStore()
+	sender := &fakeMagicLinkSender{}
+	service := NewService(store, "test-secret", false, WithMagicLinkSender(sender), WithAppBaseURL("http://passage.test"))
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq.Header.Set("Content-Type", "application/json")
+	service.Register(register, registerReq)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", strings.NewReader(`{"email":"u@example.com","next":"//evil.test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	service.RequestMagicLink(rec, req)
+
+	link, err := url.Parse(sender.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := link.Query().Get("next"); got != "" {
+		t.Fatalf("next = %q, want empty", got)
+	}
+}
+
 func TestRequestMagicLinkDoesNotRevealUnknownEmail(t *testing.T) {
 	store := newMemoryStore()
 	sender := &fakeMagicLinkSender{}

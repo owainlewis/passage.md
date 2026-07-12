@@ -33,7 +33,7 @@ type AuthValue = {
   refreshAccount: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  requestMagicLink: (email: string) => Promise<void>;
+  requestMagicLink: (email: string, next?: string) => Promise<void>;
   completeMagicLink: (token: string) => Promise<void>;
 };
 
@@ -95,12 +95,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [submitCredentials]
   );
 
-  const requestMagicLink = useCallback(async (email: string) => {
+  const requestMagicLink = useCallback(async (email: string, next?: string) => {
     const res = await fetch("/api/v1/auth/magic-link", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email, next })
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

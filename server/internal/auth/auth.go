@@ -188,6 +188,7 @@ func (s *Service) RequestMagicLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "valid email is required")
 		return
 	}
+	next := safeNextPath(input.Next)
 
 	account, err := s.store.FindUserByEmail(r.Context(), email)
 	if err == nil {
@@ -195,7 +196,7 @@ func (s *Service) RequestMagicLink(w http.ResponseWriter, r *http.Request) {
 		if tokenErr == nil {
 			expires := s.now().Add(magicLinkTokenDuration)
 			if createErr := s.store.CreateMagicLinkToken(r.Context(), account.ID, hashToken(token), expires); createErr == nil {
-				_ = s.magicLinkSender.Send(r.Context(), account.Email, s.magicLinkURL(token))
+				_ = s.magicLinkSender.Send(r.Context(), account.Email, s.magicLinkURL(token, next))
 			}
 		}
 	} else if !errors.Is(err, ErrInvalidAuth) {
@@ -237,9 +238,13 @@ func (s *Service) VerifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, meResponse{Authenticated: true, User: &user})
 }
 
-func (s *Service) magicLinkURL(token string) string {
+func (s *Service) magicLinkURL(token string, next string) string {
 	base := strings.TrimRight(s.appBaseURL, "/")
-	return base + "/login/magic-link?token=" + url.QueryEscape(token)
+	values := url.Values{"token": {token}}
+	if next != "" {
+		values.Set("next", next)
+	}
+	return base + "/login/magic-link?" + values.Encode()
 }
 
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
@@ -485,6 +490,7 @@ type credentials struct {
 
 type magicLinkRequestInput struct {
 	Email string `json:"email"`
+	Next  string `json:"next"`
 }
 
 type magicLinkVerifyInput struct {
@@ -517,6 +523,14 @@ func normalizeCredentials(w http.ResponseWriter, input credentials) (string, str
 		return "", "", false
 	}
 	return email, password, true
+}
+
+func safeNextPath(raw string) string {
+	next := strings.TrimSpace(raw)
+	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return ""
+	}
+	return next
 }
 
 func validateAuthPost(w http.ResponseWriter, r *http.Request) bool {
