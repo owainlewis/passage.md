@@ -142,6 +142,7 @@ describe("CLI page", () => {
     expect(screen.getByText(/Revoke old tokens/)).toBeInTheDocument();
     expect(screen.getByText(/raw `.md` URLs/)).toBeInTheDocument();
     expect(screen.getByText((content) => content.includes("/d/<public-id>.md"))).toBeInTheDocument();
+    expect(screen.queryByText((content) => content.includes("/d/<share-token>.md"))).not.toBeInTheDocument();
     expect(screen.getByText(/Unshare revokes both URLs/)).toBeInTheDocument();
   });
 });
