@@ -2034,6 +2034,18 @@ button {
   border: 0;
 }
 
+.authModeToggle {
+  display: block;
+  margin: 18px auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .routeStatus {
   min-height: 100vh;
   min-height: 100dvh;

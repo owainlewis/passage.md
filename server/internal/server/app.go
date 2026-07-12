@@ -46,7 +46,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 		stripe:        billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
 	}
 	if db != nil {
-		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure)
+		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure, auth.WithAppBaseURL(options.Billing.AppBaseURL))
 		app.docs = documents.NewHandler(documents.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)
 	}
@@ -60,6 +60,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/register", a.register)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
+	mux.HandleFunc("POST /api/v1/auth/magic-link", a.requestMagicLink)
+	mux.HandleFunc("POST /api/v1/auth/magic-link/verify", a.verifyMagicLink)
 	mux.HandleFunc("GET /api/v1/admin/users/{email}/account", a.adminGetAccount)
 	mux.HandleFunc("PATCH /api/v1/admin/users/{email}/account", a.adminUpdateAccount)
 	mux.HandleFunc("POST /api/v1/billing/checkout", a.createCheckoutSession)
@@ -128,6 +130,20 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.Login(w, r)
+}
+
+func (a *App) requestMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.RequestMagicLink(w, r)
+}
+
+func (a *App) verifyMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.VerifyMagicLink(w, r)
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {

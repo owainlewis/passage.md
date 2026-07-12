@@ -18,6 +18,8 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [mode, setMode] = useState<"password" | "magic-link">("password");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   const next = loginNextPath();
 
@@ -38,6 +40,23 @@ function LoginForm() {
     }
   }
 
+  async function submitMagicLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    try {
+      await auth.requestMagicLink(email);
+      setMagicLinkSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Magic link request failed");
+    }
+  }
+
+  function toggleMode() {
+    setError("");
+    setMagicLinkSent(false);
+    setMode(mode === "password" ? "magic-link" : "password");
+  }
+
   return (
     <main className="loginPage">
       <header className="loginNav">
@@ -48,36 +67,62 @@ function LoginForm() {
         <p className="betaLabel">Closed beta</p>
         <h1 id="login-title">Sign in to passage.md</h1>
         <p className="loginCopy">Passage is invite-only while the hosted editor and billing are being finished.</p>
-        <form className="loginForm" onSubmit={submit}>
-          <label>
-            <span>Email</span>
-            <input
-              className="authInput"
-              type="email"
-              name="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              required
-            />
-          </label>
-          <label>
-            <span>Password</span>
-            <input
-              className="authInput"
-              type="password"
-              name="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          {error && <p className="authError">{error}</p>}
-          <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading}>
-            {auth.loading ? "Checking" : "Sign in"}
-          </button>
-        </form>
+        {mode === "password" ? (
+          <form className="loginForm" onSubmit={submit}>
+            <label>
+              <span>Email</span>
+              <input
+                className="authInput"
+                type="email"
+                name="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                className="authInput"
+                type="password"
+                name="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            {error && <p className="authError">{error}</p>}
+            <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading}>
+              {auth.loading ? "Checking" : "Sign in"}
+            </button>
+          </form>
+        ) : magicLinkSent ? (
+          <p className="loginCopy">If an account exists for that email, we&apos;ve sent a sign-in link. Check your inbox.</p>
+        ) : (
+          <form className="loginForm" onSubmit={submitMagicLink}>
+            <label>
+              <span>Email</span>
+              <input
+                className="authInput"
+                type="email"
+                name="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                required
+              />
+            </label>
+            {error && <p className="authError">{error}</p>}
+            <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading}>
+              {auth.loading ? "Checking" : "Email me a sign-in link"}
+            </button>
+          </form>
+        )}
+        <button type="button" className="authModeToggle" onClick={toggleMode}>
+          {mode === "password" ? "Sign in with an email link instead" : "Sign in with a password instead"}
+        </button>
       </section>
     </main>
   );

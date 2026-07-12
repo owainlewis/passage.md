@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -280,10 +281,156 @@ func TestRequireSessionUserRejectsBearerToken(t *testing.T) {
 	}
 }
 
+func TestRequestMagicLinkSendsLinkForExistingUser(t *testing.T) {
+	store := newMemoryStore()
+	sender := &fakeMagicLinkSender{}
+	service := NewService(store, "test-secret", false, WithMagicLinkSender(sender), WithAppBaseURL("http://passage.test"))
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq.Header.Set("Content-Type", "application/json")
+	service.Register(register, registerReq)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", strings.NewReader(`{"email":"U@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	service.RequestMagicLink(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if sender.calls != 1 {
+		t.Fatalf("sender calls = %d", sender.calls)
+	}
+	if sender.email != "u@example.com" {
+		t.Fatalf("sender email = %q", sender.email)
+	}
+	if !strings.HasPrefix(sender.link, "http://passage.test/login/magic-link?token=") {
+		t.Fatalf("sender link = %q", sender.link)
+	}
+}
+
+func TestRequestMagicLinkDoesNotRevealUnknownEmail(t *testing.T) {
+	store := newMemoryStore()
+	sender := &fakeMagicLinkSender{}
+	service := NewService(store, "test-secret", false, WithMagicLinkSender(sender))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", strings.NewReader(`{"email":"nobody@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	service.RequestMagicLink(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"ok":true`) {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	if sender.calls != 0 {
+		t.Fatalf("sender calls = %d, want 0", sender.calls)
+	}
+}
+
+func TestVerifyMagicLinkCreatesSessionAndIsSingleUse(t *testing.T) {
+	store := newMemoryStore()
+	sender := &fakeMagicLinkSender{}
+	service := NewService(store, "test-secret", false, WithMagicLinkSender(sender), WithAppBaseURL("http://passage.test"))
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq.Header.Set("Content-Type", "application/json")
+	service.Register(register, registerReq)
+
+	requestRec := httptest.NewRecorder()
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", strings.NewReader(`{"email":"u@example.com"}`))
+	requestReq.Header.Set("Content-Type", "application/json")
+	service.RequestMagicLink(requestRec, requestReq)
+
+	link, err := url.Parse(sender.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := link.Query().Get("token")
+	if token == "" {
+		t.Fatalf("missing token in link %q", sender.link)
+	}
+
+	verify := httptest.NewRecorder()
+	verifyReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link/verify", strings.NewReader(fmt.Sprintf(`{"token":%q}`, token)))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	service.VerifyMagicLink(verify, verifyReq)
+
+	if verify.Code != http.StatusOK {
+		t.Fatalf("verify status = %d, body = %s", verify.Code, verify.Body.String())
+	}
+	if !strings.Contains(verify.Body.String(), `"email":"u@example.com"`) {
+		t.Fatalf("verify body = %s", verify.Body.String())
+	}
+	cookies := verify.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != CookieName {
+		t.Fatalf("session cookie not set: %#v", cookies)
+	}
+
+	reuse := httptest.NewRecorder()
+	reuseReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link/verify", strings.NewReader(fmt.Sprintf(`{"token":%q}`, token)))
+	reuseReq.Header.Set("Content-Type", "application/json")
+	service.VerifyMagicLink(reuse, reuseReq)
+	if reuse.Code != http.StatusUnauthorized {
+		t.Fatalf("reuse status = %d, body = %s", reuse.Code, reuse.Body.String())
+	}
+}
+
+func TestVerifyMagicLinkRejectsExpiredToken(t *testing.T) {
+	store := newMemoryStore()
+	sender := &fakeMagicLinkSender{}
+	service := NewService(store, "test-secret", false, WithMagicLinkSender(sender))
+	service.now = func() time.Time { return time.Unix(1000, 0).UTC() }
+
+	register := httptest.NewRecorder()
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq.Header.Set("Content-Type", "application/json")
+	service.Register(register, registerReq)
+
+	requestRec := httptest.NewRecorder()
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", strings.NewReader(`{"email":"u@example.com"}`))
+	requestReq.Header.Set("Content-Type", "application/json")
+	service.RequestMagicLink(requestRec, requestReq)
+
+	link, err := url.Parse(sender.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := link.Query().Get("token")
+
+	service.now = func() time.Time { return time.Unix(1000, 0).Add(time.Hour).UTC() }
+
+	verify := httptest.NewRecorder()
+	verifyReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link/verify", strings.NewReader(fmt.Sprintf(`{"token":%q}`, token)))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	service.VerifyMagicLink(verify, verifyReq)
+	if verify.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", verify.Code, verify.Body.String())
+	}
+}
+
+func TestVerifyMagicLinkRejectsUnknownToken(t *testing.T) {
+	service := NewService(newMemoryStore(), "test-secret", false)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link/verify", strings.NewReader(`{"token":"does-not-exist"}`))
+	req.Header.Set("Content-Type", "application/json")
+	service.VerifyMagicLink(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 type memoryStore struct {
 	users            map[string]UserWithPassword
 	sessions         map[string]User
 	apiTokens        map[string]memoryAPIToken
+	magicLinks       map[string]memoryMagicLinkToken
 	nextID           int
 	nextTokenID      int
 	lastAPITokenHash string
@@ -296,9 +443,29 @@ func newMemoryStore() *memoryStore {
 		users:       map[string]UserWithPassword{},
 		sessions:    map[string]User{},
 		apiTokens:   map[string]memoryAPIToken{},
+		magicLinks:  map[string]memoryMagicLinkToken{},
 		nextID:      1,
 		nextTokenID: 1,
 	}
+}
+
+type memoryMagicLinkToken struct {
+	userID    string
+	expiresAt time.Time
+	used      bool
+}
+
+type fakeMagicLinkSender struct {
+	calls int
+	email string
+	link  string
+}
+
+func (f *fakeMagicLinkSender) Send(_ context.Context, email string, link string) error {
+	f.calls++
+	f.email = email
+	f.link = link
+	return nil
 }
 
 type memoryAPIToken struct {
@@ -398,4 +565,24 @@ func (s *memoryStore) FindUserByAPITokenHash(ctx context.Context, tokenHash stri
 		return User{}, ErrUnauthorized
 	}
 	return record.user, nil
+}
+
+func (s *memoryStore) CreateMagicLinkToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error {
+	s.magicLinks[tokenHash] = memoryMagicLinkToken{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (s *memoryStore) ConsumeMagicLinkToken(ctx context.Context, tokenHash string, now time.Time) (User, error) {
+	record, ok := s.magicLinks[tokenHash]
+	if !ok || record.used || !now.Before(record.expiresAt) {
+		return User{}, ErrInvalidAuth
+	}
+	record.used = true
+	s.magicLinks[tokenHash] = record
+	for _, account := range s.users {
+		if account.ID == record.userID {
+			return account.User, nil
+		}
+	}
+	return User{}, ErrInvalidAuth
 }
