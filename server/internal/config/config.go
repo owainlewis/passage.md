@@ -61,6 +61,9 @@ func (c Config) ValidateServe() error {
 	if c.DatabaseURL == "" {
 		return errors.New("DATABASE_URL is required")
 	}
+	if c.AppEnv == "production" && !c.Billing.StripeBillingEnabled && !validProductionAppBaseURL(c.Billing.AppBaseURL) {
+		return errors.New("APP_BASE_URL must be set to the production URL in production")
+	}
 	if c.Billing.StripeBillingEnabled {
 		if c.Billing.StripeSecretKey == "" {
 			return errors.New("STRIPE_SECRET_KEY is required when Stripe billing is enabled")
@@ -71,7 +74,7 @@ func (c Config) ValidateServe() error {
 		if c.Billing.StripeWebhookSecret == "" {
 			return errors.New("STRIPE_WEBHOOK_SECRET is required when Stripe billing is enabled")
 		}
-		if c.Billing.AppBaseURL == "" || strings.HasPrefix(c.Billing.AppBaseURL, "http://localhost") {
+		if !validProductionAppBaseURL(c.Billing.AppBaseURL) {
 			return errors.New("APP_BASE_URL must be set to the production URL when Stripe billing is enabled")
 		}
 	}
@@ -128,4 +131,8 @@ func boolFromEnv(value string) bool {
 	default:
 		return false
 	}
+}
+
+func validProductionAppBaseURL(value string) bool {
+	return value != "" && !strings.HasPrefix(value, "http://localhost")
 }

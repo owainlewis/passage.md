@@ -848,6 +848,14 @@ func (s *routeAuthStore) FindUserByAPITokenHash(ctx context.Context, tokenHash s
 	return user, nil
 }
 
+func (s *routeAuthStore) CreateMagicLinkToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error {
+	return errors.New("not implemented")
+}
+
+func (s *routeAuthStore) ConsumeMagicLinkToken(ctx context.Context, tokenHash string, now time.Time) (auth.User, error) {
+	return auth.User{}, auth.ErrInvalidAuth
+}
+
 func routeTokenHash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
