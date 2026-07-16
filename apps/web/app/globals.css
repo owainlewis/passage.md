@@ -19,11 +19,11 @@
   --sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
-  /* Reading measure: ~66-70 characters at the body size. */
+  /* Reading measure tuned for dense long-form text. */
   --measure: 40rem;
 
-  /* Modular type scale (~1.25, major third) tuned for an editorial document. */
-  --text-body: 1.125rem; /* 18px */
+  /* Editorial document type scale. */
+  --text-body: 1rem; /* 16px */
   --text-h1: 2.125rem; /* 34px */
   --text-h2: 1.5rem; /* 24px */
   --text-h3: 1.21rem; /* ~19.4px */
@@ -1051,7 +1051,7 @@ button {
   color: var(--ink-soft);
   caret-color: var(--accent);
   font-family: var(--mono);
-  font-size: 1.0625rem;
+  font-size: 1rem;
   line-height: 1.78;
   letter-spacing: -0.003em;
   min-height: 60vh;
@@ -2355,7 +2355,7 @@ button {
   }
 
   :root {
-    --text-body: 1.0625rem;
+    --text-body: 1rem;
     --text-h1: 1.875rem;
     --text-h2: 1.375rem;
   }

@@ -229,6 +229,9 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	if !strings.Contains(html.Body.String(), "<h1>Shared</h1>") {
 		t.Fatalf("html body = %s", html.Body.String())
 	}
+	if !strings.Contains(html.Body.String(), "font-size: 1rem;") {
+		t.Fatalf("html does not use the compact document font size: %s", html.Body.String())
+	}
 	if strings.Contains(html.Body.String(), "<header>") || strings.Contains(html.Body.String(), "Shared document") || strings.Contains(html.Body.String(), "passage.md") {
 		t.Fatalf("html contains share page chrome: %s", html.Body.String())
 	}
