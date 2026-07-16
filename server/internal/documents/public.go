@@ -48,7 +48,7 @@ var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!docty
       max-width: var(--measure);
       margin: 0 auto;
       padding: 72px 22px 76px;
-      font-size: 1.125rem;
+      font-size: 1rem;
       line-height: 1.7;
     }
     h1, h2, h3, h4 {
