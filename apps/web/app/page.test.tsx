@@ -98,8 +98,9 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
 }
 
 async function renderWrite() {
-  render(<Write />);
+  const view = render(<Write />);
   await screen.findByRole("region", { name: "Markdown editor" });
+  return view;
 }
 
 beforeEach(() => {
@@ -456,6 +457,54 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
+  });
+
+  it("deletes the final document and shows an empty state", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
+
+    const { unmount } = await renderWrite();
+    await screen.findByRole("button", { name: /Only note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
+
+    await waitFor(() => expect(screen.getByText("No documents yet.")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Only note/ })).not.toBeInTheDocument();
+    expect(screen.getByText("No documents.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create document" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/write");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-only", {
+      method: "DELETE",
+      credentials: "include"
+    });
+
+    unmount();
+    render(<Write />);
+
+    expect(await screen.findByText("No documents yet.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("cancels a pending autosave when deleting its document", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Only note/ });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Edited note\n\nUnsaved." }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
+
+    await waitFor(() => expect(screen.getByText("No documents yet.")).toBeInTheDocument());
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-only",
+      expect.objectContaining({ method: "PATCH" })
+    );
   });
 
   it("orders documents by latest with pinned documents first", async () => {
@@ -885,7 +934,7 @@ describe("Write (editor)", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs", { credentials: "include" });
   });
 
-  it("creates the starter document on the server when a signed-in user has none", async () => {
+  it("keeps a signed-in account empty when it has no documents", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/v1/me") {
@@ -897,23 +946,16 @@ describe("Write (editor)", () => {
       if (url === "/api/v1/docs" && !init?.method) {
         return new Response(JSON.stringify({ documents: [] }), { status: 200 });
       }
-      if (url === "/api/v1/docs" && init?.method === "POST") {
-        return new Response(JSON.stringify({ id: "doc-welcome", body: JSON.parse(String(init.body)).body }), {
-          status: 201
-        });
-      }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Write />);
 
-    expect((await screen.findAllByText("Markdown for agents and humans")).length).toBeGreaterThan(0);
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/docs",
-        expect.objectContaining({ method: "POST", credentials: "include" })
-      )
+    expect(await screen.findByText("No documents yet.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs",
+      expect.objectContaining({ method: "POST" })
     );
   });
 
@@ -935,27 +977,17 @@ describe("Write (editor)", () => {
       if (url === "/api/v1/docs" && !init?.method) {
         return new Response(JSON.stringify({ documents: [] }), { status: 200 });
       }
-      if (url === "/api/v1/docs" && init?.method === "POST") {
-        return new Response(JSON.stringify({ id: "doc-imported", body: JSON.parse(String(init.body)).body }), {
-          status: 201
-        });
-      }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Write />);
 
-    expect((await screen.findAllByText("Markdown for agents and humans")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("No documents yet.")).toBeInTheDocument();
     expect(screen.queryByText("Local draft")).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/docs",
-        expect.objectContaining({
-          method: "POST",
-          credentials: "include"
-        })
-      )
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs",
+      expect.objectContaining({ method: "POST" })
     );
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs",

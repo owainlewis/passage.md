@@ -257,16 +257,13 @@ export default function Editor() {
     (async () => {
       setSaveState("loading");
       try {
-        let savedDocs = await apiDocs();
-        if (savedDocs.length === 0) {
-          savedDocs = [await apiCreateDoc(welcomeBody)];
-        }
+        const savedDocs = await apiDocs();
         if (cancelled) return;
         const urlDoc = savedDocs.find((doc) => doc.publicId === initialURLPublicId.current);
         setDocs(savedDocs);
-        const nextActive = urlDoc ?? savedDocs[0];
-        setActiveId(nextActive.id);
-        setSelectedFolder(isShared(nextActive) ? SHARED_FOLDER : PRIVATE_FOLDER);
+        const nextActive = urlDoc ?? savedDocs[0] ?? null;
+        setActiveId(nextActive?.id ?? "");
+        setSelectedFolder(nextActive && isShared(nextActive) ? SHARED_FOLDER : PRIVATE_FOLDER);
         setSaveState("saved");
         setPendingSave(null);
       } catch {
@@ -326,9 +323,9 @@ export default function Editor() {
     }
   }, [darkActive]);
 
-  const active = docs.find((d) => d.id === activeId) ?? docs[0];
-  const activeShared = isShared(active);
-  const publicDocPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
+  const active = docs.find((d) => d.id === activeId) ?? docs[0] ?? null;
+  const activeShared = active ? isShared(active) : false;
+  const publicDocPath = activeShared && active?.publicId ? `/d/${active.publicId}` : "";
   const shareButtonLabel =
     shareState === "toolong"
       ? "Too long"
@@ -341,12 +338,12 @@ export default function Editor() {
             : "Share";
 
   useEffect(() => {
-    if (!auth.user || saveState === "loading" || !active.publicId) return;
+    if (!auth.user || saveState === "loading" || !active?.publicId) return;
     const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
     if (window.location.pathname !== nextPath) {
       window.history.replaceState(null, "", nextPath);
     }
-  }, [active.id, active.publicId, auth.user, saveState]);
+  }, [active?.id, active?.publicId, auth.user, saveState]);
 
   // Grow the textarea with its content so the pane scrolls as one surface.
   // Modern browsers do this natively with `field-sizing: content`, which avoids
@@ -358,7 +355,7 @@ export default function Editor() {
     if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content")) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  }, [active.body, mode, activeId]);
+  }, [active?.body, mode, activeId]);
 
   const toggleMode = useCallback(() => {
     setMode((m) => (m === "edit" ? "preview" : "edit"));
@@ -376,6 +373,7 @@ export default function Editor() {
   }, [toggleMode]);
 
   function updateBody(body: string) {
+    if (!active) return;
     setSaveState("saving");
     setPendingSave({ id: active.id, body });
     setDocs((prev) => prev.map((d) => (d.id === active.id ? { ...d, body } : d)));
@@ -426,34 +424,42 @@ export default function Editor() {
     // Pinned documents are protected from deletion; unpin first to remove one.
     const doc = docs.find((d) => d.id === id);
     if (!doc || doc.pinned || isShared(doc)) return;
+    const cancelledSave = pendingSave?.id === id ? pendingSave : null;
+    if (cancelledSave) setPendingSave(null);
     setSaveState("saving");
     try {
       await apiArchiveDoc(id);
     } catch {
+      if (cancelledSave) setPendingSave(cancelledSave);
       setSaveState("error");
       return;
     }
     setDocs((prev) => {
       const next = prev.filter((d) => d.id !== id);
-      const remaining = next.length > 0 ? next : seedDocs();
-      const selectedFolderHasDocs = remaining.some((remainingDoc) => docMatchesFolder(remainingDoc, selectedFolder));
+      const selectedFolderHasDocs = next.some((remainingDoc) => docMatchesFolder(remainingDoc, selectedFolder));
       const replacement =
-        remaining.find((remainingDoc) => remainingDoc.id === activeId) ??
-        remaining.find((remainingDoc) => docMatchesFolder(remainingDoc, selectedFolder)) ??
-        remaining[0];
+        next.find((remainingDoc) => remainingDoc.id === activeId) ??
+        next.find((remainingDoc) => docMatchesFolder(remainingDoc, selectedFolder)) ??
+        next[0] ??
+        null;
       if (id === activeId) {
-        setActiveId(replacement.id);
-        updateEditorURL(replacement, "replace");
+        setActiveId(replacement?.id ?? "");
+        if (replacement) {
+          updateEditorURL(replacement, "replace");
+        } else {
+          window.history.replaceState(null, "", "/write");
+        }
       }
-      if (!selectedFolderHasDocs) {
+      if (replacement && !selectedFolderHasDocs) {
         setSelectedFolder(isShared(replacement) ? SHARED_FOLDER : PRIVATE_FOLDER);
       }
-      return remaining;
+      return next;
     });
     setSaveState("saved");
   }
 
   function exportDoc() {
+    if (!active) return;
     if (!entitlements.can("exportMarkdown")) {
       setBillingNotice("Export is a Pro feature.");
       return;
@@ -469,6 +475,7 @@ export default function Editor() {
   }
 
   async function shareDoc() {
+    if (!active) return;
     if (!entitlements.can("shareLinks")) {
       setBillingNotice("Sharing and raw .md URLs are Pro features.");
       return;
@@ -523,7 +530,7 @@ export default function Editor() {
   }
 
   async function unshareDoc() {
-    if (!activeShared) return;
+    if (!active || !activeShared) return;
     window.clearTimeout(copyTimer.current);
     try {
       await apiUnshareDoc(active.id);
@@ -569,8 +576,8 @@ export default function Editor() {
     return !isShared(doc);
   }
 
-  const words = wordCount(active.body);
-  const title = titleOf(active.body);
+  const words = active ? wordCount(active.body) : 0;
+  const title = active ? titleOf(active.body) : "";
   const tagFilterQuery = tagFilter.trim().toLowerCase();
   const showSaveState = saveState !== "saved";
   const folderRows = [
@@ -608,7 +615,7 @@ export default function Editor() {
     if (folderId !== selectedFolder) {
       clearTagFilter();
     }
-    if (docMatchesFolder(active, folderId)) {
+    if (active && docMatchesFolder(active, folderId)) {
       setSelectedFolder(folderId);
       return;
     }
@@ -690,7 +697,7 @@ export default function Editor() {
         </div>
         <nav className="docList">
           {visibleDocs.map((doc) => {
-            const isActive = doc.id === active.id;
+            const isActive = doc.id === active?.id;
             return (
               <div key={doc.id} className={`docRow ${isActive ? "active" : ""} ${doc.pinned ? "pinned" : ""}`}>
 
@@ -712,7 +719,7 @@ export default function Editor() {
                   >
                     <PinIcon filled={Boolean(doc.pinned)} />
                   </button>
-                  {docs.length > 1 && !doc.pinned && !isShared(doc) && (
+                  {!doc.pinned && !isShared(doc) && (
                     <button
                       type="button"
                       className="docRowDelete"
@@ -726,7 +733,9 @@ export default function Editor() {
               </div>
             );
           })}
-          {visibleDocs.length === 0 && <p className="docListEmpty">No documents match.</p>}
+          {visibleDocs.length === 0 && (
+            <p className="docListEmpty">{docs.length === 0 ? "No documents." : "No documents match."}</p>
+          )}
         </nav>
         <div className="sidebarFoot">
           <div className="tagPanel" aria-label="Filter by tag">
@@ -837,8 +846,17 @@ export default function Editor() {
           </div>
         )}
 
-        <section className="writingPane" aria-label="Markdown editor">
-          {mode === "edit" ? (
+        <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
+          {!active ? (
+            <div className="emptyDocuments">
+              <h2>No documents yet.</h2>
+              <p>Create a document to start writing.</p>
+              <button type="button" className="emptyDocumentsCreate" onClick={createDoc}>
+                <PlusIcon />
+                <span>Create document</span>
+              </button>
+            </div>
+          ) : mode === "edit" ? (
             <textarea
               ref={textareaRef}
               className="editor"
@@ -854,7 +872,7 @@ export default function Editor() {
           )}
         </section>
 
-        <footer className="statusBar" aria-label="Editor status">
+        {active && <footer className="statusBar" aria-label="Editor status">
           <div className="statusDock">
             <div className="dockGroup dockGroupMode">
               <div className="modeToggle" role="group" aria-label="View mode">
@@ -922,7 +940,7 @@ export default function Editor() {
               </button>
             </div>
           </div>
-        </footer>
+        </footer>}
       </div>
     </div>
   );

@@ -1032,6 +1032,49 @@ button {
   padding: 56px clamp(24px, 7vw, 88px) 16vh;
 }
 
+.writingPaneEmpty {
+  display: grid;
+  place-items: center;
+  padding-bottom: 56px;
+}
+
+.emptyDocuments {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.emptyDocuments h2,
+.emptyDocuments p {
+  margin: 0;
+}
+
+.emptyDocuments h2 {
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.emptyDocumentsCreate {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  padding: 9px 13px;
+  font: 650 0.82rem/1 var(--sans);
+  cursor: pointer;
+}
+
+.emptyDocumentsCreate:hover,
+.emptyDocumentsCreate:focus-visible {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
 .editor,
 .markdown {
   width: 100%;
