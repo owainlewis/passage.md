@@ -2379,6 +2379,195 @@ button {
   justify-self: start;
 }
 
+/* ---------------------------------------------------------------- admin */
+
+.adminShell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.adminTop {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.adminNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminMain {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+.adminHeader {
+  padding: 42px 0 30px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.adminKicker {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font: 500 0.78rem/1 var(--mono);
+  text-transform: uppercase;
+}
+
+.adminHeader h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.adminHeader > p:last-child {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.adminTotals {
+  margin: 0;
+  padding: 28px 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--hairline);
+}
+
+.adminTotals div {
+  padding: 0 24px;
+  border-left: 1px solid var(--hairline);
+}
+
+.adminTotals div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.adminTotals dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.adminTotals dd {
+  margin: 8px 0 0;
+  font: 500 1.7rem/1 var(--mono);
+}
+
+.adminAccounts {
+  padding-top: 30px;
+}
+
+.adminSectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.adminSectionHeading h2 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.adminSectionHeading span {
+  color: var(--muted);
+  font: 0.8rem/1 var(--mono);
+}
+
+.adminTableWrap {
+  width: 100%;
+  overflow-x: auto;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.adminTable {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.adminTable th {
+  padding: 11px 14px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.adminTable th:first-child,
+.adminTable td:first-child {
+  padding-left: 0;
+}
+
+.adminTable td {
+  padding: 14px;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.adminTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.adminTable td strong,
+.adminTable td span {
+  display: block;
+}
+
+.adminTable td strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.adminTable td strong + span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.adminTable .adminNumber {
+  padding-right: 0;
+  text-align: right;
+}
+
+.adminPlan {
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.adminPlanPro {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--hairline));
+  background: var(--accent-tint);
+}
+
+.adminEmpty {
+  margin: 0;
+  padding: 28px 0;
+  color: var(--muted);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
 @media (max-width: 720px) {
   .features {
     grid-template-columns: 1fr;
@@ -2439,6 +2628,20 @@ button {
   .accountMetaList div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .adminTop,
+  .adminMain {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .adminTotals div {
+    padding: 0 16px;
+  }
+
+  .adminTotals dd {
+    font-size: 1.45rem;
   }
 }
 

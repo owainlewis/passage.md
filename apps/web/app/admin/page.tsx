@@ -1,0 +1,172 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { AuthProvider, useAuth } from "../auth";
+import { Brand } from "../brand";
+
+type AdminUser = {
+  id: string;
+  email: string;
+  createdAt: string;
+  plan: "free" | "pro";
+  source: string;
+  subscriptionStatus?: string;
+  savedDocs: number;
+};
+
+type AdminDashboard = {
+  totals: {
+    users: number;
+    free: number;
+    pro: number;
+  };
+  users: AdminUser[];
+};
+
+type DashboardStatus = "loading" | "ready" | "forbidden" | "error";
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function label(value: string) {
+  if (!value) return "None";
+  return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
+}
+
+export default function Admin() {
+  return (
+    <AuthProvider>
+      <AdminGate />
+    </AuthProvider>
+  );
+}
+
+function AdminGate() {
+  const auth = useAuth();
+
+  useEffect(() => {
+    if (!auth.loading && !auth.user) {
+      window.location.replace(`/login?next=${encodeURIComponent("/admin")}`);
+    }
+  }, [auth.loading, auth.user]);
+
+  if (auth.loading) return <main className="routeStatus">Loading</main>;
+  if (!auth.user) return <main className="routeStatus">Redirecting to sign in</main>;
+  return <AdminPage />;
+}
+
+function AdminPage() {
+  const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
+  const [status, setStatus] = useState<DashboardStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/dashboard", { credentials: "include" });
+        if (res.status === 403) {
+          if (!cancelled) setStatus("forbidden");
+          return;
+        }
+        if (!res.ok) throw new Error("Admin dashboard could not be loaded");
+        const body = (await res.json()) as AdminDashboard;
+        if (!cancelled) {
+          setDashboard(body);
+          setStatus("ready");
+        }
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (status === "loading") return <main className="routeStatus">Loading accounts</main>;
+  if (status === "forbidden") return <main className="routeStatus">Admin access required</main>;
+  if (status === "error" || !dashboard) return <main className="routeStatus">Admin dashboard could not be loaded</main>;
+
+  return (
+    <main className="adminShell">
+      <header className="adminTop">
+        <Brand href="/write" />
+        <nav className="adminNav" aria-label="Admin navigation">
+          <Link className="textButton" href="/account">
+            Account
+          </Link>
+          <Link className="textButton" href="/write">
+            Write
+          </Link>
+        </nav>
+      </header>
+
+      <div className="adminMain">
+        <section className="adminHeader">
+          <p className="adminKicker">Admin</p>
+          <h1>Accounts</h1>
+          <p>A simple view of Passage users and their active documents.</p>
+        </section>
+
+        <dl className="adminTotals" aria-label="Account totals">
+          <div>
+            <dt>Users</dt>
+            <dd>{dashboard.totals.users}</dd>
+          </div>
+          <div>
+            <dt>Free</dt>
+            <dd>{dashboard.totals.free}</dd>
+          </div>
+          <div>
+            <dt>Pro</dt>
+            <dd>{dashboard.totals.pro}</dd>
+          </div>
+        </dl>
+
+        <section className="adminAccounts" aria-labelledby="admin-users-heading">
+          <div className="adminSectionHeading">
+            <h2 id="admin-users-heading">Users</h2>
+            <span>{dashboard.users.length}</span>
+          </div>
+          {dashboard.users.length === 0 ? (
+            <p className="adminEmpty">No users yet.</p>
+          ) : (
+            <div className="adminTableWrap">
+              <table className="adminTable">
+                <thead>
+                  <tr>
+                    <th scope="col">Account</th>
+                    <th scope="col">Plan</th>
+                    <th scope="col">Source</th>
+                    <th scope="col">Subscription</th>
+                    <th scope="col" className="adminNumber">Documents</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.users.map((user) => (
+                    <tr key={user.id}>
+                      <td>
+                        <strong>{user.email}</strong>
+                        <span>Joined {formatDate(user.createdAt)}</span>
+                      </td>
+                      <td>
+                        <span className={`adminPlan adminPlan${label(user.plan)}`}>{label(user.plan)}</span>
+                      </td>
+                      <td>{label(user.source)}</td>
+                      <td>{label(user.subscriptionStatus ?? "")}</td>
+                      <td className="adminNumber">{user.savedDocs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}

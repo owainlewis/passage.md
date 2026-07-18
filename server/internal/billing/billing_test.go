@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/config"
@@ -119,10 +120,61 @@ func TestEntitlementPrecedenceIncludesCommunity(t *testing.T) {
 	}
 }
 
+func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
+	manualFree := PlanFree
+	createdAt := time.Date(2026, time.July, 18, 10, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	store.adminUsers = []AdminUserRecord{
+		{
+			User:      auth.User{ID: "owner", Email: "owner@example.com"},
+			CreatedAt: createdAt,
+			SavedDocs: 3,
+		},
+		{
+			User:      auth.User{ID: "paid", Email: "paid@example.com"},
+			CreatedAt: createdAt.Add(-time.Hour),
+			State:     State{StripeSubscriptionStatus: "active"},
+			SavedDocs: 8,
+		},
+		{
+			User:      auth.User{ID: "free", Email: "free@example.com"},
+			CreatedAt: createdAt.Add(-2 * time.Hour),
+			State:     State{ManualPlan: &manualFree, CommunityAccess: true},
+		},
+	}
+	service := NewService(store, config.BillingConfig{
+		FreeMaxSavedDocs: 5,
+		ProMaxSavedDocs:  1000,
+		OwnerEmails:      []string{"owner@example.com"},
+	})
+
+	dashboard, err := service.AdminDashboard(context.Background(), auth.User{Email: "OWNER@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.Totals != (AdminTotals{Users: 3, Free: 1, Pro: 2}) {
+		t.Fatalf("totals = %#v", dashboard.Totals)
+	}
+	if dashboard.Users[0].Source != SourceOwner || dashboard.Users[0].SavedDocs != 3 {
+		t.Fatalf("owner = %#v", dashboard.Users[0])
+	}
+	if dashboard.Users[1].Source != SourceStripe || dashboard.Users[1].SubscriptionStatus != "active" {
+		t.Fatalf("paid = %#v", dashboard.Users[1])
+	}
+	if dashboard.Users[2].Plan != PlanFree || dashboard.Users[2].Source != SourceManual {
+		t.Fatalf("free = %#v", dashboard.Users[2])
+	}
+
+	if _, err := service.AdminDashboard(context.Background(), auth.User{Email: "free@example.com"}); err != ErrNotAdmin {
+		t.Fatalf("non-admin error = %v", err)
+	}
+}
+
 type memoryStore struct {
-	users     map[string]auth.User
-	states    map[string]State
-	savedDocs map[string]int
+	users      map[string]auth.User
+	states     map[string]State
+	savedDocs  map[string]int
+	adminUsers []AdminUserRecord
 }
 
 func newMemoryStore() *memoryStore {
@@ -143,6 +195,10 @@ func (s *memoryStore) FindUserByEmail(ctx context.Context, email string) (auth.U
 
 func (s *memoryStore) FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
 	return auth.User{}, ErrUserNotFound
+}
+
+func (s *memoryStore) ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error) {
+	return s.adminUsers, nil
 }
 
 func (s *memoryStore) State(ctx context.Context, userID string) (State, error) {

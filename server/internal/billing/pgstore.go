@@ -44,6 +44,70 @@ func (s *PGStore) FindUserByStripeCustomer(ctx context.Context, customerID strin
 	return user, err
 }
 
+func (s *PGStore) ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT users.id::text,
+		       users.email,
+		       users.created_at,
+		       billing_accounts.manual_plan,
+		       billing_accounts.max_saved_docs,
+		       EXISTS (
+		         SELECT 1
+		         FROM community_access_codes
+		         WHERE redeemed_user_id = users.id
+		           AND revoked_at IS NULL
+		       ),
+		       COALESCE(billing_accounts.stripe_customer_id, ''),
+		       COALESCE(billing_accounts.stripe_subscription_id, ''),
+		       COALESCE(billing_accounts.stripe_subscription_status, ''),
+		       COALESCE(billing_accounts.stripe_price_id, ''),
+		       billing_accounts.stripe_current_period_end,
+		       COALESCE(billing_accounts.stripe_cancel_at_period_end, false),
+		       (
+		         SELECT count(*)
+		         FROM documents
+		         WHERE owner_user_id = users.id
+		           AND archived_at IS NULL
+		       )
+		FROM users
+		LEFT JOIN billing_accounts ON billing_accounts.user_id = users.id
+		ORDER BY users.created_at DESC, users.email
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := []AdminUserRecord{}
+	for rows.Next() {
+		var record AdminUserRecord
+		var manualPlan *string
+		if err := rows.Scan(
+			&record.User.ID,
+			&record.User.Email,
+			&record.CreatedAt,
+			&manualPlan,
+			&record.State.MaxSavedDocs,
+			&record.State.CommunityAccess,
+			&record.State.StripeCustomerID,
+			&record.State.StripeSubscriptionID,
+			&record.State.StripeSubscriptionStatus,
+			&record.State.StripePriceID,
+			&record.State.StripeCurrentPeriodEnd,
+			&record.State.StripeCancelAtPeriodEnd,
+			&record.SavedDocs,
+		); err != nil {
+			return nil, err
+		}
+		if manualPlan != nil {
+			plan := Plan(*manualPlan)
+			record.State.ManualPlan = &plan
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
 func (s *PGStore) State(ctx context.Context, userID string) (State, error) {
 	var state State
 	var manualPlan *string
