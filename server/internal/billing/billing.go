@@ -18,10 +18,11 @@ const (
 )
 
 const (
-	SourceDefault = "default"
-	SourceOwner   = "owner"
-	SourceManual  = "manual"
-	SourceStripe  = "stripe"
+	SourceDefault   = "default"
+	SourceOwner     = "owner"
+	SourceManual    = "manual"
+	SourceCommunity = "community"
+	SourceStripe    = "stripe"
 )
 
 var ErrLimitReached = errors.New("saved document limit reached")
@@ -57,6 +58,7 @@ type Account struct {
 type State struct {
 	ManualPlan               *Plan
 	MaxSavedDocs             *int
+	CommunityAccess          bool
 	StripeCustomerID         string
 	StripeSubscriptionID     string
 	StripeSubscriptionStatus string
@@ -195,14 +197,17 @@ func (s *Service) UpdateSubscription(ctx context.Context, userID string, update 
 func (s *Service) accountFromState(email string, state State, savedDocs int) Account {
 	plan := PlanFree
 	source := SourceDefault
-	if s.IsAdmin(email) {
-		plan = PlanPro
-		source = SourceOwner
-	} else if state.ManualPlan != nil {
+	if state.ManualPlan != nil {
 		source = SourceManual
 		if *state.ManualPlan == PlanPro {
 			plan = PlanPro
 		}
+	} else if s.IsAdmin(email) {
+		plan = PlanPro
+		source = SourceOwner
+	} else if state.CommunityAccess {
+		plan = PlanPro
+		source = SourceCommunity
 	} else if stripeStatusIsPaid(state.StripeSubscriptionStatus) {
 		plan = PlanPro
 		source = SourceStripe

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/billing"
+	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
 	"golang.org/x/crypto/bcrypt"
@@ -34,7 +35,11 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}}, db)
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}}, db, Options{Billing: config.BillingConfig{
+		FreeMaxSavedDocs: 5,
+		ProMaxSavedDocs:  1000,
+		OwnerEmails:      []string{"token-one@example.com", "token-two@example.com"},
+	}})
 	server := httptest.NewServer(app.Routes())
 	defer server.Close()
 

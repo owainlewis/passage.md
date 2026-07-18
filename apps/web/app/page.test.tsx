@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Account from "./account/page";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
+import Redeem from "./redeem/page";
 import Landing from "./page";
 import Write from "./write/page";
 
@@ -19,6 +20,13 @@ const manualProAccount = {
   limits: { maxSavedDocs: 1000 },
   usage: { savedDocs: 1 },
   subscription: { status: "active", cancelAtPeriodEnd: false }
+};
+const communityProAccount = {
+  plan: "pro",
+  source: "community",
+  limits: { maxSavedDocs: 1000 },
+  usage: { savedDocs: 1 },
+  subscription: { cancelAtPeriodEnd: false }
 };
 const freeAccount = {
   plan: "free",
@@ -213,6 +221,90 @@ describe("Account", () => {
       "/api/v1/billing/portal",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("shows no-cost community access without Stripe actions", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "community@example.com" }, account: communityProAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/api-tokens" && !init?.method) {
+        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Account />);
+
+    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+    expect(screen.getByText("Community access")).toBeInTheDocument();
+    expect(screen.getByText("Included at no cost. No renewal.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upgrade" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage billing" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Redeem", () => {
+  it("creates an account with a code and explains that payment is not required", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
+      }
+      if (url === "/api/v1/auth/redeem" && init?.method === "POST") {
+        return new Response(JSON.stringify({ authenticated: true, user: { id: "user-1", email: "community@example.com" } }), { status: 201 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Redeem />);
+
+    expect(await screen.findByText("This code includes Pro access at no cost. No payment method is required.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Access code")).toBeRequired();
+    expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("minlength", "8");
+    fireEvent.change(screen.getByLabelText("Access code"), { target: { value: "pass-test-code" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "community@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/redeem",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({ code: "pass-test-code", email: "community@example.com", password: "password123" })
+      })
+    ));
+  });
+
+  it("shows the safe error for an invalid or used code", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/me") {
+        return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
+      }
+      if (String(input) === "/api/v1/auth/redeem" && init?.method === "POST") {
+        return new Response(JSON.stringify({ error: "This code is invalid or has already been used." }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Redeem />);
+    await screen.findByRole("heading", { name: "Create your Passage account" });
+    fireEvent.change(screen.getByLabelText("Access code"), { target: { value: "used-code" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "community@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(await screen.findByText("This code is invalid or has already been used.")).toBeInTheDocument();
   });
 });
 

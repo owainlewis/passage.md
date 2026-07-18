@@ -47,6 +47,12 @@ type APIToken struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 }
 
+type PreparedSession struct {
+	TokenHash   string
+	CookieValue string
+	ExpiresAt   time.Time
+}
+
 type Store interface {
 	CreateUser(ctx context.Context, email string, passwordHash string) (User, error)
 	FindUserByEmail(ctx context.Context, email string) (UserWithPassword, error)
@@ -383,18 +389,33 @@ func (s *Service) RevokeAPIToken(w http.ResponseWriter, r *http.Request, user Us
 }
 
 func (s *Service) createSession(w http.ResponseWriter, r *http.Request, user User) bool {
-	token, err := randomToken()
+	session, err := s.PrepareSession()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "session could not be created")
 		return false
 	}
-	expires := s.now().Add(sessionDuration)
-	if err := s.store.CreateSession(r.Context(), user.ID, hashToken(token), expires); err != nil {
+	if err := s.store.CreateSession(r.Context(), user.ID, session.TokenHash, session.ExpiresAt); err != nil {
 		writeError(w, http.StatusInternalServerError, "session could not be created")
 		return false
 	}
-	setSessionCookie(w, s.signToken(token), expires, s.cookieSecure)
+	s.WriteSessionCookie(w, session)
 	return true
+}
+
+func (s *Service) PrepareSession() (PreparedSession, error) {
+	token, err := randomToken()
+	if err != nil {
+		return PreparedSession{}, err
+	}
+	return PreparedSession{
+		TokenHash:   hashToken(token),
+		CookieValue: s.signToken(token),
+		ExpiresAt:   s.now().Add(sessionDuration),
+	}, nil
+}
+
+func (s *Service) WriteSessionCookie(w http.ResponseWriter, session PreparedSession) {
+	setSessionCookie(w, session.CookieValue, session.ExpiresAt, s.cookieSecure)
 }
 
 func (s *Service) readSessionToken(r *http.Request) (string, bool) {
