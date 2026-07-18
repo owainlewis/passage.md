@@ -141,19 +141,6 @@ button {
   user-select: none;
 }
 
-.brandMark {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-  font-family: var(--serif);
-  font-weight: 500;
-  font-size: 1.28rem;
-  line-height: 1;
-  transform: translateY(-1px);
-}
-
 .brandName {
   font-family: var(--serif);
   font-size: 1.08rem;
