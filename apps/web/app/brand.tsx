@@ -4,14 +4,9 @@ import Link from "next/link";
 // `href` when one is given (the editor and share views link it home).
 export function Brand({ href, ariaLabel }: { href?: string; ariaLabel?: string }) {
   const inner = (
-    <>
-      <span className="brandMark" aria-hidden="true">
-        P
-      </span>
-      <span className="brandName">
-        passage<span className="brandExt">.md</span>
-      </span>
-    </>
+    <span className="brandName">
+      passage<span className="brandExt">.md</span>
+    </span>
   );
 
   if (href) {
