@@ -551,6 +551,78 @@ func TestAdminCanUpdateAccountOverride(t *testing.T) {
 	}
 }
 
+func TestAdminDashboardRequiresOwnerAndReturnsAccountSummary(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
+	authStore.sessions[routeTokenHash("member-session")] = auth.User{ID: "member-1", Email: "member@example.com"}
+	billingStore := newRouteBillingStore()
+	billingStore.adminUsers = []billing.AdminUserRecord{
+		{
+			User:      auth.User{ID: "admin-1", Email: "owain@owainlewis.com"},
+			CreatedAt: time.Date(2026, time.July, 18, 10, 0, 0, 0, time.UTC),
+			SavedDocs: 2,
+		},
+		{
+			User:      auth.User{ID: "user-2", Email: "two@example.com"},
+			CreatedAt: time.Date(2026, time.July, 17, 10, 0, 0, 0, time.UTC),
+			State:     billing.State{StripeSubscriptionStatus: "active"},
+			SavedDocs: 4,
+		},
+		{
+			User:      auth.User{ID: "user-3", Email: "three@example.com"},
+			CreatedAt: time.Date(2026, time.July, 16, 10, 0, 0, 0, time.UTC),
+		},
+	}
+	app := &App{
+		auth:    auth.NewService(authStore, "test-secret", false),
+		billing: billing.NewService(billingStore, routeBillingConfig()),
+	}
+
+	tests := map[string]struct {
+		cookie     string
+		wantStatus int
+	}{
+		"signed out": {wantStatus: http.StatusUnauthorized},
+		"non-admin":  {cookie: "member-session", wantStatus: http.StatusForbidden},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/dashboard", nil)
+			if test.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken(test.cookie)})
+			}
+			app.Routes().ServeHTTP(rec, req)
+			if rec.Code != test.wantStatus {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/dashboard", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"totals":{"users":3,"free":1,"pro":2}`,
+		`"email":"owain@owainlewis.com"`,
+		`"source":"owner"`,
+		`"email":"two@example.com"`,
+		`"subscriptionStatus":"active"`,
+		`"savedDocs":4`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body missing %s: %s", want, rec.Body.String())
+		}
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache control = %q", rec.Header().Get("Cache-Control"))
+	}
+}
+
 func TestBillingCheckoutCreatesMonthlyStripeSession(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
@@ -1106,9 +1178,10 @@ func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (docum
 }
 
 type routeBillingStore struct {
-	users     map[string]auth.User
-	states    map[string]billing.State
-	savedDocs map[string]int
+	users      map[string]auth.User
+	states     map[string]billing.State
+	savedDocs  map[string]int
+	adminUsers []billing.AdminUserRecord
 }
 
 func newRouteBillingStore() *routeBillingStore {
@@ -1159,6 +1232,10 @@ func (s *routeBillingStore) FindUserByStripeCustomer(ctx context.Context, custom
 		}
 	}
 	return auth.User{}, billing.ErrUserNotFound
+}
+
+func (s *routeBillingStore) ListAdminUsers(ctx context.Context) ([]billing.AdminUserRecord, error) {
+	return s.adminUsers, nil
 }
 
 func (s *routeBillingStore) State(ctx context.Context, userID string) (billing.State, error) {

@@ -80,11 +80,40 @@ type SubscriptionUpdate struct {
 type Store interface {
 	FindUserByEmail(ctx context.Context, email string) (auth.User, error)
 	FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error)
+	ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 	State(ctx context.Context, userID string) (State, error)
 	UpdateOverride(ctx context.Context, userID string, plan *Plan, maxSavedDocs *int) error
 	SetStripeCustomer(ctx context.Context, userID string, customerID string) error
 	UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error
 	CountSavedDocs(ctx context.Context, userID string) (int, error)
+}
+
+type AdminUserRecord struct {
+	User      auth.User
+	CreatedAt time.Time
+	State     State
+	SavedDocs int
+}
+
+type AdminUser struct {
+	ID                 string    `json:"id"`
+	Email              string    `json:"email"`
+	CreatedAt          time.Time `json:"createdAt"`
+	Plan               Plan      `json:"plan"`
+	Source             string    `json:"source"`
+	SubscriptionStatus string    `json:"subscriptionStatus,omitempty"`
+	SavedDocs          int       `json:"savedDocs"`
+}
+
+type AdminTotals struct {
+	Users int `json:"users"`
+	Free  int `json:"free"`
+	Pro   int `json:"pro"`
+}
+
+type AdminDashboard struct {
+	Totals AdminTotals `json:"totals"`
+	Users  []AdminUser `json:"users"`
 }
 
 type Service struct {
@@ -132,6 +161,38 @@ func (s *Service) AdminAccountByEmail(ctx context.Context, admin auth.User, emai
 	}
 	account, err := s.Account(ctx, user)
 	return user, account, err
+}
+
+func (s *Service) AdminDashboard(ctx context.Context, admin auth.User) (AdminDashboard, error) {
+	if !s.IsAdmin(admin.Email) {
+		return AdminDashboard{}, ErrNotAdmin
+	}
+	records, err := s.store.ListAdminUsers(ctx)
+	if err != nil {
+		return AdminDashboard{}, err
+	}
+
+	dashboard := AdminDashboard{Users: make([]AdminUser, 0, len(records))}
+	for _, record := range records {
+		account := s.accountFromState(record.User.Email, record.State, record.SavedDocs)
+		user := AdminUser{
+			ID:                 record.User.ID,
+			Email:              record.User.Email,
+			CreatedAt:          record.CreatedAt,
+			Plan:               account.Plan,
+			Source:             account.Source,
+			SubscriptionStatus: account.Subscription.Status,
+			SavedDocs:          account.Usage.SavedDocs,
+		}
+		dashboard.Users = append(dashboard.Users, user)
+		dashboard.Totals.Users++
+		if account.Plan == PlanPro {
+			dashboard.Totals.Pro++
+		} else {
+			dashboard.Totals.Free++
+		}
+	}
+	return dashboard, nil
 }
 
 func (s *Service) UpdateAdminOverride(ctx context.Context, admin auth.User, email string, plan *Plan, maxSavedDocs *int) (auth.User, Account, error) {

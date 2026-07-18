@@ -158,6 +158,67 @@ func TestBillingPGStorePreservesSubscriptionMetadataOnPartialUpdate(t *testing.T
 	}
 }
 
+func TestBillingPGStoreListsAdminUsersWithActiveDocumentCounts(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := "admin-list-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.com"
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, $2)
+		RETURNING id::text
+	`, email, "hash").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	}()
+	if _, err := db.Exec(ctx, `
+		INSERT INTO documents (owner_user_id, title, body, archived_at)
+		VALUES ($1, 'Active', '', NULL),
+		       ($1, 'Archived', '', now())
+	`, userID); err != nil {
+		t.Fatal(err)
+	}
+	store := billing.NewPGStore(db)
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:     "cus_admin_" + userID,
+		SubscriptionID: "sub_admin_" + userID,
+		Status:         "active",
+		PriceID:        "price_test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := store.ListAdminUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.User.ID != userID {
+			continue
+		}
+		if record.User.Email != email || record.SavedDocs != 1 || record.State.StripeSubscriptionStatus != "active" {
+			t.Fatalf("record = %#v", record)
+		}
+		return
+	}
+	t.Fatalf("user %s was not listed", email)
+}
+
 func createIntegrationUserAndLogin(t *testing.T, db *database.Pool, baseURL string, email string) []*http.Cookie {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)

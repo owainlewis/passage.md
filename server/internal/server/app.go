@@ -66,6 +66,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
 	mux.HandleFunc("POST /api/v1/auth/magic-link", a.requestMagicLink)
 	mux.HandleFunc("POST /api/v1/auth/magic-link/verify", a.verifyMagicLink)
+	mux.HandleFunc("GET /api/v1/admin/dashboard", a.adminDashboard)
 	mux.HandleFunc("GET /api/v1/admin/users/{email}/account", a.adminGetAccount)
 	mux.HandleFunc("PATCH /api/v1/admin/users/{email}/account", a.adminUpdateAccount)
 	mux.HandleFunc("POST /api/v1/admin/community-access-codes", a.adminGenerateCommunityCodes)
@@ -200,6 +201,25 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.Logout(w, r)
+}
+
+func (a *App) adminDashboard(w http.ResponseWriter, r *http.Request) {
+	if !a.requireBillingService(w) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, admin auth.User) {
+		dashboard, err := a.billing.AdminDashboard(r.Context(), admin)
+		if errors.Is(err, billing.ErrNotAdmin) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin access required"})
+			return
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "admin dashboard could not be loaded"})
+			return
+		}
+		writeJSON(w, http.StatusOK, dashboard)
+	})(w, r)
 }
 
 func (a *App) adminGetAccount(w http.ResponseWriter, r *http.Request) {
