@@ -430,7 +430,16 @@ export default function Editor() {
     try {
       await apiArchiveDoc(id);
     } catch {
-      if (cancelledSave) setPendingSave((current) => current ?? cancelledSave);
+      if (cancelledSave) {
+        try {
+          const saved = await apiUpdateDoc(cancelledSave.id, cancelledSave.body);
+          setDocs((prev) =>
+            prev.map((current) => (current.id === saved.id ? { ...saved, pinned: current.pinned } : current))
+          );
+        } catch {
+          // The error state below covers both the failed deletion and failed save recovery.
+        }
+      }
       setSaveState("error");
       return;
     }

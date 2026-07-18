@@ -547,9 +547,12 @@ describe("Write (editor)", () => {
         })
       )
     );
-    expect(fetchMock).not.toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/docs/doc-first",
-      expect.objectContaining({ method: "PATCH" })
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ body: "# First edit\n\nUnsaved." })
+      })
     );
   });
 
