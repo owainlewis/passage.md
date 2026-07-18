@@ -507,6 +507,52 @@ describe("Write (editor)", () => {
     );
   });
 
+  it("keeps a newer autosave when deleting another document fails", async () => {
+    const fetchMock = stubSignedInFetch([
+      { id: "doc-first", body: "# First note\n\nDraft." },
+      { id: "doc-second", body: "# Second note\n\nDraft." }
+    ]);
+    const defaultFetch = fetchMock.getMockImplementation();
+    let resolveDelete: ((response: Response) => void) | undefined;
+    const deleteResponse = new Promise<Response>((resolve) => {
+      resolveDelete = resolve;
+    });
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-first" && init?.method === "DELETE") {
+        return deleteResponse;
+      }
+      return defaultFetch!(input, init);
+    });
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /First note/ });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# First edit\n\nUnsaved." }
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete document" })[0]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Second note/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Second edit\n\nKeep this." }
+    });
+    resolveDelete!(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/docs/doc-second",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ body: "# Second edit\n\nKeep this." })
+        })
+      )
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-first",
+      expect.objectContaining({ method: "PATCH" })
+    );
+  });
+
   it("orders documents by latest with pinned documents first", async () => {
     stubSignedInFetch([
       {

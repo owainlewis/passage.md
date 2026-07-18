@@ -430,7 +430,7 @@ export default function Editor() {
     try {
       await apiArchiveDoc(id);
     } catch {
-      if (cancelledSave) setPendingSave(cancelledSave);
+      if (cancelledSave) setPendingSave((current) => current ?? cancelledSave);
       setSaveState("error");
       return;
     }
