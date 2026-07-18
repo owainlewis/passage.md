@@ -1460,7 +1460,7 @@ button {
   z-index: -1;
   background-image: url("/hero-ink.jpg");
   background-size: cover;
-  background-position: center 72%;
+  background-position: center bottom;
 }
 
 .heroArt::before {
@@ -1485,29 +1485,17 @@ button {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  max-width: 44rem;
+  max-width: 48rem;
   margin: 0 auto;
-  padding: clamp(48px, 8vw, 104px) clamp(20px, 5vw, 40px) clamp(40px, 6vw, 64px);
-}
-
-.heroKicker {
-  margin: 0 0 22px;
-  padding: 6px 13px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--hairline));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-tint) 72%, transparent);
-  color: var(--accent);
-  font: 600 0.72rem/1 var(--mono);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  padding: clamp(32px, 5vw, 64px) clamp(20px, 5vw, 40px) clamp(36px, 5vw, 56px);
 }
 
 .heroTitle {
-  margin: 0 0 0.4em;
+  margin: 0 0 0.45em;
   font-family: var(--serif);
-  font-size: clamp(2.6rem, 6.4vw, 4.3rem);
-  line-height: 1.04;
-  letter-spacing: -0.014em;
+  font-size: clamp(2.3rem, 4.6vw, 3.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.012em;
   font-weight: 500;
   color: var(--ink);
   text-wrap: balance;
@@ -1631,7 +1619,13 @@ button {
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
-  margin-top: 2em;
+  margin-top: 1.8em;
+}
+
+.heroNote {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .btnPrimary {

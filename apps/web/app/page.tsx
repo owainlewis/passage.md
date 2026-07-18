@@ -80,7 +80,6 @@ export default function Landing() {
       <section className="heroSection">
         <div className="heroArt" aria-hidden="true" />
         <div className="heroInner">
-          <p className="heroKicker">Closed beta</p>
           <h1 className="heroTitle">Markdown writing for humans and agents</h1>
           <p className="heroSub">
             Write in a calm browser workspace, share documents online, and give your agents clean Markdown they can read
@@ -94,6 +93,7 @@ export default function Landing() {
               Read the story
             </a>
           </div>
+          <p className="heroNote">Closed beta for now.</p>
         </div>
         <div className="heroDocWrap" aria-hidden="true">
           <div className="heroDoc">
