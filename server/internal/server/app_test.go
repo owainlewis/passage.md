@@ -259,7 +259,7 @@ func TestRegisterIsClosedBeta(t *testing.T) {
 	}
 }
 
-func TestCommunityCodeRegistrationWorksWhilePublicRegistrationStaysClosed(t *testing.T) {
+func TestReusableReferralSignupWorksWhilePublicRegistrationStaysClosed(t *testing.T) {
 	authStore := newRouteAuthStore()
 	billingStore := newRouteBillingStore()
 	authService := auth.NewService(authStore, "test-secret", false)
@@ -279,19 +279,27 @@ func TestCommunityCodeRegistrationWorksWhilePublicRegistrationStaysClosed(t *tes
 		t.Fatalf("public registration status = %d", closed.Code)
 	}
 
-	redeem := httptest.NewRecorder()
-	redeemReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/redeem", strings.NewReader(`{"code":"pass-valid-code","email":"community@example.com","password":"password123"}`))
-	redeemReq.Header.Set("Content-Type", "application/json")
-	app.Routes().ServeHTTP(redeem, redeemReq)
-	if redeem.Code != http.StatusCreated {
-		t.Fatalf("redeem status = %d, body = %s", redeem.Code, redeem.Body.String())
+	validate := httptest.NewRecorder()
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/referral/validate", strings.NewReader(`{"ref":"aiengineer","code":"pass-valid-code"}`))
+	validateReq.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(validate, validateReq)
+	if validate.Code != http.StatusOK || !strings.Contains(validate.Body.String(), `"name":"AI Engineer"`) {
+		t.Fatalf("validate status/body = %d/%s", validate.Code, validate.Body.String())
 	}
-	cookies := redeem.Result().Cookies()
+
+	signup := httptest.NewRecorder()
+	signupReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/referral-signup", strings.NewReader(`{"ref":"aiengineer","code":"pass-valid-code","email":"community@example.com","password":"password123"}`))
+	signupReq.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(signup, signupReq)
+	if signup.Code != http.StatusCreated {
+		t.Fatalf("signup status/body = %d/%s", signup.Code, signup.Body.String())
+	}
+	cookies := signup.Result().Cookies()
 	if len(cookies) != 1 || !cookies[0].HttpOnly {
 		t.Fatalf("session cookies = %#v", cookies)
 	}
-	if communityStore.receivedHash != community.HashCode("pass-valid-code") || strings.Contains(redeem.Body.String(), "pass-valid-code") {
-		t.Fatalf("hash/body = %q/%s", communityStore.receivedHash, redeem.Body.String())
+	if communityStore.receivedSlug != "aiengineer" || communityStore.receivedHash != community.HashCode("pass-valid-code") || strings.Contains(signup.Body.String(), "pass-valid-code") {
+		t.Fatalf("slug/hash/body = %q/%q/%s", communityStore.receivedSlug, communityStore.receivedHash, signup.Body.String())
 	}
 
 	me := httptest.NewRecorder()
@@ -308,26 +316,31 @@ func TestCommunityCodeRegistrationWorksWhilePublicRegistrationStaysClosed(t *tes
 	}
 }
 
-func TestCommunityCodeRegistrationReturnsSafeInvalidCodeError(t *testing.T) {
+func TestReferralValidationAndSignupReturnSafeInvalidError(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authService := auth.NewService(authStore, "test-secret", false)
 	store := newRouteCommunityStore(authStore, newRouteBillingStore())
-	store.redeemErr = community.ErrInvalidCode
+	store.findErr = community.ErrReferralNotFound
 	app := &App{auth: authService, community: community.NewService(store, authService)}
 	plain := "PASS-SECRET-PLAINTEXT"
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/redeem", strings.NewReader(`{"code":"`+plain+`","email":"community@example.com","password":"password123"}`))
-	req.Header.Set("Content-Type", "application/json")
-	app.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), community.InvalidCodeMessage()) {
-		t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), plain) {
-		t.Fatalf("response leaked plaintext code: %s", rec.Body.String())
+	for _, tc := range []struct {
+		path, body string
+		status     int
+	}{
+		{"/api/v1/auth/referral/validate", `{"ref":"aiengineer","code":"` + plain + `"}`, http.StatusNotFound},
+		{"/api/v1/auth/referral-signup", `{"ref":"aiengineer","code":"` + plain + `","email":"community@example.com","password":"password123"}`, http.StatusBadRequest},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		app.Routes().ServeHTTP(rec, req)
+		if rec.Code != tc.status || !strings.Contains(rec.Body.String(), community.InvalidReferralMessage()) || strings.Contains(rec.Body.String(), plain) {
+			t.Fatalf("%s status/body = %d/%s", tc.path, rec.Code, rec.Body.String())
+		}
 	}
 }
 
-func TestAdminCanGenerateAndRevokeCommunityCodes(t *testing.T) {
+func TestAdminManagesCommunityReferralsAndGrants(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
 	authStore.sessions[routeTokenHash("member-session")] = auth.User{ID: "member-1", Email: "member@example.com"}
@@ -340,7 +353,7 @@ func TestAdminCanGenerateAndRevokeCommunityCodes(t *testing.T) {
 	}
 
 	forbidden := httptest.NewRecorder()
-	forbiddenReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes", strings.NewReader(`{"batchLabel":"Forbidden","count":1}`))
+	forbiddenReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-referrals", strings.NewReader(`{"slug":"forbidden","name":"Forbidden"}`))
 	forbiddenReq.Header.Set("Content-Type", "application/json")
 	forbiddenReq.Header.Set("Origin", "http://passage.test")
 	forbiddenReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("member-session")})
@@ -349,75 +362,29 @@ func TestAdminCanGenerateAndRevokeCommunityCodes(t *testing.T) {
 		t.Fatalf("non-admin generate status = %d, body = %s", forbidden.Code, forbidden.Body.String())
 	}
 
-	generate := httptest.NewRecorder()
-	generateReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes", strings.NewReader(`{"batchLabel":"Community July","count":2}`))
-	generateReq.Header.Set("Content-Type", "application/json")
-	generateReq.Header.Set("Origin", "http://passage.test")
-	generateReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
-	app.Routes().ServeHTTP(generate, generateReq)
-	if generate.Code != http.StatusCreated || !strings.Contains(generate.Body.String(), `"batchLabel":"Community July"`) || strings.Count(generate.Body.String(), `"code":"PASS-`) != 2 {
-		t.Fatalf("generate status/body = %d/%s", generate.Code, generate.Body.String())
+	id := "11111111-1111-1111-1111-111111111111"
+	requests := []struct {
+		path, body string
+		status     int
+	}{
+		{"/api/v1/admin/community-referrals", `{"slug":"aiengineer","name":"AI Engineer"}`, http.StatusCreated},
+		{"/api/v1/admin/community-referrals/" + id + "/rotate", `{}`, http.StatusOK},
+		{"/api/v1/admin/community-referrals/" + id + "/disable", `{}`, http.StatusNoContent},
+		{"/api/v1/admin/community-grants/revoke", `{"email":"member@example.com","reason":"membership ended"}`, http.StatusNoContent},
 	}
-	if len(store.hashes) != 2 {
-		t.Fatalf("stored hashes = %#v", store.hashes)
+	for _, tc := range requests {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://passage.test"+tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "http://passage.test")
+		req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+		app.Routes().ServeHTTP(rec, req)
+		if rec.Code != tc.status {
+			t.Fatalf("%s status/body = %d/%s", tc.path, rec.Code, rec.Body.String())
+		}
 	}
-
-	revoke := httptest.NewRecorder()
-	redeemedID := "11111111-1111-1111-1111-111111111111"
-	revokeReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/"+redeemedID+"/revoke", strings.NewReader(`{"reason":"membership ended"}`))
-	revokeReq.Header.Set("Content-Type", "application/json")
-	revokeReq.Header.Set("Origin", "http://passage.test")
-	revokeReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
-	app.Routes().ServeHTTP(revoke, revokeReq)
-	if revoke.Code != http.StatusNoContent || store.revokedID != redeemedID || store.reason != "membership ended" {
-		t.Fatalf("revoke status/store = %d/%q/%q", revoke.Code, store.revokedID, store.reason)
-	}
-}
-
-func TestAdminRevokeDisablesUnusedCommunityCode(t *testing.T) {
-	authStore := newRouteAuthStore()
-	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
-	authService := auth.NewService(authStore, "test-secret", false)
-	store := newRouteCommunityStore(authStore, newRouteBillingStore())
-	store.invalidateUnused = true
-	app := &App{
-		auth:      authService,
-		billing:   billing.NewService(newRouteBillingStore(), routeBillingConfig()),
-		community: community.NewService(store, authService),
-	}
-
-	rec := httptest.NewRecorder()
-	unusedID := "22222222-2222-2222-2222-222222222222"
-	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/"+unusedID+"/revoke", strings.NewReader(`{"reason":"sent to wrong person"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "http://passage.test")
-	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
-	app.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent || store.disabledID != unusedID {
-		t.Fatalf("status/disabled ID = %d/%q", rec.Code, store.disabledID)
-	}
-
-	store.invalidateErr = community.ErrCodeNotFound
-	notFound := httptest.NewRecorder()
-	notFoundReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/33333333-3333-3333-3333-333333333333/revoke", strings.NewReader(`{"reason":"missing"}`))
-	notFoundReq.Header.Set("Content-Type", "application/json")
-	notFoundReq.Header.Set("Origin", "http://passage.test")
-	notFoundReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
-	app.Routes().ServeHTTP(notFound, notFoundReq)
-	if notFound.Code != http.StatusNotFound || !strings.Contains(notFound.Body.String(), "community access code not found") {
-		t.Fatalf("not-found status/body = %d/%s", notFound.Code, notFound.Body.String())
-	}
-
-	store.invalidateErr = nil
-	store.disabledID = ""
-	malformed := httptest.NewRecorder()
-	malformedReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/not-a-uuid/revoke", strings.NewReader(`{"reason":"mistyped"}`))
-	malformedReq.Header.Set("Content-Type", "application/json")
-	malformedReq.Header.Set("Origin", "http://passage.test")
-	malformedReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
-	app.Routes().ServeHTTP(malformed, malformedReq)
-	if malformed.Code != http.StatusNotFound || store.disabledID != "" {
-		t.Fatalf("malformed status/disabled ID = %d/%q", malformed.Code, store.disabledID)
+	if store.createdSlug != "aiengineer" || store.rotatedID != id || store.disabledID != id || store.revokedEmail != "member@example.com" || store.reason != "membership ended" {
+		t.Fatalf("store = %#v", store)
 	}
 }
 
@@ -1205,66 +1172,52 @@ func (s *routeBillingStore) CountSavedDocs(ctx context.Context, userID string) (
 }
 
 type routeCommunityStore struct {
-	authStore        *routeAuthStore
-	billingStore     *routeBillingStore
-	hashes           []string
-	receivedHash     string
-	redeemErr        error
-	revokedID        string
-	disabledID       string
-	reason           string
-	invalidateUnused bool
-	invalidateErr    error
+	authSessions                                *routeAuthStore
+	billingStore                                *routeBillingStore
+	createdSlug, receivedSlug, receivedHash     string
+	findErr, redeemErr                          error
+	rotatedID, disabledID, revokedEmail, reason string
 }
 
 func newRouteCommunityStore(authStore *routeAuthStore, billingStore *routeBillingStore) *routeCommunityStore {
-	return &routeCommunityStore{authStore: authStore, billingStore: billingStore}
+	return &routeCommunityStore{authSessions: authStore, billingStore: billingStore}
 }
 
-func (s *routeCommunityStore) CreateCodes(_ context.Context, label string, hashes []string) ([]community.StoredCode, error) {
-	s.hashes = append([]string(nil), hashes...)
-	codes := make([]community.StoredCode, len(hashes))
-	for i, hash := range hashes {
-		codes[i] = community.StoredCode{
-			ID:         "code-" + strconv.Itoa(i+1),
-			CodeHash:   hash,
-			BatchLabel: label,
-			CreatedAt:  time.Unix(int64(i+1), 0).UTC(),
-		}
+func (s *routeCommunityStore) CreateReferral(_ context.Context, slug, name, codeHash string) (community.StoredReferral, error) {
+	s.createdSlug, s.receivedHash = slug, codeHash
+	return community.StoredReferral{ID: "11111111-1111-1111-1111-111111111111", Slug: slug, Name: name, CodeHash: codeHash, CreatedAt: time.Unix(1, 0).UTC()}, nil
+}
+
+func (s *routeCommunityStore) FindActiveReferral(_ context.Context, slug, codeHash string) (community.StoredReferral, error) {
+	s.receivedSlug, s.receivedHash = slug, codeHash
+	if s.findErr != nil {
+		return community.StoredReferral{}, s.findErr
 	}
-	return codes, nil
+	return community.StoredReferral{ID: "11111111-1111-1111-1111-111111111111", Slug: slug, Name: "AI Engineer", CodeHash: codeHash}, nil
 }
 
-func (s *routeCommunityStore) CanRedeem(_ context.Context, _ string) (bool, error) {
-	return true, nil
-}
-
-func (s *routeCommunityStore) Redeem(_ context.Context, codeHash string, email string, _ string, session auth.PreparedSession, _ time.Time) (auth.User, error) {
-	s.receivedHash = codeHash
+func (s *routeCommunityStore) Redeem(_ context.Context, slug, codeHash, email, _ string, session auth.PreparedSession, _ time.Time) (auth.User, error) {
+	s.receivedSlug, s.receivedHash = slug, codeHash
 	if s.redeemErr != nil {
 		return auth.User{}, s.redeemErr
 	}
 	user := auth.User{ID: "community-user", Email: email}
-	s.authStore.sessions[session.TokenHash] = user
+	s.authSessions.sessions[session.TokenHash] = user
 	s.billingStore.users[email] = user
 	s.billingStore.states[user.ID] = billing.State{CommunityAccess: true}
 	return user, nil
 }
 
-func (s *routeCommunityStore) Invalidate(_ context.Context, id string, reason string, _ time.Time) error {
-	if s.invalidateErr != nil {
-		return s.invalidateErr
-	}
-	s.reason = reason
-	if s.invalidateUnused {
-		s.disabledID = id
-	} else {
-		s.revokedID = id
-	}
-	return nil
+func (s *routeCommunityStore) RotateReferral(_ context.Context, id, codeHash string, _ time.Time) (community.StoredReferral, error) {
+	s.rotatedID, s.receivedHash = id, codeHash
+	return community.StoredReferral{ID: id, Slug: "aiengineer", Name: "AI Engineer", CodeHash: codeHash}, nil
 }
 
-func (s *routeCommunityStore) Disable(_ context.Context, id string, _ time.Time) error {
+func (s *routeCommunityStore) DisableReferral(_ context.Context, id string, _ time.Time) error {
 	s.disabledID = id
+	return nil
+}
+func (s *routeCommunityStore) RevokeGrant(_ context.Context, email, reason string, _ time.Time) error {
+	s.revokedEmail, s.reason = email, reason
 	return nil
 }

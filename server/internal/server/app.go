@@ -61,15 +61,18 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", a.health)
 	mux.HandleFunc("GET /api/v1/me", a.me)
 	mux.HandleFunc("POST /api/v1/auth/register", a.register)
-	mux.HandleFunc("POST /api/v1/auth/redeem", a.redeem)
+	mux.HandleFunc("POST /api/v1/auth/referral/validate", a.validateReferral)
+	mux.HandleFunc("POST /api/v1/auth/referral-signup", a.referralSignup)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
 	mux.HandleFunc("POST /api/v1/auth/magic-link", a.requestMagicLink)
 	mux.HandleFunc("POST /api/v1/auth/magic-link/verify", a.verifyMagicLink)
 	mux.HandleFunc("GET /api/v1/admin/users/{email}/account", a.adminGetAccount)
 	mux.HandleFunc("PATCH /api/v1/admin/users/{email}/account", a.adminUpdateAccount)
-	mux.HandleFunc("POST /api/v1/admin/community-access-codes", a.adminGenerateCommunityCodes)
-	mux.HandleFunc("POST /api/v1/admin/community-access-codes/{id}/revoke", a.adminRevokeCommunityCode)
+	mux.HandleFunc("POST /api/v1/admin/community-referrals", a.adminCreateCommunityReferral)
+	mux.HandleFunc("POST /api/v1/admin/community-referrals/{id}/rotate", a.adminRotateCommunityReferral)
+	mux.HandleFunc("POST /api/v1/admin/community-referrals/{id}/disable", a.adminDisableCommunityReferral)
+	mux.HandleFunc("POST /api/v1/admin/community-grants/revoke", a.adminRevokeCommunityGrant)
 	mux.HandleFunc("POST /api/v1/billing/checkout", a.createCheckoutSession)
 	mux.HandleFunc("POST /api/v1/billing/portal", a.createPortalSession)
 	mux.HandleFunc("POST /api/v1/billing/webhook", a.stripeWebhook)
@@ -131,7 +134,31 @@ func (a *App) register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusForbidden, map[string]string{"error": "Passage is in closed beta"})
 }
 
-func (a *App) redeem(w http.ResponseWriter, r *http.Request) {
+func (a *App) validateReferral(w http.ResponseWriter, r *http.Request) {
+	if a.community == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
+		return
+	}
+	if !validateJSONMutation(w, r) {
+		return
+	}
+	var input communityReferralCredentials
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	referral, err := a.community.ValidateReferral(r.Context(), input.Ref, input.Code)
+	if errors.Is(err, community.ErrInvalidReferral) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": community.InvalidReferralMessage()})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "referral could not be validated"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"name": referral.Name})
+}
+
+func (a *App) referralSignup(w http.ResponseWriter, r *http.Request) {
 	if a.auth == nil || a.community == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
 		return
@@ -139,13 +166,13 @@ func (a *App) redeem(w http.ResponseWriter, r *http.Request) {
 	if !validateJSONMutation(w, r) {
 		return
 	}
-	var input communityRedeemInput
+	var input communityReferralSignupInput
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	user, session, err := a.community.Redeem(r.Context(), input.Code, input.Email, input.Password)
-	if errors.Is(err, community.ErrInvalidCode) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": community.InvalidCodeMessage()})
+	user, session, err := a.community.Redeem(r.Context(), input.Ref, input.Code, input.Email, input.Password)
+	if errors.Is(err, community.ErrInvalidReferral) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": community.InvalidReferralMessage()})
 		return
 	}
 	if errors.Is(err, community.ErrEmailTaken) {
@@ -233,51 +260,95 @@ func (a *App) adminUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	})(w, r)
 }
 
-func (a *App) adminGenerateCommunityCodes(w http.ResponseWriter, r *http.Request) {
+func (a *App) adminCreateCommunityReferral(w http.ResponseWriter, r *http.Request) {
 	if !a.requireCommunityAdmin(w, r, func(w http.ResponseWriter, r *http.Request, _ auth.User) {
 		if !validateJSONMutation(w, r) {
 			return
 		}
-		var input communityGenerateInput
+		var input communityReferralInput
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		codes, err := a.community.Generate(r.Context(), input.BatchLabel, input.Count)
+		referral, err := a.community.CreateReferral(r.Context(), input.Slug, input.Name)
+		if errors.Is(err, community.ErrReferralExists) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "community referral already exists"})
+			return
+		}
 		if err != nil {
 			message := err.Error()
-			if message == "batch label is required" || message == "count must be between 1 and 100" {
+			if message == "referral slug must contain lowercase letters, numbers, and single hyphens" || message == "referral name is required" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": message})
 				return
 			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community access codes could not be generated"})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community referral could not be created"})
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]any{"codes": codes})
+		writeJSON(w, http.StatusCreated, referral)
 	}) {
 		return
 	}
 }
 
-func (a *App) adminRevokeCommunityCode(w http.ResponseWriter, r *http.Request) {
+func (a *App) adminRotateCommunityReferral(w http.ResponseWriter, r *http.Request) {
 	if !a.requireCommunityAdmin(w, r, func(w http.ResponseWriter, r *http.Request, _ auth.User) {
 		if !validateJSONMutation(w, r) {
 			return
 		}
-		var input communityRevokeInput
-		if !decodeJSON(w, r, &input) {
-			return
-		}
-		err := a.community.Revoke(r.Context(), r.PathValue("id"), input.Reason)
-		if errors.Is(err, community.ErrCodeNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "community access code not found"})
+		referral, err := a.community.RotateReferral(r.Context(), r.PathValue("id"))
+		if errors.Is(err, community.ErrReferralNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "community referral not found"})
 			return
 		}
 		if err != nil {
-			if err.Error() == "revocation reason is required" {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community referral could not be rotated"})
+			return
+		}
+		writeJSON(w, http.StatusOK, referral)
+	}) {
+		return
+	}
+}
+
+func (a *App) adminDisableCommunityReferral(w http.ResponseWriter, r *http.Request) {
+	if !a.requireCommunityAdmin(w, r, func(w http.ResponseWriter, r *http.Request, _ auth.User) {
+		if !validateJSONMutation(w, r) {
+			return
+		}
+		err := a.community.DisableReferral(r.Context(), r.PathValue("id"))
+		if errors.Is(err, community.ErrReferralNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "community referral not found"})
+			return
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community referral could not be disabled"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}) {
+		return
+	}
+}
+
+func (a *App) adminRevokeCommunityGrant(w http.ResponseWriter, r *http.Request) {
+	if !a.requireCommunityAdmin(w, r, func(w http.ResponseWriter, r *http.Request, _ auth.User) {
+		if !validateJSONMutation(w, r) {
+			return
+		}
+		var input communityGrantRevokeInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		err := a.community.RevokeGrant(r.Context(), input.Email, input.Reason)
+		if errors.Is(err, community.ErrGrantNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "community grant not found"})
+			return
+		}
+		if err != nil {
+			if err.Error() == "valid email is required" || err.Error() == "revocation reason is required" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 				return
 			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community access code could not be revoked"})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community grant could not be revoked"})
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -601,18 +672,25 @@ type adminAccountInput struct {
 	MaxSavedDocs *int    `json:"maxSavedDocs"`
 }
 
-type communityRedeemInput struct {
+type communityReferralSignupInput struct {
+	Ref      string `json:"ref"`
 	Code     string `json:"code"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-type communityGenerateInput struct {
-	BatchLabel string `json:"batchLabel"`
-	Count      int    `json:"count"`
+type communityReferralCredentials struct {
+	Ref  string `json:"ref"`
+	Code string `json:"code"`
 }
 
-type communityRevokeInput struct {
+type communityReferralInput struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+type communityGrantRevokeInput struct {
+	Email  string `json:"email"`
 	Reason string `json:"reason"`
 }
 
