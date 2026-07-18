@@ -44,6 +44,21 @@ func (s *PGStore) CreateCodes(ctx context.Context, label string, hashes []string
 	return codes, nil
 }
 
+func (s *PGStore) CanRedeem(ctx context.Context, codeHash string) (bool, error) {
+	var redeemable bool
+	err := s.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM community_access_codes
+			WHERE code_hash = $1
+			  AND disabled_at IS NULL
+			  AND redeemed_user_id IS NULL
+			  AND revoked_at IS NULL
+		)
+	`, codeHash).Scan(&redeemable)
+	return redeemable, err
+}
+
 func (s *PGStore) Redeem(ctx context.Context, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {

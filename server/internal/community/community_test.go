@@ -71,15 +71,41 @@ func TestRedeemValidatesAndPassesOnlyHashToStore(t *testing.T) {
 }
 
 func TestDisabledUsedAndRevokedCodesAreRejected(t *testing.T) {
-	for _, state := range []string{"disabled", "used", "revoked"} {
+	for _, state := range []string{"invalid", "disabled", "used", "revoked"} {
 		t.Run(state, func(t *testing.T) {
-			store := &memoryStore{redeemErr: ErrInvalidCode}
+			store := &memoryStore{unredeemable: true}
 			service := NewService(store, auth.NewService(nil, "secret", false))
+			hashCalls := 0
+			service.hashPassword = func(string) (string, error) {
+				hashCalls++
+				return "hash", nil
+			}
 			_, _, err := service.Redeem(context.Background(), "PASS-INVALID", state+"@example.com", "password123")
 			if !errors.Is(err, ErrInvalidCode) {
 				t.Fatalf("error = %v", err)
 			}
+			if hashCalls != 0 || store.redeemCalls != 0 {
+				t.Fatalf("hash/redeem calls = %d/%d", hashCalls, store.redeemCalls)
+			}
 		})
+	}
+}
+
+func TestRedeemKeepsTransactionalRecheckAsFinalAuthority(t *testing.T) {
+	store := &memoryStore{redeemErr: ErrInvalidCode}
+	service := NewService(store, auth.NewService(nil, "secret", false))
+	hashCalls := 0
+	service.hashPassword = func(string) (string, error) {
+		hashCalls++
+		return "hash", nil
+	}
+
+	_, _, err := service.Redeem(context.Background(), "PASS-RACE", "race@example.com", "password123")
+	if !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("error = %v", err)
+	}
+	if hashCalls != 1 || store.redeemCalls != 1 {
+		t.Fatalf("hash/redeem calls = %d/%d", hashCalls, store.redeemCalls)
 	}
 }
 
@@ -106,6 +132,8 @@ type memoryStore struct {
 	disabledID   string
 	revokedID    string
 	reason       string
+	unredeemable bool
+	redeemCalls  int
 }
 
 func (s *memoryStore) CreateCodes(_ context.Context, label string, hashes []string) ([]StoredCode, error) {
@@ -117,7 +145,13 @@ func (s *memoryStore) CreateCodes(_ context.Context, label string, hashes []stri
 	return codes, nil
 }
 
+func (s *memoryStore) CanRedeem(_ context.Context, codeHash string) (bool, error) {
+	s.codeHash = codeHash
+	return !s.unredeemable, nil
+}
+
 func (s *memoryStore) Redeem(_ context.Context, codeHash string, email string, passwordHash string, _ auth.PreparedSession, _ time.Time) (auth.User, error) {
+	s.redeemCalls++
 	s.codeHash = codeHash
 	s.passwordHash = passwordHash
 	if s.redeemErr != nil {

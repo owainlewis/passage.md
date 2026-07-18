@@ -49,6 +49,9 @@ func TestPGStoreRedemptionIsAtomicAndSingleUse(t *testing.T) {
 		if users != 0 || redeemed {
 			t.Fatalf("users/redeemed = %d/%v", users, redeemed)
 		}
+		if redeemable, err := store.CanRedeem(ctx, hash); err != nil || !redeemable {
+			t.Fatalf("rolled-back code redeemable/error = %v/%v", redeemable, err)
+		}
 	})
 
 	t.Run("concurrent redemption creates one account", func(t *testing.T) {
@@ -78,6 +81,9 @@ func TestPGStoreRedemptionIsAtomicAndSingleUse(t *testing.T) {
 		if successes.Load() != 1 || invalid.Load() != 1 {
 			t.Fatalf("success/invalid = %d/%d", successes.Load(), invalid.Load())
 		}
+		if redeemable, err := store.CanRedeem(ctx, hash); err != nil || redeemable {
+			t.Fatalf("used code redeemable/error = %v/%v", redeemable, err)
+		}
 	})
 }
 
@@ -95,6 +101,9 @@ func TestPGStoreDisableAndRevokeAffectGrantWithoutBillingState(t *testing.T) {
 	if err := store.Disable(ctx, disabledCodes[0].ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	if redeemable, err := store.CanRedeem(ctx, disabledHash); err != nil || redeemable {
+		t.Fatalf("disabled code redeemable/error = %v/%v", redeemable, err)
+	}
 	if _, err := store.Redeem(ctx, disabledHash, fmt.Sprintf("disabled-%d@example.com", stamp), "hash", auth.PreparedSession{TokenHash: fmt.Sprintf("disabled-session-%d", stamp), ExpiresAt: time.Now().Add(time.Hour)}, time.Now()); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("disabled redeem error = %v", err)
 	}
@@ -104,9 +113,15 @@ func TestPGStoreDisableAndRevokeAffectGrantWithoutBillingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if redeemable, err := store.CanRedeem(ctx, redeemedHash); err != nil || !redeemable {
+		t.Fatalf("unused code redeemable/error = %v/%v", redeemable, err)
+	}
 	user, err := store.Redeem(ctx, redeemedHash, fmt.Sprintf("redeemed-%d@example.com", stamp), "hash", auth.PreparedSession{TokenHash: fmt.Sprintf("redeemed-session-%d", stamp), ExpiresAt: time.Now().Add(time.Hour)}, time.Now())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if redeemable, err := store.CanRedeem(ctx, redeemedHash); err != nil || redeemable {
+		t.Fatalf("used code redeemable/error = %v/%v", redeemable, err)
 	}
 	var billingRows int
 	if err := db.QueryRow(ctx, `SELECT count(*) FROM billing_accounts WHERE user_id = $1`, user.ID).Scan(&billingRows); err != nil {

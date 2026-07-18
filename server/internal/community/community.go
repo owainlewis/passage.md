@@ -39,19 +39,29 @@ type StoredCode struct {
 
 type Store interface {
 	CreateCodes(ctx context.Context, label string, hashes []string) ([]StoredCode, error)
+	CanRedeem(ctx context.Context, codeHash string) (bool, error)
 	Redeem(ctx context.Context, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error)
 	Disable(ctx context.Context, id string, now time.Time) error
 	Revoke(ctx context.Context, id string, reason string, now time.Time) error
 }
 
 type Service struct {
-	store Store
-	auth  *auth.Service
-	now   func() time.Time
+	store        Store
+	auth         *auth.Service
+	now          func() time.Time
+	hashPassword func(string) (string, error)
 }
 
 func NewService(store Store, authService *auth.Service) *Service {
-	return &Service{store: store, auth: authService, now: time.Now}
+	return &Service{
+		store: store,
+		auth:  authService,
+		now:   time.Now,
+		hashPassword: func(password string) (string, error) {
+			hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+			return string(hash), err
+		},
+	}
 }
 
 func (s *Service) Generate(ctx context.Context, label string, count int) ([]Code, error) {
@@ -98,7 +108,15 @@ func (s *Service) Redeem(ctx context.Context, code string, email string, passwor
 	if NormalizeCode(code) == "" {
 		return auth.User{}, auth.PreparedSession{}, ErrInvalidCode
 	}
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	codeHash := HashCode(code)
+	redeemable, err := s.store.CanRedeem(ctx, codeHash)
+	if err != nil {
+		return auth.User{}, auth.PreparedSession{}, err
+	}
+	if !redeemable {
+		return auth.User{}, auth.PreparedSession{}, ErrInvalidCode
+	}
+	passwordHash, err := s.hashPassword(password)
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}
@@ -106,7 +124,7 @@ func (s *Service) Redeem(ctx context.Context, code string, email string, passwor
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}
-	user, err := s.store.Redeem(ctx, HashCode(code), email, string(passwordHash), session, s.now())
+	user, err := s.store.Redeem(ctx, codeHash, email, passwordHash, session, s.now())
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}

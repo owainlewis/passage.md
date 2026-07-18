@@ -1184,6 +1184,10 @@ func (s *routeCommunityStore) CreateCodes(_ context.Context, label string, hashe
 	return codes, nil
 }
 
+func (s *routeCommunityStore) CanRedeem(_ context.Context, _ string) (bool, error) {
+	return true, nil
+}
+
 func (s *routeCommunityStore) Redeem(_ context.Context, codeHash string, email string, _ string, session auth.PreparedSession, _ time.Time) (auth.User, error) {
 	s.receivedHash = codeHash
 	if s.redeemErr != nil {
