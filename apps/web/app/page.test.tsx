@@ -121,7 +121,9 @@ describe("Landing", () => {
     render(<Landing />);
 
     expect(screen.getByText("Markdown writing for humans and agents")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "CLI" })).toHaveAttribute("href", "/cli");
+    for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
+      expect(cliLink).toHaveAttribute("href", "/cli");
+    }
     expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
   });
 });

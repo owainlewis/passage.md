@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono } from "next/font/google";
+import { Inter, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 
 const sans = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
+  display: "swap"
+});
+
+const serif = Newsreader({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  variable: "--font-serif",
   display: "swap"
 });
 
@@ -32,13 +39,13 @@ export const metadata: Metadata = {
     siteName: title,
     title,
     description,
-    images: [{ url: "/bg-poster.jpg", width: 1920, height: 1080, alt: title }]
+    images: [{ url: "/og.jpg", width: 1920, height: 1080, alt: title }]
   },
   twitter: {
     card: "summary_large_image",
     title,
     description,
-    images: ["/bg-poster.jpg"]
+    images: ["/og.jpg"]
   }
 };
 
@@ -48,7 +55,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
       <body>{children}</body>
     </html>
   );
