@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/yuin/goldmark v1.8.2
+	github.com/yuin/goldmark v1.8.4
 	golang.org/x/crypto v0.53.0
 )
 
