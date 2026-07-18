@@ -6,7 +6,7 @@ export function Brand({ href, ariaLabel }: { href?: string; ariaLabel?: string }
   const inner = (
     <>
       <span className="brandMark" aria-hidden="true">
-        P
+        ¶
       </span>
       <span className="brandName">
         passage<span className="brandExt">.md</span>

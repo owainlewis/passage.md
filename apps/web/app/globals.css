@@ -1,15 +1,17 @@
 :root {
-  --bg: #fbfbf8;
-  --sidebar-bg: #f5f4ef;
-  --surface: #fbfbf8;
-  --ink: #1b1a17;
-  --ink-soft: #36342f;
-  --muted: #8c897f;
-  --faint: #b4b1a6;
-  --hairline: #e8e6dd;
-  --hairline-strong: #ddd9cd;
+  --bg: #fbfbf9;
+  --sidebar-bg: #f5f4f1;
+  --surface: #fbfbf9;
+  --ink: #1b1a18;
+  --ink-soft: #363531;
+  --muted: #878981;
+  --faint: #b1b1aa;
+  --hairline: #e7e6e0;
+  --hairline-strong: #dcdad3;
   --accent: #2c6b60;
+  --accent-strong: #25594f;
   --accent-tint: #e7efec;
+  --ink-display: #17332d;
   --code-bg: #f0efe8;
   --selection: rgba(44, 107, 96, 0.13);
   --elevated: var(--surface);
@@ -43,7 +45,9 @@
   --hairline: #282d35;
   --hairline-strong: #363d47;
   --accent: #6fbcad;
+  --accent-strong: #35786c;
   --accent-tint: #18352f;
+  --ink-display: #e9efed;
   --code-bg: #1b1f26;
   --selection: rgba(111, 188, 173, 0.22);
   --elevated: #1d2229;
@@ -133,38 +137,34 @@ button {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   user-select: none;
 }
 
 .brandMark {
-  width: 26px;
-  height: 26px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--sans);
-  font-weight: 700;
-  font-size: 0.94rem;
+  color: var(--accent);
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.28rem;
   line-height: 1;
-  letter-spacing: 0;
-  box-shadow: 0 1px 2px rgba(27, 26, 23, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
 }
 
 .brandName {
-  font-size: 0.97rem;
+  font-family: var(--serif);
+  font-size: 1.08rem;
   font-weight: 600;
-  letter-spacing: -0.012em;
+  letter-spacing: 0;
   color: var(--ink);
 }
 
 .brandExt {
   color: var(--faint);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .docListLabel {
@@ -1497,7 +1497,7 @@ button {
   line-height: 1.08;
   letter-spacing: -0.012em;
   font-weight: 500;
-  color: var(--ink);
+  color: var(--ink-display);
   text-wrap: balance;
 }
 
@@ -1632,7 +1632,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
   font-size: 0.95rem;
   font-weight: 600;
@@ -1685,6 +1685,7 @@ button {
   line-height: 1.15;
   letter-spacing: -0.01em;
   font-weight: 500;
+  color: var(--ink-display);
   text-align: center;
   margin: 0 0 1.3em;
 }
