@@ -48,19 +48,27 @@ func (s *PGStore) State(ctx context.Context, userID string) (State, error) {
 	var state State
 	var manualPlan *string
 	err := s.db.QueryRow(ctx, `
-		SELECT manual_plan,
-		       max_saved_docs,
-		       COALESCE(stripe_customer_id, ''),
-		       COALESCE(stripe_subscription_id, ''),
-		       COALESCE(stripe_subscription_status, ''),
-		       COALESCE(stripe_price_id, ''),
-		       stripe_current_period_end,
-		       stripe_cancel_at_period_end
-		FROM billing_accounts
-		WHERE user_id = $1
+		SELECT billing_accounts.manual_plan,
+		       billing_accounts.max_saved_docs,
+		       EXISTS (
+		         SELECT 1
+		         FROM community_access_codes
+		         WHERE redeemed_user_id = $1
+		           AND revoked_at IS NULL
+		       ),
+		       COALESCE(billing_accounts.stripe_customer_id, ''),
+		       COALESCE(billing_accounts.stripe_subscription_id, ''),
+		       COALESCE(billing_accounts.stripe_subscription_status, ''),
+		       COALESCE(billing_accounts.stripe_price_id, ''),
+		       billing_accounts.stripe_current_period_end,
+		       COALESCE(billing_accounts.stripe_cancel_at_period_end, false)
+		FROM users
+		LEFT JOIN billing_accounts ON billing_accounts.user_id = users.id
+		WHERE users.id = $1
 	`, userID).Scan(
 		&manualPlan,
 		&state.MaxSavedDocs,
+		&state.CommunityAccess,
 		&state.StripeCustomerID,
 		&state.StripeSubscriptionID,
 		&state.StripeSubscriptionStatus,

@@ -10,6 +10,7 @@ import (
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
+	"github.com/owainlewis/passage.md/server/internal/community"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/documents"
@@ -27,6 +28,7 @@ type App struct {
 	auth          *auth.Service
 	docs          *documents.Handler
 	billing       *billing.Service
+	community     *community.Service
 	stripe        *billing.StripeClient
 	billingConfig config.BillingConfig
 }
@@ -47,6 +49,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	}
 	if db != nil {
 		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure, auth.WithAppBaseURL(options.Billing.AppBaseURL))
+		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)
 	}
@@ -58,12 +61,15 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", a.health)
 	mux.HandleFunc("GET /api/v1/me", a.me)
 	mux.HandleFunc("POST /api/v1/auth/register", a.register)
+	mux.HandleFunc("POST /api/v1/auth/redeem", a.redeem)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
 	mux.HandleFunc("POST /api/v1/auth/magic-link", a.requestMagicLink)
 	mux.HandleFunc("POST /api/v1/auth/magic-link/verify", a.verifyMagicLink)
 	mux.HandleFunc("GET /api/v1/admin/users/{email}/account", a.adminGetAccount)
 	mux.HandleFunc("PATCH /api/v1/admin/users/{email}/account", a.adminUpdateAccount)
+	mux.HandleFunc("POST /api/v1/admin/community-access-codes", a.adminGenerateCommunityCodes)
+	mux.HandleFunc("POST /api/v1/admin/community-access-codes/{id}/revoke", a.adminRevokeCommunityCode)
 	mux.HandleFunc("POST /api/v1/billing/checkout", a.createCheckoutSession)
 	mux.HandleFunc("POST /api/v1/billing/portal", a.createPortalSession)
 	mux.HandleFunc("POST /api/v1/billing/webhook", a.stripeWebhook)
@@ -123,6 +129,40 @@ func (a *App) me(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusForbidden, map[string]string{"error": "Passage is in closed beta"})
+}
+
+func (a *App) redeem(w http.ResponseWriter, r *http.Request) {
+	if a.auth == nil || a.community == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
+		return
+	}
+	if !validateJSONMutation(w, r) {
+		return
+	}
+	var input communityRedeemInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	user, session, err := a.community.Redeem(r.Context(), input.Code, input.Email, input.Password)
+	if errors.Is(err, community.ErrInvalidCode) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": community.InvalidCodeMessage()})
+		return
+	}
+	if errors.Is(err, community.ErrEmailTaken) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "email already registered"})
+		return
+	}
+	if err != nil {
+		message := err.Error()
+		if message == "valid email is required" || message == "password must be at least 8 characters" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": message})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be created"})
+		return
+	}
+	a.auth.WriteSessionCookie(w, session)
+	writeJSON(w, http.StatusCreated, map[string]any{"authenticated": true, "user": user})
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +231,74 @@ func (a *App) adminUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		user, account, err := a.billing.UpdateAdminOverride(r.Context(), admin, r.PathValue("email"), plan, maxSavedDocs)
 		a.writeAdminAccountResponse(w, user, account, err)
 	})(w, r)
+}
+
+func (a *App) adminGenerateCommunityCodes(w http.ResponseWriter, r *http.Request) {
+	if !a.requireCommunityAdmin(w, r, func(w http.ResponseWriter, r *http.Request, _ auth.User) {
+		if !validateJSONMutation(w, r) {
+			return
+		}
+		var input communityGenerateInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		codes, err := a.community.Generate(r.Context(), input.BatchLabel, input.Count)
+		if err != nil {
+			message := err.Error()
+			if message == "batch label is required" || message == "count must be between 1 and 100" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": message})
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community access codes could not be generated"})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"codes": codes})
+	}) {
+		return
+	}
+}
+
+func (a *App) adminRevokeCommunityCode(w http.ResponseWriter, r *http.Request) {
+	if !a.requireCommunityAdmin(w, r, func(w http.ResponseWriter, r *http.Request, _ auth.User) {
+		if !validateJSONMutation(w, r) {
+			return
+		}
+		var input communityRevokeInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		err := a.community.Revoke(r.Context(), r.PathValue("id"), input.Reason)
+		if errors.Is(err, community.ErrCodeNotRedeemed) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "redeemed community access code not found"})
+			return
+		}
+		if err != nil {
+			if err.Error() == "revocation reason is required" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community access code could not be revoked"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}) {
+		return
+	}
+}
+
+func (a *App) requireCommunityAdmin(w http.ResponseWriter, r *http.Request, next func(http.ResponseWriter, *http.Request, auth.User)) bool {
+	if a.auth == nil || a.billing == nil || a.community == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
+		return false
+	}
+	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.billing.IsAdmin(user.Email) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin access required"})
+			return
+		}
+		next(w, r, user)
+	})(w, r)
+	return true
 }
 
 func (a *App) writeAdminAccountResponse(w http.ResponseWriter, user auth.User, account billing.Account, err error) {
@@ -491,6 +599,21 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 type adminAccountInput struct {
 	Plan         *string `json:"plan"`
 	MaxSavedDocs *int    `json:"maxSavedDocs"`
+}
+
+type communityRedeemInput struct {
+	Code     string `json:"code"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type communityGenerateInput struct {
+	BatchLabel string `json:"batchLabel"`
+	Count      int    `json:"count"`
+}
+
+type communityRevokeInput struct {
+	Reason string `json:"reason"`
 }
 
 func (i adminAccountInput) overrideValues(w http.ResponseWriter) (*billing.Plan, *int, bool) {

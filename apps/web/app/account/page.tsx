@@ -81,6 +81,7 @@ function AccountPage() {
   const auth = useAuth();
   const account = auth.account;
   const isPro = account?.plan === "pro";
+  const isCommunity = account?.source === "community";
   const hasStripeCustomer = Boolean(account?.subscription.stripeCustomerId);
   const [billingError, setBillingError] = useState("");
 
@@ -133,12 +134,12 @@ function AccountPage() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Subscription</dt>
-                  <dd>{account?.subscription.status ?? "None"}</dd>
+                  <dt>{isCommunity ? "Access" : "Subscription"}</dt>
+                  <dd>{isCommunity ? "Community access" : account?.subscription.status ?? "None"}</dd>
                 </div>
                 <div>
-                  <dt>Renews</dt>
-                  <dd>{formatDate(account?.subscription.currentPeriodEnd)}</dd>
+                  <dt>{isCommunity ? "Cost" : "Renews"}</dt>
+                  <dd>{isCommunity ? "Included at no cost. No renewal." : formatDate(account?.subscription.currentPeriodEnd)}</dd>
                 </div>
               </dl>
               {isPro && hasStripeCustomer ? (
@@ -157,6 +158,8 @@ function AccountPage() {
                 >
                   Upgrade
                 </button>
+              ) : isCommunity ? (
+                <p className="mutedLine">Community access is included at no cost.</p>
               ) : (
                 <p className="mutedLine">Billing is managed manually.</p>
               )}

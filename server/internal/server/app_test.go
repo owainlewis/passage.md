@@ -21,6 +21,7 @@ import (
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
+	"github.com/owainlewis/passage.md/server/internal/community"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/documents"
 )
@@ -255,6 +256,120 @@ func TestRegisterIsClosedBeta(t *testing.T) {
 	}
 	if body := rec.Body.String(); body != "{\"error\":\"Passage is in closed beta\"}\n" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestCommunityCodeRegistrationWorksWhilePublicRegistrationStaysClosed(t *testing.T) {
+	authStore := newRouteAuthStore()
+	billingStore := newRouteBillingStore()
+	authService := auth.NewService(authStore, "test-secret", false)
+	communityStore := newRouteCommunityStore(authStore, billingStore)
+	app := &App{
+		static:    fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:      authService,
+		billing:   billing.NewService(billingStore, routeBillingConfig()),
+		community: community.NewService(communityStore, authService),
+	}
+
+	closed := httptest.NewRecorder()
+	closedReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"public@example.com","password":"password123"}`))
+	closedReq.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(closed, closedReq)
+	if closed.Code != http.StatusForbidden {
+		t.Fatalf("public registration status = %d", closed.Code)
+	}
+
+	redeem := httptest.NewRecorder()
+	redeemReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/redeem", strings.NewReader(`{"code":"pass-valid-code","email":"community@example.com","password":"password123"}`))
+	redeemReq.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(redeem, redeemReq)
+	if redeem.Code != http.StatusCreated {
+		t.Fatalf("redeem status = %d, body = %s", redeem.Code, redeem.Body.String())
+	}
+	cookies := redeem.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly {
+		t.Fatalf("session cookies = %#v", cookies)
+	}
+	if communityStore.receivedHash != community.HashCode("pass-valid-code") || strings.Contains(redeem.Body.String(), "pass-valid-code") {
+		t.Fatalf("hash/body = %q/%s", communityStore.receivedHash, redeem.Body.String())
+	}
+
+	me := httptest.NewRecorder()
+	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	meReq.AddCookie(cookies[0])
+	app.Routes().ServeHTTP(me, meReq)
+	if me.Code != http.StatusOK {
+		t.Fatalf("me status = %d, body = %s", me.Code, me.Body.String())
+	}
+	for _, want := range []string{`"plan":"pro"`, `"source":"community"`, `"subscription":{"cancelAtPeriodEnd":false}`} {
+		if !strings.Contains(me.Body.String(), want) {
+			t.Fatalf("me body missing %s: %s", want, me.Body.String())
+		}
+	}
+}
+
+func TestCommunityCodeRegistrationReturnsSafeInvalidCodeError(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authService := auth.NewService(authStore, "test-secret", false)
+	store := newRouteCommunityStore(authStore, newRouteBillingStore())
+	store.redeemErr = community.ErrInvalidCode
+	app := &App{auth: authService, community: community.NewService(store, authService)}
+	plain := "PASS-SECRET-PLAINTEXT"
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/redeem", strings.NewReader(`{"code":"`+plain+`","email":"community@example.com","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), community.InvalidCodeMessage()) {
+		t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), plain) {
+		t.Fatalf("response leaked plaintext code: %s", rec.Body.String())
+	}
+}
+
+func TestAdminCanGenerateAndRevokeCommunityCodes(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
+	authStore.sessions[routeTokenHash("member-session")] = auth.User{ID: "member-1", Email: "member@example.com"}
+	authService := auth.NewService(authStore, "test-secret", false)
+	store := newRouteCommunityStore(authStore, newRouteBillingStore())
+	app := &App{
+		auth:      authService,
+		billing:   billing.NewService(newRouteBillingStore(), routeBillingConfig()),
+		community: community.NewService(store, authService),
+	}
+
+	forbidden := httptest.NewRecorder()
+	forbiddenReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes", strings.NewReader(`{"batchLabel":"Forbidden","count":1}`))
+	forbiddenReq.Header.Set("Content-Type", "application/json")
+	forbiddenReq.Header.Set("Origin", "http://passage.test")
+	forbiddenReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("member-session")})
+	app.Routes().ServeHTTP(forbidden, forbiddenReq)
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("non-admin generate status = %d, body = %s", forbidden.Code, forbidden.Body.String())
+	}
+
+	generate := httptest.NewRecorder()
+	generateReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes", strings.NewReader(`{"batchLabel":"Community July","count":2}`))
+	generateReq.Header.Set("Content-Type", "application/json")
+	generateReq.Header.Set("Origin", "http://passage.test")
+	generateReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(generate, generateReq)
+	if generate.Code != http.StatusCreated || !strings.Contains(generate.Body.String(), `"batchLabel":"Community July"`) || strings.Count(generate.Body.String(), `"code":"PASS-`) != 2 {
+		t.Fatalf("generate status/body = %d/%s", generate.Code, generate.Body.String())
+	}
+	if len(store.hashes) != 2 {
+		t.Fatalf("stored hashes = %#v", store.hashes)
+	}
+
+	revoke := httptest.NewRecorder()
+	revokeReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/redeemed-id/revoke", strings.NewReader(`{"reason":"membership ended"}`))
+	revokeReq.Header.Set("Content-Type", "application/json")
+	revokeReq.Header.Set("Origin", "http://passage.test")
+	revokeReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(revoke, revokeReq)
+	if revoke.Code != http.StatusNoContent || store.revokedID != "redeemed-id" || store.reason != "membership ended" {
+		t.Fatalf("revoke status/store = %d/%q/%q", revoke.Code, store.revokedID, store.reason)
 	}
 }
 
@@ -1039,4 +1154,54 @@ func (s *routeBillingStore) UpdateSubscription(ctx context.Context, userID strin
 
 func (s *routeBillingStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {
 	return s.savedDocs[userID], nil
+}
+
+type routeCommunityStore struct {
+	authStore    *routeAuthStore
+	billingStore *routeBillingStore
+	hashes       []string
+	receivedHash string
+	redeemErr    error
+	revokedID    string
+	reason       string
+}
+
+func newRouteCommunityStore(authStore *routeAuthStore, billingStore *routeBillingStore) *routeCommunityStore {
+	return &routeCommunityStore{authStore: authStore, billingStore: billingStore}
+}
+
+func (s *routeCommunityStore) CreateCodes(_ context.Context, label string, hashes []string) ([]community.StoredCode, error) {
+	s.hashes = append([]string(nil), hashes...)
+	codes := make([]community.StoredCode, len(hashes))
+	for i, hash := range hashes {
+		codes[i] = community.StoredCode{
+			ID:         "code-" + strconv.Itoa(i+1),
+			CodeHash:   hash,
+			BatchLabel: label,
+			CreatedAt:  time.Unix(int64(i+1), 0).UTC(),
+		}
+	}
+	return codes, nil
+}
+
+func (s *routeCommunityStore) Redeem(_ context.Context, codeHash string, email string, _ string, session auth.PreparedSession, _ time.Time) (auth.User, error) {
+	s.receivedHash = codeHash
+	if s.redeemErr != nil {
+		return auth.User{}, s.redeemErr
+	}
+	user := auth.User{ID: "community-user", Email: email}
+	s.authStore.sessions[session.TokenHash] = user
+	s.billingStore.users[email] = user
+	s.billingStore.states[user.ID] = billing.State{CommunityAccess: true}
+	return user, nil
+}
+
+func (s *routeCommunityStore) Disable(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+func (s *routeCommunityStore) Revoke(_ context.Context, id string, reason string, _ time.Time) error {
+	s.revokedID = id
+	s.reason = reason
+	return nil
 }

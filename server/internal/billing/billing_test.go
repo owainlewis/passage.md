@@ -81,6 +81,44 @@ func TestManualFreeOverrideBeatsStripePaidStatus(t *testing.T) {
 	}
 }
 
+func TestEntitlementPrecedenceIncludesCommunity(t *testing.T) {
+	manualFree := PlanFree
+	store := newMemoryStore()
+	store.states["manual"] = State{ManualPlan: &manualFree, CommunityAccess: true, StripeSubscriptionStatus: "active"}
+	store.states["owner"] = State{ManualPlan: &manualFree, CommunityAccess: true, StripeSubscriptionStatus: "active"}
+	store.states["community"] = State{CommunityAccess: true, StripeSubscriptionStatus: "active"}
+	store.states["stripe"] = State{StripeSubscriptionStatus: "trialing"}
+	service := NewService(store, config.BillingConfig{
+		FreeMaxSavedDocs: 5,
+		ProMaxSavedDocs:  1000,
+		OwnerEmails:      []string{"owner@example.com"},
+	})
+
+	tests := []struct {
+		id     string
+		email  string
+		plan   Plan
+		source string
+	}{
+		{id: "manual", email: "manual@example.com", plan: PlanFree, source: SourceManual},
+		{id: "owner", email: "owner@example.com", plan: PlanFree, source: SourceManual},
+		{id: "community", email: "community@example.com", plan: PlanPro, source: SourceCommunity},
+		{id: "stripe", email: "stripe@example.com", plan: PlanPro, source: SourceStripe},
+		{id: "free", email: "free@example.com", plan: PlanFree, source: SourceDefault},
+	}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			account, err := service.Account(context.Background(), auth.User{ID: test.id, Email: test.email})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if account.Plan != test.plan || account.Source != test.source {
+				t.Fatalf("plan/source = %s/%s, want %s/%s", account.Plan, account.Source, test.plan, test.source)
+			}
+		})
+	}
+}
+
 type memoryStore struct {
 	users     map[string]auth.User
 	states    map[string]State
