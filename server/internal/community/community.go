@@ -17,10 +17,9 @@ import (
 const invalidCodeMessage = "This code is invalid or has already been used."
 
 var (
-	ErrInvalidCode     = errors.New(invalidCodeMessage)
-	ErrEmailTaken      = errors.New("email already exists")
-	ErrCodeNotFound    = errors.New("community access code not found")
-	ErrCodeNotRedeemed = errors.New("community access code has not been redeemed")
+	ErrInvalidCode  = errors.New(invalidCodeMessage)
+	ErrEmailTaken   = errors.New("email already exists")
+	ErrCodeNotFound = errors.New("community access code not found")
 )
 
 type Code struct {
@@ -41,8 +40,8 @@ type Store interface {
 	CreateCodes(ctx context.Context, label string, hashes []string) ([]StoredCode, error)
 	CanRedeem(ctx context.Context, codeHash string) (bool, error)
 	Redeem(ctx context.Context, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error)
+	Invalidate(ctx context.Context, id string, reason string, now time.Time) error
 	Disable(ctx context.Context, id string, now time.Time) error
-	Revoke(ctx context.Context, id string, reason string, now time.Time) error
 }
 
 type Service struct {
@@ -140,7 +139,7 @@ func (s *Service) Revoke(ctx context.Context, id string, reason string) error {
 	if reason == "" {
 		return errors.New("revocation reason is required")
 	}
-	return s.store.Revoke(ctx, id, reason, s.now())
+	return s.store.Invalidate(ctx, id, reason, s.now())
 }
 
 func NormalizeCode(code string) string {

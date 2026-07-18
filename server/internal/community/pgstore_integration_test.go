@@ -98,7 +98,7 @@ func TestPGStoreDisableAndRevokeAffectGrantWithoutBillingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Disable(ctx, disabledCodes[0].ID, time.Now()); err != nil {
+	if err := store.Invalidate(ctx, disabledCodes[0].ID, "sent to wrong person", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if redeemable, err := store.CanRedeem(ctx, disabledHash); err != nil || redeemable {
@@ -141,7 +141,7 @@ func TestPGStoreDisableAndRevokeAffectGrantWithoutBillingState(t *testing.T) {
 	if account.Subscription.StripeCustomerID != "" || account.Subscription.StripeSubscriptionID != "" || account.Subscription.Status != "" {
 		t.Fatalf("community subscription is not empty: %#v", account.Subscription)
 	}
-	if err := store.Revoke(ctx, redeemedCodes[0].ID, "membership ended", time.Now()); err != nil {
+	if err := store.Invalidate(ctx, redeemedCodes[0].ID, "membership ended", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var active bool
@@ -157,6 +157,97 @@ func TestPGStoreDisableAndRevokeAffectGrantWithoutBillingState(t *testing.T) {
 	}
 	if account.Plan != billing.PlanFree || account.Source != billing.SourceDefault {
 		t.Fatalf("revoked plan/source = %s/%s", account.Plan, account.Source)
+	}
+}
+
+func TestPGStoreInvalidateRevokesAConcurrentRedemption(t *testing.T) {
+	db := integrationDB(t)
+	store := NewPGStore(db)
+	ctx := context.Background()
+	stamp := time.Now().UnixNano()
+	hash := HashCode(fmt.Sprintf("invalidate-race-%d", stamp))
+	codes, err := store.CreateCodes(ctx, "invalidate race", []string{hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	var codeID string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM community_access_codes WHERE code_hash = $1 FOR UPDATE`, hash).Scan(&codeID); err != nil {
+		t.Fatal(err)
+	}
+
+	started := make(chan struct{})
+	invalidated := make(chan error, 1)
+	go func() {
+		close(started)
+		invalidated <- store.Invalidate(ctx, codes[0].ID, "membership ended", time.Now())
+	}()
+	<-started
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var blocked bool
+		if err := db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_stat_activity
+				WHERE pid <> pg_backend_pid()
+				  AND state = 'active'
+				  AND wait_event_type = 'Lock'
+				  AND query LIKE '%UPDATE community_access_codes%'
+			)
+		`).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("invalidation did not block on the redemption row lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	email := fmt.Sprintf("invalidate-race-%d@example.com", stamp)
+	var userID string
+	if err := tx.QueryRow(ctx, `INSERT INTO users (email, password_hash) VALUES ($1, 'hash') RETURNING id::text`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`, userID, fmt.Sprintf("invalidate-race-session-%d", stamp), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE community_access_codes SET redeemed_user_id = $1, redeemed_at = now() WHERE id = $2`, userID, codeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-invalidated; err != nil {
+		t.Fatal(err)
+	}
+
+	var revoked bool
+	var reason string
+	if err := db.QueryRow(ctx, `SELECT revoked_at IS NOT NULL, revocation_reason FROM community_access_codes WHERE id = $1`, codeID).Scan(&revoked, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if !revoked || reason != "membership ended" {
+		t.Fatalf("revoked/reason = %v/%q", revoked, reason)
+	}
+	billingService := billing.NewService(billing.NewPGStore(db), config.BillingConfig{FreeMaxSavedDocs: 5, ProMaxSavedDocs: 1000})
+	account, err := billingService.Account(ctx, auth.User{ID: userID, Email: email})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Plan != billing.PlanFree || account.Source != billing.SourceDefault {
+		t.Fatalf("post-race plan/source = %s/%s", account.Plan, account.Source)
+	}
+	if err := store.Invalidate(ctx, "00000000-0000-0000-0000-000000000000", "missing", time.Now()); !errors.Is(err, ErrCodeNotFound) {
+		t.Fatalf("missing code error = %v", err)
 	}
 }
 

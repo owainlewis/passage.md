@@ -373,6 +373,40 @@ func TestAdminCanGenerateAndRevokeCommunityCodes(t *testing.T) {
 	}
 }
 
+func TestAdminRevokeDisablesUnusedCommunityCode(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
+	authService := auth.NewService(authStore, "test-secret", false)
+	store := newRouteCommunityStore(authStore, newRouteBillingStore())
+	store.invalidateUnused = true
+	app := &App{
+		auth:      authService,
+		billing:   billing.NewService(newRouteBillingStore(), routeBillingConfig()),
+		community: community.NewService(store, authService),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/unused-id/revoke", strings.NewReader(`{"reason":"sent to wrong person"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || store.disabledID != "unused-id" {
+		t.Fatalf("status/disabled ID = %d/%q", rec.Code, store.disabledID)
+	}
+
+	store.invalidateErr = community.ErrCodeNotFound
+	notFound := httptest.NewRecorder()
+	notFoundReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/missing-id/revoke", strings.NewReader(`{"reason":"missing"}`))
+	notFoundReq.Header.Set("Content-Type", "application/json")
+	notFoundReq.Header.Set("Origin", "http://passage.test")
+	notFoundReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(notFound, notFoundReq)
+	if notFound.Code != http.StatusNotFound || !strings.Contains(notFound.Body.String(), "community access code not found") {
+		t.Fatalf("not-found status/body = %d/%s", notFound.Code, notFound.Body.String())
+	}
+}
+
 func TestMeIncludesServerAccountForOwnerComp(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "owain@owainlewis.com"}
@@ -1157,13 +1191,16 @@ func (s *routeBillingStore) CountSavedDocs(ctx context.Context, userID string) (
 }
 
 type routeCommunityStore struct {
-	authStore    *routeAuthStore
-	billingStore *routeBillingStore
-	hashes       []string
-	receivedHash string
-	redeemErr    error
-	revokedID    string
-	reason       string
+	authStore        *routeAuthStore
+	billingStore     *routeBillingStore
+	hashes           []string
+	receivedHash     string
+	redeemErr        error
+	revokedID        string
+	disabledID       string
+	reason           string
+	invalidateUnused bool
+	invalidateErr    error
 }
 
 func newRouteCommunityStore(authStore *routeAuthStore, billingStore *routeBillingStore) *routeCommunityStore {
@@ -1200,12 +1237,20 @@ func (s *routeCommunityStore) Redeem(_ context.Context, codeHash string, email s
 	return user, nil
 }
 
-func (s *routeCommunityStore) Disable(_ context.Context, _ string, _ time.Time) error {
+func (s *routeCommunityStore) Invalidate(_ context.Context, id string, reason string, _ time.Time) error {
+	if s.invalidateErr != nil {
+		return s.invalidateErr
+	}
+	s.reason = reason
+	if s.invalidateUnused {
+		s.disabledID = id
+	} else {
+		s.revokedID = id
+	}
 	return nil
 }
 
-func (s *routeCommunityStore) Revoke(_ context.Context, id string, reason string, _ time.Time) error {
-	s.revokedID = id
-	s.reason = reason
+func (s *routeCommunityStore) Disable(_ context.Context, id string, _ time.Time) error {
+	s.disabledID = id
 	return nil
 }

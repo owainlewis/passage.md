@@ -268,8 +268,8 @@ func (a *App) adminRevokeCommunityCode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err := a.community.Revoke(r.Context(), r.PathValue("id"), input.Reason)
-		if errors.Is(err, community.ErrCodeNotRedeemed) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "redeemed community access code not found"})
+		if errors.Is(err, community.ErrCodeNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "community access code not found"})
 			return
 		}
 		if err != nil {

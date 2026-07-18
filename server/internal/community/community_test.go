@@ -124,16 +124,30 @@ func TestDisableAndRevokeDelegateToStore(t *testing.T) {
 	}
 }
 
+func TestRevokeDisablesAnUnusedCode(t *testing.T) {
+	store := &memoryStore{invalidateUnused: true}
+	service := NewService(store, auth.NewService(nil, "secret", false))
+	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
+
+	if err := service.Revoke(context.Background(), "unused-id", "sent to wrong person"); err != nil {
+		t.Fatal(err)
+	}
+	if store.disabledID != "unused-id" || store.revokedID != "" {
+		t.Fatalf("disable/revoke IDs = %q/%q", store.disabledID, store.revokedID)
+	}
+}
+
 type memoryStore struct {
-	hashes       []string
-	codeHash     string
-	passwordHash string
-	redeemErr    error
-	disabledID   string
-	revokedID    string
-	reason       string
-	unredeemable bool
-	redeemCalls  int
+	hashes           []string
+	codeHash         string
+	passwordHash     string
+	redeemErr        error
+	disabledID       string
+	revokedID        string
+	reason           string
+	unredeemable     bool
+	redeemCalls      int
+	invalidateUnused bool
 }
 
 func (s *memoryStore) CreateCodes(_ context.Context, label string, hashes []string) ([]StoredCode, error) {
@@ -160,13 +174,17 @@ func (s *memoryStore) Redeem(_ context.Context, codeHash string, email string, p
 	return auth.User{ID: "user-1", Email: email}, nil
 }
 
-func (s *memoryStore) Disable(_ context.Context, id string, _ time.Time) error {
-	s.disabledID = id
+func (s *memoryStore) Invalidate(_ context.Context, id string, reason string, _ time.Time) error {
+	s.reason = reason
+	if s.invalidateUnused {
+		s.disabledID = id
+	} else {
+		s.revokedID = id
+	}
 	return nil
 }
 
-func (s *memoryStore) Revoke(_ context.Context, id string, reason string, _ time.Time) error {
-	s.revokedID = id
-	s.reason = reason
+func (s *memoryStore) Disable(_ context.Context, id string, _ time.Time) error {
+	s.disabledID = id
 	return nil
 }

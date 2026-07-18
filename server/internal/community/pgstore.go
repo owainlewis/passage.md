@@ -115,6 +115,25 @@ func (s *PGStore) Redeem(ctx context.Context, codeHash string, email string, pas
 	return user, nil
 }
 
+func (s *PGStore) Invalidate(ctx context.Context, id string, reason string, now time.Time) error {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE community_access_codes
+		SET disabled_at = CASE WHEN redeemed_user_id IS NULL THEN $2 ELSE disabled_at END,
+		    revoked_at = CASE WHEN redeemed_user_id IS NOT NULL THEN $2 ELSE revoked_at END,
+		    revocation_reason = CASE WHEN redeemed_user_id IS NOT NULL THEN $3 ELSE revocation_reason END
+		WHERE id = $1
+		  AND disabled_at IS NULL
+		  AND revoked_at IS NULL
+	`, id, now, reason)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrCodeNotFound
+	}
+	return nil
+}
+
 func (s *PGStore) Disable(ctx context.Context, id string, now time.Time) error {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE community_access_codes
@@ -126,21 +145,6 @@ func (s *PGStore) Disable(ctx context.Context, id string, now time.Time) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrCodeNotFound
-	}
-	return nil
-}
-
-func (s *PGStore) Revoke(ctx context.Context, id string, reason string, now time.Time) error {
-	tag, err := s.db.Exec(ctx, `
-		UPDATE community_access_codes
-		SET revoked_at = $2, revocation_reason = $3
-		WHERE id = $1 AND redeemed_user_id IS NOT NULL AND revoked_at IS NULL
-	`, id, now, reason)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrCodeNotRedeemed
 	}
 	return nil
 }
