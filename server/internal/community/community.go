@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,34 +15,41 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const invalidCodeMessage = "This code is invalid or has already been used."
+const invalidReferralMessage = "This referral link is invalid or no longer active."
 
 var (
-	ErrInvalidCode  = errors.New(invalidCodeMessage)
-	ErrEmailTaken   = errors.New("email already exists")
-	ErrCodeNotFound = errors.New("community access code not found")
+	ErrInvalidReferral  = errors.New(invalidReferralMessage)
+	ErrEmailTaken       = errors.New("email already exists")
+	ErrReferralExists   = errors.New("community referral already exists")
+	ErrReferralNotFound = errors.New("community referral not found")
+	ErrGrantNotFound    = errors.New("community grant not found")
+	referralSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 
-type Code struct {
-	ID         string    `json:"id"`
-	Code       string    `json:"code"`
-	BatchLabel string    `json:"batchLabel"`
-	CreatedAt  time.Time `json:"createdAt"`
+type Referral struct {
+	ID        string    `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Code      string    `json:"code"`
+	SignupURL string    `json:"signupUrl"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
-type StoredCode struct {
-	ID         string
-	CodeHash   string
-	BatchLabel string
-	CreatedAt  time.Time
+type StoredReferral struct {
+	ID        string
+	Slug      string
+	Name      string
+	CodeHash  string
+	CreatedAt time.Time
 }
 
 type Store interface {
-	CreateCodes(ctx context.Context, label string, hashes []string) ([]StoredCode, error)
-	CanRedeem(ctx context.Context, codeHash string) (bool, error)
-	Redeem(ctx context.Context, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error)
-	Invalidate(ctx context.Context, id string, reason string, now time.Time) error
-	Disable(ctx context.Context, id string, now time.Time) error
+	CreateReferral(ctx context.Context, slug string, name string, codeHash string) (StoredReferral, error)
+	FindActiveReferral(ctx context.Context, slug string, codeHash string) (StoredReferral, error)
+	Redeem(ctx context.Context, slug string, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error)
+	RotateReferral(ctx context.Context, id string, codeHash string, now time.Time) (StoredReferral, error)
+	DisableReferral(ctx context.Context, id string, now time.Time) error
+	RevokeGrant(ctx context.Context, email string, reason string, now time.Time) error
 }
 
 type Service struct {
@@ -63,40 +71,62 @@ func NewService(store Store, authService *auth.Service) *Service {
 	}
 }
 
-func (s *Service) Generate(ctx context.Context, label string, count int) ([]Code, error) {
-	label = strings.TrimSpace(label)
-	if label == "" {
-		return nil, errors.New("batch label is required")
+func (s *Service) CreateReferral(ctx context.Context, slug string, name string) (Referral, error) {
+	slug = normalizeSlug(slug)
+	name = strings.TrimSpace(name)
+	if !referralSlugPattern.MatchString(slug) {
+		return Referral{}, errors.New("referral slug must contain lowercase letters, numbers, and single hyphens")
 	}
-	if count < 1 || count > 100 {
-		return nil, errors.New("count must be between 1 and 100")
+	if name == "" {
+		return Referral{}, errors.New("referral name is required")
 	}
-
-	plaintext := make([]string, count)
-	hashes := make([]string, count)
-	for i := range count {
-		code, err := randomCode()
-		if err != nil {
-			return nil, err
-		}
-		plaintext[i] = code
-		hashes[i] = HashCode(code)
-	}
-	stored, err := s.store.CreateCodes(ctx, label, hashes)
+	code, err := randomCode()
 	if err != nil {
-		return nil, err
+		return Referral{}, err
 	}
-	if len(stored) != len(plaintext) {
-		return nil, errors.New("stored code count did not match request")
+	stored, err := s.store.CreateReferral(ctx, slug, name, HashCode(code))
+	if err != nil {
+		return Referral{}, err
 	}
-	codes := make([]Code, len(stored))
-	for i, item := range stored {
-		codes[i] = Code{ID: item.ID, Code: plaintext[i], BatchLabel: item.BatchLabel, CreatedAt: item.CreatedAt}
-	}
-	return codes, nil
+	return referralWithCode(stored, code), nil
 }
 
-func (s *Service) Redeem(ctx context.Context, code string, email string, password string) (auth.User, auth.PreparedSession, error) {
+func (s *Service) RotateReferral(ctx context.Context, id string) (Referral, error) {
+	if !validUUID(id) {
+		return Referral{}, ErrReferralNotFound
+	}
+	code, err := randomCode()
+	if err != nil {
+		return Referral{}, err
+	}
+	stored, err := s.store.RotateReferral(ctx, id, HashCode(code), s.now())
+	if err != nil {
+		return Referral{}, err
+	}
+	return referralWithCode(stored, code), nil
+}
+
+func (s *Service) DisableReferral(ctx context.Context, id string) error {
+	if !validUUID(id) {
+		return ErrReferralNotFound
+	}
+	return s.store.DisableReferral(ctx, id, s.now())
+}
+
+func (s *Service) ValidateReferral(ctx context.Context, slug string, code string) (StoredReferral, error) {
+	slug = normalizeSlug(slug)
+	if !referralSlugPattern.MatchString(slug) || NormalizeCode(code) == "" {
+		return StoredReferral{}, ErrInvalidReferral
+	}
+	referral, err := s.store.FindActiveReferral(ctx, slug, HashCode(code))
+	if errors.Is(err, ErrReferralNotFound) {
+		return StoredReferral{}, ErrInvalidReferral
+	}
+	return referral, err
+}
+
+func (s *Service) Redeem(ctx context.Context, slug string, code string, email string, password string) (auth.User, auth.PreparedSession, error) {
+	slug = normalizeSlug(slug)
 	email = strings.ToLower(strings.TrimSpace(email))
 	if !strings.Contains(email, "@") {
 		return auth.User{}, auth.PreparedSession{}, errors.New("valid email is required")
@@ -104,17 +134,10 @@ func (s *Service) Redeem(ctx context.Context, code string, email string, passwor
 	if len(password) < 8 {
 		return auth.User{}, auth.PreparedSession{}, errors.New("password must be at least 8 characters")
 	}
-	if NormalizeCode(code) == "" {
-		return auth.User{}, auth.PreparedSession{}, ErrInvalidCode
-	}
-	codeHash := HashCode(code)
-	redeemable, err := s.store.CanRedeem(ctx, codeHash)
-	if err != nil {
+	if _, err := s.ValidateReferral(ctx, slug, code); err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}
-	if !redeemable {
-		return auth.User{}, auth.PreparedSession{}, ErrInvalidCode
-	}
+	codeHash := HashCode(code)
 	passwordHash, err := s.hashPassword(password)
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
@@ -123,26 +146,35 @@ func (s *Service) Redeem(ctx context.Context, code string, email string, passwor
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}
-	user, err := s.store.Redeem(ctx, codeHash, email, passwordHash, session, s.now())
+	user, err := s.store.Redeem(ctx, slug, codeHash, email, passwordHash, session, s.now())
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}
 	return user, session, nil
 }
 
-func (s *Service) Disable(ctx context.Context, id string) error {
-	return s.store.Disable(ctx, id, s.now())
-}
-
-func (s *Service) Revoke(ctx context.Context, id string, reason string) error {
-	if !validUUID(id) {
-		return ErrCodeNotFound
+func (s *Service) RevokeGrant(ctx context.Context, email string, reason string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !strings.Contains(email, "@") {
+		return errors.New("valid email is required")
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return errors.New("revocation reason is required")
 	}
-	return s.store.Invalidate(ctx, id, reason, s.now())
+	return s.store.RevokeGrant(ctx, email, reason, s.now())
+}
+
+func referralWithCode(stored StoredReferral, code string) Referral {
+	return Referral{
+		ID: stored.ID, Slug: stored.Slug, Name: stored.Name, Code: code,
+		SignupURL: "/signup?ref=" + stored.Slug + "&code=" + code,
+		CreatedAt: stored.CreatedAt,
+	}
+}
+
+func normalizeSlug(slug string) string {
+	return strings.ToLower(strings.TrimSpace(slug))
 }
 
 func validUUID(value string) bool {
@@ -183,17 +215,16 @@ func HashCode(code string) string {
 func randomCode() (string, error) {
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("generate community access code: %w", err)
+		return "", fmt.Errorf("generate community referral code: %w", err)
 	}
 	raw := strings.ToUpper(hex.EncodeToString(bytes))
-	parts := make([]string, 0, 9)
-	parts = append(parts, "PASS")
+	parts := []string{"PASS"}
 	for i := 0; i < len(raw); i += 4 {
 		parts = append(parts, raw[i:i+4])
 	}
 	return strings.Join(parts, "-"), nil
 }
 
-func InvalidCodeMessage() string {
-	return invalidCodeMessage
+func InvalidReferralMessage() string {
+	return invalidReferralMessage
 }

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Account from "./account/page";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
-import Redeem from "./redeem/page";
+import Signup from "./signup/page";
 import Landing from "./page";
 import Write from "./write/page";
 
@@ -250,61 +250,81 @@ describe("Account", () => {
   });
 });
 
-describe("Redeem", () => {
-  it("creates an account with a code and explains that payment is not required", async () => {
+describe("Referral signup", () => {
+  it("captures and hides the referral URL before creating a no-cost Pro account", async () => {
+	window.history.replaceState(null, "", "/signup?ref=aiengineer&code=pass-test-code");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/v1/me") {
         return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
       }
-      if (url === "/api/v1/auth/redeem" && init?.method === "POST") {
+      if (url === "/api/v1/auth/referral/validate" && init?.method === "POST") {
+		return new Response(JSON.stringify({ name: "AI Engineer" }), { status: 200 });
+	  }
+      if (url === "/api/v1/auth/referral-signup" && init?.method === "POST") {
         return new Response(JSON.stringify({ authenticated: true, user: { id: "user-1", email: "community@example.com" } }), { status: 201 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Redeem />);
+    render(<Signup />);
 
-    expect(await screen.findByText("This code includes Pro access at no cost. No payment method is required.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Access code")).toBeRequired();
+	expect(await screen.findByText("AI Engineer")).toBeInTheDocument();
+    expect(screen.getByText("Passage Pro is included with your community membership. No card or checkout is required.")).toBeInTheDocument();
+	expect(window.location.pathname).toBe("/signup");
+	expect(window.location.search).toBe("");
+	expect(screen.queryByLabelText("Access code")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
     expect(screen.getByLabelText("Password")).toHaveAttribute("minlength", "8");
-    fireEvent.change(screen.getByLabelText("Access code"), { target: { value: "pass-test-code" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "community@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/auth/redeem",
+      "/api/v1/auth/referral-signup",
       expect.objectContaining({
         method: "POST",
         credentials: "include",
-        body: JSON.stringify({ code: "pass-test-code", email: "community@example.com", password: "password123" })
+        body: JSON.stringify({ ref: "aiengineer", code: "pass-test-code", email: "community@example.com", password: "password123" })
       })
     ));
   });
 
-  it("shows the safe error for an invalid or used code", async () => {
+  it("shows normal closed-beta signup behavior for an invalid referral", async () => {
+	window.history.replaceState(null, "", "/signup?ref=aiengineer&code=invalid");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/v1/me") {
         return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
       }
-      if (String(input) === "/api/v1/auth/redeem" && init?.method === "POST") {
-        return new Response(JSON.stringify({ error: "This code is invalid or has already been used." }), { status: 400 });
+	  if (String(input) === "/api/v1/auth/referral/validate" && init?.method === "POST") {
+		return new Response(JSON.stringify({ error: "This referral link is invalid or no longer active." }), { status: 404 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Redeem />);
-    await screen.findByRole("heading", { name: "Create your Passage account" });
-    fireEvent.change(screen.getByLabelText("Access code"), { target: { value: "used-code" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "community@example.com" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    render(<Signup />);
+    expect(await screen.findByRole("heading", { name: "Passage is not open for signup yet" })).toBeInTheDocument();
+	expect(screen.queryByRole("button", { name: "Create account" })).not.toBeInTheDocument();
+	expect(window.location.search).toBe("");
+  });
 
-    expect(await screen.findByText("This code is invalid or has already been used.")).toBeInTheDocument();
+  it("does not expose a signup form without referral credentials", async () => {
+    window.history.replaceState(null, "", "/signup");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/v1/me") {
+        return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Signup />);
+
+    expect(await screen.findByRole("heading", { name: "Passage is not open for signup yet" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create account" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/auth/referral/validate", expect.anything());
   });
 });
 

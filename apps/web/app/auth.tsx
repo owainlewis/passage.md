@@ -32,7 +32,7 @@ type AuthValue = {
   loading: boolean;
   refreshAccount: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  redeem: (code: string, email: string, password: string) => Promise<void>;
+  referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   requestMagicLink: (email: string, next?: string) => Promise<void>;
   completeMagicLink: (token: string) => Promise<void>;
@@ -96,12 +96,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [submitCredentials]
   );
 
-  const redeem = useCallback(async (code: string, email: string, password: string) => {
-    const res = await fetch("/api/v1/auth/redeem", {
+  const referralSignup = useCallback(async (ref: string, code: string, email: string, password: string) => {
+    const res = await fetch("/api/v1/auth/referral-signup", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, email, password })
+      body: JSON.stringify({ ref, code, email, password })
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -156,8 +156,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const value = useMemo(
-    () => ({ user, account, loading, refreshAccount, signIn, redeem, signOut, requestMagicLink, completeMagicLink }),
-    [user, account, loading, refreshAccount, signIn, redeem, signOut, requestMagicLink, completeMagicLink]
+    () => ({ user, account, loading, refreshAccount, signIn, referralSignup, signOut, requestMagicLink, completeMagicLink }),
+    [user, account, loading, refreshAccount, signIn, referralSignup, signOut, requestMagicLink, completeMagicLink]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

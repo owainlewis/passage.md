@@ -11,33 +11,29 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestGenerateReturnsPlaintextOnceAndStoresNormalizedHashes(t *testing.T) {
+func TestCreateReferralReturnsPlaintextOnceAndStoresOnlyHash(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store, auth.NewService(nil, "secret", false))
-	codes, err := service.Generate(context.Background(), "  Community launch  ", 3)
+	referral, err := service.CreateReferral(context.Background(), " AIEngineer ", " AI Engineer ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(codes) != 3 || len(store.hashes) != 3 {
-		t.Fatalf("codes/hashes = %d/%d", len(codes), len(store.hashes))
+	if referral.Slug != "aiengineer" || referral.Name != "AI Engineer" || !strings.HasPrefix(referral.Code, "PASS-") {
+		t.Fatalf("referral = %#v", referral)
 	}
-	seen := map[string]bool{}
-	for i, code := range codes {
-		if !strings.HasPrefix(code.Code, "PASS-") {
-			t.Fatalf("code = %q", code.Code)
-		}
-		if len(NormalizeCode(code.Code)) != 36 {
-			t.Fatalf("normalized code length = %d", len(NormalizeCode(code.Code)))
-		}
-		if store.hashes[i] == code.Code || store.hashes[i] != HashCode(strings.ToLower(code.Code)) {
-			t.Fatalf("stored value is not the normalized hash: %q", store.hashes[i])
-		}
-		if seen[code.Code] {
-			t.Fatalf("duplicate code = %q", code.Code)
-		}
-		seen[code.Code] = true
-		if code.BatchLabel != "Community launch" {
-			t.Fatalf("label = %q", code.BatchLabel)
+	if referral.SignupURL != "/signup?ref=aiengineer&code="+referral.Code {
+		t.Fatalf("signup URL = %q", referral.SignupURL)
+	}
+	if store.codeHash == referral.Code || store.codeHash != HashCode(referral.Code) {
+		t.Fatalf("stored hash = %q", store.codeHash)
+	}
+}
+
+func TestCreateReferralValidatesSlugAndName(t *testing.T) {
+	service := NewService(&memoryStore{}, auth.NewService(nil, "secret", false))
+	for _, input := range []struct{ slug, name string }{{"ai engineer", "AI Engineer"}, {"ai--engineer", "AI Engineer"}, {"aiengineer", ""}} {
+		if _, err := service.CreateReferral(context.Background(), input.slug, input.name); err == nil {
+			t.Fatalf("CreateReferral(%q, %q) succeeded", input.slug, input.name)
 		}
 	}
 }
@@ -46,21 +42,34 @@ func TestNormalizeCodeIsCaseInsensitiveAndSeparatorInsensitive(t *testing.T) {
 	formatted := "PASS-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF"
 	compact := " pass 0123456789abcdef0123456789abcdef "
 	if HashCode(formatted) != HashCode(compact) {
-		t.Fatalf("hashes differ: %q %q", HashCode(formatted), HashCode(compact))
+		t.Fatal("hashes differ")
 	}
 }
 
-func TestRedeemValidatesAndPassesOnlyHashToStore(t *testing.T) {
+func TestValidateReferralReturnsNameAndPassesOnlyHash(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store, auth.NewService(nil, "secret", false))
+	plain := "PASS-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF"
+	referral, err := service.ValidateReferral(context.Background(), " AIEngineer ", strings.ToLower(plain))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if referral.Name != "AI Engineer" || store.slug != "aiengineer" || store.codeHash != HashCode(plain) || store.codeHash == plain {
+		t.Fatalf("referral/slug/hash = %#v/%q/%q", referral, store.slug, store.codeHash)
+	}
+}
+
+func TestRedeemHashesPasswordAfterReferralValidation(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
 	plain := "PASS-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF"
-	user, session, err := service.Redeem(context.Background(), strings.ToLower(plain), " USER@example.com ", "password123")
+	user, session, err := service.Redeem(context.Background(), "aiengineer", plain, " USER@example.com ", "password123")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.Email != "user@example.com" || store.codeHash != HashCode(plain) || store.codeHash == plain {
-		t.Fatalf("user/hash = %#v/%q", user, store.codeHash)
+	if user.Email != "user@example.com" || store.slug != "aiengineer" || store.codeHash != HashCode(plain) {
+		t.Fatalf("user/store = %#v/%#v", user, store)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(store.passwordHash), []byte("password123")) != nil {
 		t.Fatal("password was not bcrypt hashed")
@@ -70,135 +79,106 @@ func TestRedeemValidatesAndPassesOnlyHashToStore(t *testing.T) {
 	}
 }
 
-func TestDisabledUsedAndRevokedCodesAreRejected(t *testing.T) {
-	for _, state := range []string{"invalid", "disabled", "used", "revoked"} {
-		t.Run(state, func(t *testing.T) {
-			store := &memoryStore{unredeemable: true}
-			service := NewService(store, auth.NewService(nil, "secret", false))
-			hashCalls := 0
-			service.hashPassword = func(string) (string, error) {
-				hashCalls++
-				return "hash", nil
-			}
-			_, _, err := service.Redeem(context.Background(), "PASS-INVALID", state+"@example.com", "password123")
-			if !errors.Is(err, ErrInvalidCode) {
-				t.Fatalf("error = %v", err)
-			}
-			if hashCalls != 0 || store.redeemCalls != 0 {
-				t.Fatalf("hash/redeem calls = %d/%d", hashCalls, store.redeemCalls)
-			}
-		})
-	}
-}
-
-func TestRedeemKeepsTransactionalRecheckAsFinalAuthority(t *testing.T) {
-	store := &memoryStore{redeemErr: ErrInvalidCode}
+func TestInvalidOrDisabledReferralSkipsPasswordHashing(t *testing.T) {
+	store := &memoryStore{findErr: ErrReferralNotFound}
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	hashCalls := 0
-	service.hashPassword = func(string) (string, error) {
-		hashCalls++
-		return "hash", nil
-	}
-
-	_, _, err := service.Redeem(context.Background(), "PASS-RACE", "race@example.com", "password123")
-	if !errors.Is(err, ErrInvalidCode) {
+	service.hashPassword = func(string) (string, error) { hashCalls++; return "hash", nil }
+	_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-INVALID", "member@example.com", "password123")
+	if !errors.Is(err, ErrInvalidReferral) {
 		t.Fatalf("error = %v", err)
 	}
-	if hashCalls != 1 || store.redeemCalls != 1 {
+	if hashCalls != 0 || store.redeemCalls != 0 {
 		t.Fatalf("hash/redeem calls = %d/%d", hashCalls, store.redeemCalls)
 	}
 }
 
-func TestDisableAndRevokeDelegateToStore(t *testing.T) {
-	store := &memoryStore{}
+func TestRedeemKeepsTransactionalRecheckAsFinalAuthority(t *testing.T) {
+	store := &memoryStore{redeemErr: ErrInvalidReferral}
 	service := NewService(store, auth.NewService(nil, "secret", false))
-	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
-	redeemedID := "11111111-1111-1111-1111-111111111111"
-	if err := service.Disable(context.Background(), "unused-id"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.Revoke(context.Background(), redeemedID, "membership ended"); err != nil {
-		t.Fatal(err)
-	}
-	if store.disabledID != "unused-id" || store.revokedID != redeemedID || store.reason != "membership ended" {
-		t.Fatalf("disable/revoke = %q/%q/%q", store.disabledID, store.revokedID, store.reason)
+	service.hashPassword = func(string) (string, error) { return "hash", nil }
+	_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-RACE", "race@example.com", "password123")
+	if !errors.Is(err, ErrInvalidReferral) || store.redeemCalls != 1 {
+		t.Fatalf("error/calls = %v/%d", err, store.redeemCalls)
 	}
 }
 
-func TestRevokeDisablesAnUnusedCode(t *testing.T) {
-	store := &memoryStore{invalidateUnused: true}
+func TestReferralLifecycleAndGrantRevocationDelegateToStore(t *testing.T) {
+	store := &memoryStore{}
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
-	unusedID := "22222222-2222-2222-2222-222222222222"
-
-	if err := service.Revoke(context.Background(), unusedID, "sent to wrong person"); err != nil {
+	id := "11111111-1111-1111-1111-111111111111"
+	rotated, err := service.RotateReferral(context.Background(), id)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if store.disabledID != unusedID || store.revokedID != "" {
-		t.Fatalf("disable/revoke IDs = %q/%q", store.disabledID, store.revokedID)
+	if rotated.SignupURL != "/signup?ref=aiengineer&code="+rotated.Code || store.rotatedID != id {
+		t.Fatalf("rotated/store = %#v/%#v", rotated, store)
+	}
+	if err := service.DisableReferral(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RevokeGrant(context.Background(), " MEMBER@example.com ", " membership ended "); err != nil {
+		t.Fatal(err)
+	}
+	if store.disabledID != id || store.revokedEmail != "member@example.com" || store.reason != "membership ended" {
+		t.Fatalf("store = %#v", store)
 	}
 }
 
-func TestRevokeRejectsMalformedIDBeforeStore(t *testing.T) {
+func TestReferralLifecycleRejectsMalformedIDsBeforeStore(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store, auth.NewService(nil, "secret", false))
-
-	if err := service.Revoke(context.Background(), "not-a-uuid", "mistyped"); !errors.Is(err, ErrCodeNotFound) {
-		t.Fatalf("error = %v", err)
+	if _, err := service.RotateReferral(context.Background(), "not-a-uuid"); !errors.Is(err, ErrReferralNotFound) {
+		t.Fatalf("rotate error = %v", err)
 	}
-	if store.revokedID != "" || store.reason != "" {
-		t.Fatalf("store called with ID/reason = %q/%q", store.revokedID, store.reason)
+	if err := service.DisableReferral(context.Background(), "not-a-uuid"); !errors.Is(err, ErrReferralNotFound) {
+		t.Fatalf("disable error = %v", err)
+	}
+	if store.rotatedID != "" || store.disabledID != "" {
+		t.Fatalf("store called: %#v", store)
 	}
 }
 
 type memoryStore struct {
-	hashes           []string
-	codeHash         string
-	passwordHash     string
-	redeemErr        error
-	disabledID       string
-	revokedID        string
-	reason           string
-	unredeemable     bool
-	redeemCalls      int
-	invalidateUnused bool
+	slug, codeHash, passwordHash                string
+	findErr, redeemErr                          error
+	redeemCalls                                 int
+	rotatedID, disabledID, revokedEmail, reason string
 }
 
-func (s *memoryStore) CreateCodes(_ context.Context, label string, hashes []string) ([]StoredCode, error) {
-	s.hashes = append([]string(nil), hashes...)
-	codes := make([]StoredCode, len(hashes))
-	for i, hash := range hashes {
-		codes[i] = StoredCode{ID: string(rune('a' + i)), CodeHash: hash, BatchLabel: label, CreatedAt: time.Unix(int64(i+1), 0).UTC()}
+func (s *memoryStore) CreateReferral(_ context.Context, slug, name, codeHash string) (StoredReferral, error) {
+	s.slug, s.codeHash = slug, codeHash
+	return StoredReferral{ID: "11111111-1111-1111-1111-111111111111", Slug: slug, Name: name, CodeHash: codeHash, CreatedAt: time.Unix(1, 0).UTC()}, nil
+}
+
+func (s *memoryStore) FindActiveReferral(_ context.Context, slug, codeHash string) (StoredReferral, error) {
+	s.slug, s.codeHash = slug, codeHash
+	if s.findErr != nil {
+		return StoredReferral{}, s.findErr
 	}
-	return codes, nil
+	return StoredReferral{ID: "11111111-1111-1111-1111-111111111111", Slug: slug, Name: "AI Engineer", CodeHash: codeHash}, nil
 }
 
-func (s *memoryStore) CanRedeem(_ context.Context, codeHash string) (bool, error) {
-	s.codeHash = codeHash
-	return !s.unredeemable, nil
-}
-
-func (s *memoryStore) Redeem(_ context.Context, codeHash string, email string, passwordHash string, _ auth.PreparedSession, _ time.Time) (auth.User, error) {
+func (s *memoryStore) Redeem(_ context.Context, slug, codeHash, email, passwordHash string, _ auth.PreparedSession, _ time.Time) (auth.User, error) {
 	s.redeemCalls++
-	s.codeHash = codeHash
-	s.passwordHash = passwordHash
+	s.slug, s.codeHash, s.passwordHash = slug, codeHash, passwordHash
 	if s.redeemErr != nil {
 		return auth.User{}, s.redeemErr
 	}
 	return auth.User{ID: "user-1", Email: email}, nil
 }
 
-func (s *memoryStore) Invalidate(_ context.Context, id string, reason string, _ time.Time) error {
-	s.reason = reason
-	if s.invalidateUnused {
-		s.disabledID = id
-	} else {
-		s.revokedID = id
-	}
-	return nil
+func (s *memoryStore) RotateReferral(_ context.Context, id, codeHash string, _ time.Time) (StoredReferral, error) {
+	s.rotatedID, s.codeHash = id, codeHash
+	return StoredReferral{ID: id, Slug: "aiengineer", Name: "AI Engineer", CodeHash: codeHash}, nil
 }
 
-func (s *memoryStore) Disable(_ context.Context, id string, _ time.Time) error {
+func (s *memoryStore) DisableReferral(_ context.Context, id string, _ time.Time) error {
 	s.disabledID = id
+	return nil
+}
+func (s *memoryStore) RevokeGrant(_ context.Context, email, reason string, _ time.Time) error {
+	s.revokedEmail, s.reason = email, reason
 	return nil
 }

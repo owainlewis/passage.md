@@ -52,8 +52,8 @@ func (s *PGStore) State(ctx context.Context, userID string) (State, error) {
 		       billing_accounts.max_saved_docs,
 		       EXISTS (
 		         SELECT 1
-		         FROM community_access_codes
-		         WHERE redeemed_user_id = $1
+		         FROM community_grants
+		         WHERE user_id = $1
 		           AND revoked_at IS NULL
 		       ),
 		       COALESCE(billing_accounts.stripe_customer_id, ''),
