@@ -105,7 +105,7 @@ function SignupForm() {
       ) : (
         <section className="loginShell" aria-labelledby="signup-title">
           <p className="betaLabel">{referral.name}</p>
-          <h1 id="signup-title">Create your Passage account</h1>
+          <h1 id="signup-title">Create your account</h1>
           <p className="loginCopy">
             Passage Pro is included with your community membership. No card or checkout is required.
           </p>

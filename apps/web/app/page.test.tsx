@@ -271,6 +271,7 @@ describe("Referral signup", () => {
     render(<Signup />);
 
 	expect(await screen.findByText("AI Engineer")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Create your account" })).toBeInTheDocument();
     expect(screen.getByText("Passage Pro is included with your community membership. No card or checkout is required.")).toBeInTheDocument();
 	expect(window.location.pathname).toBe("/signup");
 	expect(window.location.search).toBe("");
