@@ -34,8 +34,6 @@ type AuthValue = {
   signIn: (email: string, password: string) => Promise<void>;
   referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  requestMagicLink: (email: string, next?: string) => Promise<void>;
-  completeMagicLink: (token: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -112,35 +110,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void loadMe().catch(() => undefined);
   }, [loadMe]);
 
-  const requestMagicLink = useCallback(async (email: string, next?: string) => {
-    const res = await fetch("/api/v1/auth/magic-link", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, next })
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(typeof body.error === "string" ? body.error : "Magic link request failed");
-    }
-  }, []);
-
-  const completeMagicLink = useCallback(async (token: string) => {
-    const res = await fetch("/api/v1/auth/magic-link/verify", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(typeof body.error === "string" ? body.error : "Magic link sign-in failed");
-    }
-    setUser(body.user ?? null);
-    setAccount(body.account ?? null);
-    void loadMe().catch(() => undefined);
-  }, [loadMe]);
-
   const signOut = useCallback(async () => {
     const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
     if (!res.ok) {
@@ -156,8 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const value = useMemo(
-    () => ({ user, account, loading, refreshAccount, signIn, referralSignup, signOut, requestMagicLink, completeMagicLink }),
-    [user, account, loading, refreshAccount, signIn, referralSignup, signOut, requestMagicLink, completeMagicLink]
+    () => ({ user, account, loading, refreshAccount, signIn, referralSignup, signOut }),
+    [user, account, loading, refreshAccount, signIn, referralSignup, signOut]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

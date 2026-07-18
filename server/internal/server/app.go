@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
@@ -14,6 +16,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/documents"
+	"github.com/owainlewis/passage.md/server/internal/httpx"
 )
 
 type Options struct {
@@ -23,14 +26,18 @@ type Options struct {
 }
 
 type App struct {
-	static        fs.FS
-	db            *database.Pool
-	auth          *auth.Service
-	docs          *documents.Handler
-	billing       *billing.Service
-	community     *community.Service
-	stripe        *billing.StripeClient
-	billingConfig config.BillingConfig
+	static         fs.FS
+	databaseHealth databasePinger
+	auth           *auth.Service
+	docs           *documents.Handler
+	billing        *billing.Service
+	community      *community.Service
+	stripe         *billing.StripeClient
+	billingConfig  config.BillingConfig
+}
+
+type databasePinger interface {
+	Ping(context.Context) error
 }
 
 func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
@@ -43,12 +50,12 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	}
 	app := &App{
 		static:        static,
-		db:            db,
 		billingConfig: options.Billing,
 		stripe:        billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
 	}
 	if db != nil {
-		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure, auth.WithAppBaseURL(options.Billing.AppBaseURL))
+		app.databaseHealth = db
+		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure)
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)
@@ -65,8 +72,6 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/referral-signup", a.referralSignup)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
-	mux.HandleFunc("POST /api/v1/auth/magic-link", a.requestMagicLink)
-	mux.HandleFunc("POST /api/v1/auth/magic-link/verify", a.verifyMagicLink)
 	mux.HandleFunc("GET /api/v1/admin/dashboard", a.adminDashboard)
 	mux.HandleFunc("GET /api/v1/admin/users/{email}/account", a.adminGetAccount)
 	mux.HandleFunc("PATCH /api/v1/admin/users/{email}/account", a.adminUpdateAccount)
@@ -96,14 +101,24 @@ func (a *App) Routes() http.Handler {
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
-	status := "not_configured"
-	if a.db != nil {
-		status = "ok"
+	w.Header().Set("Cache-Control", "no-store")
+	if a.databaseHealth == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status":   "unavailable",
+			"database": "not_configured",
+		})
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":   "ok",
-		"database": status,
-	})
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := a.databaseHealth.Ping(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status":   "unavailable",
+			"database": "unavailable",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "database": "ok"})
 }
 
 func (a *App) me(w http.ResponseWriter, r *http.Request) {
@@ -198,20 +213,6 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.Login(w, r)
-}
-
-func (a *App) requestMagicLink(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuthService(w) {
-		return
-	}
-	a.auth.RequestMagicLink(w, r)
-}
-
-func (a *App) verifyMagicLink(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuthService(w) {
-		return
-	}
-	a.auth.VerifyMagicLink(w, r)
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {
@@ -535,17 +536,16 @@ func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		maxSavedDocs := documents.NoSavedDocumentLimit
 		if a.billing != nil {
-			if _, err := a.billing.EnsureCanCreateDoc(r.Context(), user); err != nil {
-				if errors.Is(err, billing.ErrLimitReached) {
-					writePaymentRequired(w, "saved document limit reached")
-					return
-				}
+			account, err := a.billing.Account(r.Context(), user)
+			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
 				return
 			}
+			maxSavedDocs = account.Limits.MaxSavedDocs
 		}
-		a.docs.Create(w, r, user)
+		a.docs.Create(w, r, user, maxSavedDocs)
 	})(w, r)
 }
 
@@ -736,42 +736,15 @@ func (i adminAccountInput) overrideValues(w http.ResponseWriter) (*billing.Plan,
 }
 
 func validateJSONMutation(w http.ResponseWriter, r *http.Request) bool {
-	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "Content-Type must be application/json"})
-		return false
-	}
-	return validateSameOriginMutation(w, r)
+	return httpx.RequireJSONMutation(w, r, httpx.SmallJSONBodyBytes)
 }
 
 func validateSameOriginMutation(w http.ResponseWriter, r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		expected := scheme(r) + "://" + r.Host
-		if origin != expected {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin requests are not allowed"})
-			return false
-		}
-	}
-	return true
+	return httpx.RequireSameOrigin(w, r)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	defer r.Body.Close()
-	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
-		return false
-	}
-	return true
-}
-
-func scheme(r *http.Request) string {
-	if r.TLS != nil {
-		return "https"
-	}
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto == "https" || proto == "http" {
-		return proto
-	}
-	return "http"
+	return httpx.DecodeJSON(w, r, target)
 }
 
 func absoluteAppURL(base string, path string) string {

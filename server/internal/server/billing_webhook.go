@@ -32,6 +32,11 @@ func (a *App) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body is too large"})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "webhook body could not be read"})
 		return
 	}

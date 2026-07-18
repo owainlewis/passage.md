@@ -53,8 +53,8 @@ func (s *PGStore) ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 		       billing_accounts.max_saved_docs,
 		       EXISTS (
 		         SELECT 1
-		         FROM community_access_codes
-		         WHERE redeemed_user_id = users.id
+		         FROM community_grants
+		         WHERE user_id = users.id
 		           AND revoked_at IS NULL
 		       ),
 		       COALESCE(billing_accounts.stripe_customer_id, ''),

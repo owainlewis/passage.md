@@ -61,9 +61,6 @@ func (c Config) ValidateServe() error {
 	if c.DatabaseURL == "" {
 		return errors.New("DATABASE_URL is required")
 	}
-	if c.AppEnv == "production" && !c.Billing.StripeBillingEnabled && !validProductionAppBaseURL(c.Billing.AppBaseURL) {
-		return errors.New("APP_BASE_URL must be set to the production URL in production")
-	}
 	if c.Billing.StripeBillingEnabled {
 		if c.Billing.StripeSecretKey == "" {
 			return errors.New("STRIPE_SECRET_KEY is required when Stripe billing is enabled")

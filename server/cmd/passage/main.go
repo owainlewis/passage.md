@@ -78,11 +78,7 @@ func serve(cfg config.Config) error {
 		CookieSecure:  cfg.CookieSecure,
 		Billing:       cfg.Billing,
 	})
-	server := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           app.Routes(),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	server := newHTTPServer(cfg.Port, app.Routes())
 
 	errs := make(chan error, 1)
 	go func() {
@@ -103,6 +99,17 @@ func serve(cfg config.Config) error {
 			return nil
 		}
 		return err
+	}
+}
+
+func newHTTPServer(port string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }
 
