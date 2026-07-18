@@ -963,38 +963,6 @@ describe("Write (editor)", () => {
     );
   });
 
-  it("preserves the next path when requesting a magic link", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
-      }
-      if (url === "/api/v1/auth/magic-link" && init?.method === "POST") {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    window.history.replaceState(null, "", "/login?next=/account");
-
-    render(<Login />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Sign in with an email link instead" }));
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "writer@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/auth/magic-link",
-        expect.objectContaining({
-          method: "POST",
-          credentials: "include",
-          body: JSON.stringify({ email: "writer@example.com", next: "/account" })
-        })
-      )
-    );
-  });
-
   it("signs out from the account menu", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

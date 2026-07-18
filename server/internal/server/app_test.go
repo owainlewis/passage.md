@@ -26,7 +26,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/documents"
 )
 
-func TestHealth(t *testing.T) {
+func TestHealthReturnsUnavailableWithoutDatabase(t *testing.T) {
 	app := NewApp(fstest.MapFS{
 		"index.html": {Data: []byte("<main>passage</main>")},
 	}, nil)
@@ -35,12 +35,49 @@ func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	app.Routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "{\"database\":\"not_configured\",\"status\":\"ok\"}\n" {
+	if body := rec.Body.String(); body != "{\"database\":\"not_configured\",\"status\":\"unavailable\"}\n" {
 		t.Fatalf("body = %q", body)
 	}
+}
+
+func TestHealthChecksDatabase(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{name: "available", status: http.StatusOK, body: "{\"database\":\"ok\",\"status\":\"ok\"}\n"},
+		{name: "unavailable", err: errors.New("database down"), status: http.StatusServiceUnavailable, body: "{\"database\":\"unavailable\",\"status\":\"unavailable\"}\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pinger := &routeDatabasePinger{err: test.err}
+			app := &App{static: fstest.MapFS{"index.html": {Data: []byte("ok")}}, databaseHealth: pinger}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+			app.Routes().ServeHTTP(rec, req)
+			if rec.Code != test.status || rec.Body.String() != test.body {
+				t.Fatalf("status/body = %d/%q", rec.Code, rec.Body.String())
+			}
+			if pinger.calls != 1 {
+				t.Fatalf("ping calls = %d", pinger.calls)
+			}
+		})
+	}
+}
+
+type routeDatabasePinger struct {
+	err   error
+	calls int
+}
+
+func (p *routeDatabasePinger) Ping(context.Context) error {
+	p.calls++
+	return p.err
 }
 
 func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
@@ -256,6 +293,58 @@ func TestRegisterIsClosedBeta(t *testing.T) {
 	}
 	if body := rec.Body.String(); body != "{\"error\":\"Passage is in closed beta\"}\n" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRemovedMagicLinkAPIRoutesReturnNotFound(t *testing.T) {
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, nil)
+	for _, path := range []string{"/api/v1/auth/magic-link", "/api/v1/auth/magic-link/verify"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		app.Routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, body = %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestSmallJSONMutationRoutesRejectOversizedBodies(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("admin-session")] = auth.User{ID: "admin-1", Email: "owain@owainlewis.com"}
+	billingStore := newRouteBillingStore()
+	authService := auth.NewService(authStore, "test-secret", false)
+	app := &App{
+		static:    fstest.MapFS{"index.html": {Data: []byte("ok")}},
+		auth:      authService,
+		billing:   billing.NewService(billingStore, routeBillingConfig()),
+		community: community.NewService(newRouteCommunityStore(authStore, billingStore), authService),
+	}
+	tests := []struct {
+		name   string
+		path   string
+		cookie bool
+	}{
+		{name: "login", path: "/api/v1/auth/login"},
+		{name: "referral", path: "/api/v1/auth/referral/validate"},
+		{name: "admin", path: "/api/v1/admin/users/one@example.com/account", cookie: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(`{"value":"`+strings.Repeat("x", 17*1024)+`"}`))
+			if test.name == "admin" {
+				req.Method = http.MethodPatch
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if test.cookie {
+				req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+			}
+			app.Routes().ServeHTTP(rec, req)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -1050,14 +1139,6 @@ func (s *routeAuthStore) FindUserByAPITokenHash(ctx context.Context, tokenHash s
 	return user, nil
 }
 
-func (s *routeAuthStore) CreateMagicLinkToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error {
-	return errors.New("not implemented")
-}
-
-func (s *routeAuthStore) ConsumeMagicLinkToken(ctx context.Context, tokenHash string, now time.Time) (auth.User, error) {
-	return auth.User{}, auth.ErrInvalidAuth
-}
-
 func routeTokenHash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -1092,7 +1173,7 @@ func (s *routeDocumentStore) List(ctx context.Context, ownerID string) ([]docume
 	return []documents.Document{}, nil
 }
 
-func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string) (documents.Document, error) {
+func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (documents.Document, error) {
 	s.ownerID = ownerID
 	s.body = body
 	return documents.Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil

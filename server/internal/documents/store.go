@@ -15,6 +15,10 @@ import (
 
 var ErrNotFound = errors.New("document not found")
 var ErrShared = errors.New("shared document cannot be archived")
+var ErrLimitReached = errors.New("saved document limit reached")
+var errPublicIDCollision = errors.New("public id collision")
+
+const NoSavedDocumentLimit = -1
 
 type Document struct {
 	ID         string     `json:"id"`
@@ -60,25 +64,62 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 	return docs, rows.Err()
 }
 
-func (s *Store) Create(ctx context.Context, ownerID string, body string) (Document, error) {
+func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {
 	for range 5 {
 		publicID, err := randomPublicID()
 		if err != nil {
 			return Document{}, err
 		}
-		var doc Document
-		err = s.db.QueryRow(ctx, `
-			INSERT INTO documents (owner_user_id, public_id, title, body)
-			VALUES ($1, $2, $3, $4)
-			RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
-		`, ownerID, publicID, titleOf(body), body).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		doc, err := s.createWithPublicID(ctx, ownerID, body, publicID, maxSavedDocs)
+		if errors.Is(err, errPublicIDCollision) {
 			continue
 		}
 		return doc, err
 	}
-	return Document{}, errors.New("public id collision")
+	return Document{}, errPublicIDCollision
+}
+
+func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body string, publicID string, maxSavedDocs int) (Document, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Document{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var lockedUserID string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id = $1 FOR UPDATE`, ownerID).Scan(&lockedUserID); err != nil {
+		return Document{}, err
+	}
+	if maxSavedDocs != NoSavedDocumentLimit {
+		var savedDocs int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM documents
+			WHERE owner_user_id = $1 AND archived_at IS NULL
+		`, ownerID).Scan(&savedDocs); err != nil {
+			return Document{}, err
+		}
+		if savedDocs >= maxSavedDocs {
+			return Document{}, ErrLimitReached
+		}
+	}
+
+	var doc Document
+	err = tx.QueryRow(ctx, `
+		INSERT INTO documents (owner_user_id, public_id, title, body)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
+	`, ownerID, publicID, titleOf(body), body).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return Document{}, errPublicIDCollision
+	}
+	if err != nil {
+		return Document{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Document{}, err
+	}
+	return doc, nil
 }
 
 func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, error) {

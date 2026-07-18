@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
+	"github.com/owainlewis/passage.md/server/internal/httpx"
 )
 
 type Handler struct {
@@ -25,7 +26,7 @@ func NewHandler(store documentStore) *Handler {
 
 type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
-	Create(ctx context.Context, ownerID string, body string) (Document, error)
+	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, body string) (Document, error)
 	Archive(ctx context.Context, ownerID string, id string) error
@@ -46,7 +47,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request, user auth.User) {
 	writeJSON(w, http.StatusOK, map[string][]Document{"documents": docs})
 }
 
-func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User) {
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User, maxSavedDocs int) {
 	if !validateJSONMutation(w, r) {
 		return
 	}
@@ -57,7 +58,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User)
 	if !validateDocumentBody(w, input.Body) {
 		return
 	}
-	doc, err := h.store.Create(r.Context(), user.ID, input.Body)
+	doc, err := h.store.Create(r.Context(), user.ID, input.Body, maxSavedDocs)
+	if errors.Is(err, ErrLimitReached) {
+		writeError(w, http.StatusPaymentRequired, "saved document limit reached")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "document could not be created")
 		return
@@ -239,56 +244,15 @@ func setPublicSecurityHeaders(w http.ResponseWriter) {
 }
 
 func validateJSONMutation(w http.ResponseWriter, r *http.Request) bool {
-	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
-		return false
-	}
-	if !validateSameOrigin(w, r) {
-		return false
-	}
-	if r.ContentLength > maxDocumentRequestBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
-		return false
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxDocumentRequestBytes)
-	return true
+	return httpx.RequireJSONMutation(w, r, maxDocumentRequestBytes)
 }
 
 func validateSameOrigin(w http.ResponseWriter, r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	expected := scheme(r) + "://" + r.Host
-	if origin != expected {
-		writeError(w, http.StatusForbidden, "cross-origin document requests are not allowed")
-		return false
-	}
-	return true
-}
-
-func scheme(r *http.Request) string {
-	if r.TLS != nil {
-		return "https"
-	}
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto == "https" || proto == "http" {
-		return proto
-	}
-	return "http"
+	return httpx.RequireSameOrigin(w, r)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	defer r.Body.Close()
-	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
-			return false
-		}
-		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return false
-	}
-	return true
+	return httpx.DecodeJSON(w, r, target)
 }
 
 func validateDocumentBody(w http.ResponseWriter, body string) bool {

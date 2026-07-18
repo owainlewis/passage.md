@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -98,6 +99,120 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 }
 
+func TestConcurrentDocumentCreatesHonorEffectiveLimits(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	stamp := time.Now().UnixNano()
+	ownerEmail := fmt.Sprintf("quota-owner-%d@example.com", stamp)
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{Billing: config.BillingConfig{
+		FreeMaxSavedDocs: 1,
+		ProMaxSavedDocs:  2,
+		OwnerEmails:      []string{ownerEmail},
+	}})
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+
+	tests := []struct {
+		name     string
+		email    string
+		wantDocs int
+		setup    func(string) error
+	}{
+		{name: "free", email: fmt.Sprintf("quota-free-%d@example.com", stamp), wantDocs: 1, setup: func(string) error { return nil }},
+		{name: "owner", email: ownerEmail, wantDocs: 2, setup: func(string) error { return nil }},
+		{name: "manual", email: fmt.Sprintf("quota-manual-%d@example.com", stamp), wantDocs: 3, setup: func(userID string) error {
+			_, err := db.Exec(ctx, `INSERT INTO billing_accounts (user_id, manual_plan, max_saved_docs) VALUES ($1, 'pro', 3)`, userID)
+			return err
+		}},
+		{name: "community", email: fmt.Sprintf("quota-community-%d@example.com", stamp), wantDocs: 2, setup: func(userID string) error {
+			var referralID string
+			if err := db.QueryRow(ctx, `INSERT INTO community_referrals (slug, name, code_hash) VALUES ($1, 'Quota test', $2) RETURNING id::text`, fmt.Sprintf("quota-%d", stamp), fmt.Sprintf("hash-%d", stamp)).Scan(&referralID); err != nil {
+				return err
+			}
+			_, err := db.Exec(ctx, `INSERT INTO community_grants (user_id, referral_id) VALUES ($1, $2)`, userID, referralID)
+			return err
+		}},
+		{name: "stripe", email: fmt.Sprintf("quota-stripe-%d@example.com", stamp), wantDocs: 2, setup: func(userID string) error {
+			_, err := db.Exec(ctx, `INSERT INTO billing_accounts (user_id, stripe_subscription_status) VALUES ($1, 'active')`, userID)
+			return err
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cookies := createIntegrationUserAndLogin(t, db, server.URL, test.email)
+			var userID string
+			if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, test.email).Scan(&userID); err != nil {
+				t.Fatal(err)
+			}
+			defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+			if err := test.setup(userID); err != nil {
+				t.Fatal(err)
+			}
+
+			statuses := make(chan int, 6)
+			errors := make(chan error, 6)
+			for i := range 6 {
+				go func(i int) {
+					req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/docs", strings.NewReader(fmt.Sprintf(`{"body":"# Document %d"}`, i)))
+					if err != nil {
+						errors <- err
+						return
+					}
+					req.Header.Set("Content-Type", "application/json")
+					for _, cookie := range cookies {
+						req.AddCookie(cookie)
+					}
+					res, err := http.DefaultClient.Do(req)
+					if err != nil {
+						errors <- err
+						return
+					}
+					_ = res.Body.Close()
+					statuses <- res.StatusCode
+				}(i)
+			}
+
+			created := 0
+			for range 6 {
+				select {
+				case err := <-errors:
+					t.Fatal(err)
+				case status := <-statuses:
+					if status == http.StatusCreated {
+						created++
+					} else if status != http.StatusPaymentRequired {
+						t.Fatalf("unexpected create status %d", status)
+					}
+				}
+			}
+			if created != test.wantDocs {
+				t.Fatalf("created = %d, want %d", created, test.wantDocs)
+			}
+			var savedDocs int
+			if err := db.QueryRow(ctx, `SELECT count(*) FROM documents WHERE owner_user_id = $1 AND archived_at IS NULL`, userID).Scan(&savedDocs); err != nil {
+				t.Fatal(err)
+			}
+			if savedDocs != test.wantDocs {
+				t.Fatalf("saved docs = %d, want %d", savedDocs, test.wantDocs)
+			}
+		})
+	}
+}
+
 func TestBillingPGStorePreservesSubscriptionMetadataOnPartialUpdate(t *testing.T) {
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -187,10 +302,10 @@ func TestBillingPGStoreListsAdminUsersWithActiveDocumentCounts(t *testing.T) {
 		_, _ = db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
 	}()
 	if _, err := db.Exec(ctx, `
-		INSERT INTO documents (owner_user_id, title, body, archived_at)
-		VALUES ($1, 'Active', '', NULL),
-		       ($1, 'Archived', '', now())
-	`, userID); err != nil {
+		INSERT INTO documents (owner_user_id, public_id, title, body, archived_at)
+		VALUES ($1, $2, 'Active', '', NULL),
+		       ($1, $3, 'Archived', '', now())
+	`, userID, "active-"+userID, "archived-"+userID); err != nil {
 		t.Fatal(err)
 	}
 	store := billing.NewPGStore(db)

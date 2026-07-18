@@ -25,7 +25,6 @@ const (
 	SourceStripe    = "stripe"
 )
 
-var ErrLimitReached = errors.New("saved document limit reached")
 var ErrPaidRequired = errors.New("pro plan required")
 var ErrNotAdmin = errors.New("admin access required")
 var ErrUserNotFound = errors.New("user not found")
@@ -214,17 +213,6 @@ func (s *Service) UpdateAdminOverride(ctx context.Context, admin auth.User, emai
 	}
 	account, err := s.Account(ctx, user)
 	return user, account, err
-}
-
-func (s *Service) EnsureCanCreateDoc(ctx context.Context, user auth.User) (Account, error) {
-	account, err := s.Account(ctx, user)
-	if err != nil {
-		return Account{}, err
-	}
-	if account.Usage.SavedDocs >= account.Limits.MaxSavedDocs {
-		return account, ErrLimitReached
-	}
-	return account, nil
 }
 
 func (s *Service) EnsurePro(ctx context.Context, user auth.User) (Account, error) {

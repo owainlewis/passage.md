@@ -54,7 +54,7 @@ func TestHandlerUsesAuthenticatedOwnerForCreateAndList(t *testing.T) {
 	create := httptest.NewRecorder()
 	createReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"# One"}`))
 	createReq.Header.Set("Content-Type", "application/json")
-	handler.Create(create, createReq, user)
+	handler.Create(create, createReq, user, NoSavedDocumentLimit)
 
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
@@ -84,7 +84,7 @@ func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 	create := httptest.NewRecorder()
 	createReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"`+body+`"}`))
 	createReq.Header.Set("Content-Type", "application/json")
-	handler.Create(create, createReq, user)
+	handler.Create(create, createReq, user, NoSavedDocumentLimit)
 
 	if create.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
@@ -107,6 +107,23 @@ func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 	}
 }
 
+func TestHandlerReportsSavedDocumentLimit(t *testing.T) {
+	store := &fakeStore{createErr: ErrLimitReached}
+	handler := NewHandler(store)
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"# One"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.Create(rec, req, auth.User{ID: "user-1"}, 5)
+
+	if rec.Code != http.StatusPaymentRequired || !strings.Contains(rec.Body.String(), "saved document limit reached") {
+		t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
+	}
+	if store.maxSavedDocs != 5 {
+		t.Fatalf("max saved docs = %d", store.maxSavedDocs)
+	}
+}
+
 func TestHandlerRejectsOversizedDocumentRequests(t *testing.T) {
 	store := &fakeStore{}
 	handler := NewHandler(store)
@@ -114,7 +131,7 @@ func TestHandlerRejectsOversizedDocumentRequests(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()
-	handler.Create(rec, req, auth.User{ID: "user-1"})
+	handler.Create(rec, req, auth.User{ID: "user-1"}, NoSavedDocumentLimit)
 
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -297,13 +314,15 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 }
 
 type fakeStore struct {
-	ownerID    string
-	body       string
-	getErr     error
-	archiveErr error
-	publicID   string
-	shareToken *string
-	publicDoc  Document
+	ownerID      string
+	body         string
+	maxSavedDocs int
+	createErr    error
+	getErr       error
+	archiveErr   error
+	publicID     string
+	shareToken   *string
+	publicDoc    Document
 }
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {
@@ -311,9 +330,13 @@ func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error
 	return []Document{{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}}, nil
 }
 
-func (s *fakeStore) Create(ctx context.Context, ownerID string, body string) (Document, error) {
+func (s *fakeStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {
 	s.ownerID = ownerID
 	s.body = body
+	s.maxSavedDocs = maxSavedDocs
+	if s.createErr != nil {
+		return Document{}, s.createErr
+	}
 	return Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: body}, nil
 }
 

@@ -9,19 +9,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/httpx"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	CookieName             = "passage_session"
-	sessionDuration        = 30 * 24 * time.Hour
-	magicLinkTokenDuration = 15 * time.Minute
+	CookieName      = "passage_session"
+	sessionDuration = 30 * 24 * time.Hour
 )
 
 var (
@@ -63,56 +61,22 @@ type Store interface {
 	CreateAPIToken(ctx context.Context, userID string, name string, tokenHash string) (APIToken, error)
 	RevokeAPIToken(ctx context.Context, userID string, id string) error
 	FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
-	CreateMagicLinkToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error
-	ConsumeMagicLinkToken(ctx context.Context, tokenHash string, now time.Time) (User, error)
-}
-
-// MagicLinkSender delivers a magic sign-in link to a user's email address.
-type MagicLinkSender interface {
-	Send(ctx context.Context, email string, link string) error
-}
-
-// LoggingMagicLinkSender logs magic links instead of sending email. It is the
-// default sender until a production email provider is wired up.
-type LoggingMagicLinkSender struct{}
-
-func (LoggingMagicLinkSender) Send(_ context.Context, email string, link string) error {
-	slog.Info("magic link ready", "email", email, "link", link)
-	return nil
 }
 
 type Service struct {
-	store           Store
-	secret          []byte
-	cookieSecure    bool
-	now             func() time.Time
-	magicLinkSender MagicLinkSender
-	appBaseURL      string
+	store        Store
+	secret       []byte
+	cookieSecure bool
+	now          func() time.Time
 }
 
-type ServiceOption func(*Service)
-
-func WithMagicLinkSender(sender MagicLinkSender) ServiceOption {
-	return func(s *Service) { s.magicLinkSender = sender }
-}
-
-func WithAppBaseURL(appBaseURL string) ServiceOption {
-	return func(s *Service) { s.appBaseURL = appBaseURL }
-}
-
-func NewService(store Store, secret string, cookieSecure bool, opts ...ServiceOption) *Service {
-	s := &Service{
-		store:           store,
-		secret:          []byte(secret),
-		cookieSecure:    cookieSecure,
-		now:             time.Now,
-		magicLinkSender: LoggingMagicLinkSender{},
-		appBaseURL:      "http://localhost:8080",
+func NewService(store Store, secret string, cookieSecure bool) *Service {
+	return &Service{
+		store:        store,
+		secret:       []byte(secret),
+		cookieSecure: cookieSecure,
+		now:          time.Now,
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
 }
 
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
@@ -179,78 +143,6 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, meResponse{Authenticated: true, User: &account.User})
-}
-
-func (s *Service) RequestMagicLink(w http.ResponseWriter, r *http.Request) {
-	if !validateAuthPost(w, r) {
-		return
-	}
-	var input magicLinkRequestInput
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	email := strings.ToLower(strings.TrimSpace(input.Email))
-	if !strings.Contains(email, "@") {
-		writeError(w, http.StatusBadRequest, "valid email is required")
-		return
-	}
-	next := safeNextPath(input.Next)
-
-	account, err := s.store.FindUserByEmail(r.Context(), email)
-	if err == nil {
-		token, tokenErr := randomToken()
-		if tokenErr == nil {
-			expires := s.now().Add(magicLinkTokenDuration)
-			if createErr := s.store.CreateMagicLinkToken(r.Context(), account.ID, hashToken(token), expires); createErr == nil {
-				_ = s.magicLinkSender.Send(r.Context(), account.Email, s.magicLinkURL(token, next))
-			}
-		}
-	} else if !errors.Is(err, ErrInvalidAuth) {
-		writeError(w, http.StatusInternalServerError, "magic link request failed")
-		return
-	}
-
-	// Always respond the same way so the response can't be used to test
-	// whether an email is registered.
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-func (s *Service) VerifyMagicLink(w http.ResponseWriter, r *http.Request) {
-	if !validateAuthPost(w, r) {
-		return
-	}
-	var input magicLinkVerifyInput
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	token := strings.TrimSpace(input.Token)
-	if token == "" {
-		writeError(w, http.StatusBadRequest, "token is required")
-		return
-	}
-
-	user, err := s.store.ConsumeMagicLinkToken(r.Context(), hashToken(token), s.now())
-	if errors.Is(err, ErrInvalidAuth) {
-		writeError(w, http.StatusUnauthorized, "magic link is invalid or expired")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "magic link verification failed")
-		return
-	}
-	if !s.createSession(w, r, user) {
-		return
-	}
-	writeJSON(w, http.StatusOK, meResponse{Authenticated: true, User: &user})
-}
-
-func (s *Service) magicLinkURL(token string, next string) string {
-	base := strings.TrimRight(s.appBaseURL, "/")
-	values := url.Values{"token": {token}}
-	if next != "" {
-		values.Set("next", next)
-	}
-	return base + "/login/magic-link?" + values.Encode()
 }
 
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
@@ -509,15 +401,6 @@ type credentials struct {
 	Password string `json:"password"`
 }
 
-type magicLinkRequestInput struct {
-	Email string `json:"email"`
-	Next  string `json:"next"`
-}
-
-type magicLinkVerifyInput struct {
-	Token string `json:"token"`
-}
-
 type meResponse struct {
 	Authenticated bool  `json:"authenticated"`
 	User          *User `json:"user,omitempty"`
@@ -546,33 +429,12 @@ func normalizeCredentials(w http.ResponseWriter, input credentials) (string, str
 	return email, password, true
 }
 
-func safeNextPath(raw string) string {
-	next := strings.TrimSpace(raw)
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		return ""
-	}
-	return next
-}
-
 func validateAuthPost(w http.ResponseWriter, r *http.Request) bool {
-	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
-		return false
-	}
-	return validateSameOrigin(w, r)
+	return httpx.RequireJSONMutation(w, r, httpx.SmallJSONBodyBytes)
 }
 
 func validateSameOrigin(w http.ResponseWriter, r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	expected := scheme(r) + "://" + r.Host
-	if origin != expected {
-		writeError(w, http.StatusForbidden, "cross-origin auth requests are not allowed")
-		return false
-	}
-	return true
+	return httpx.RequireSameOrigin(w, r)
 }
 
 func validUUID(value string) bool {
@@ -594,23 +456,8 @@ func validUUID(value string) bool {
 	return true
 }
 
-func scheme(r *http.Request) string {
-	if r.TLS != nil {
-		return "https"
-	}
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto == "https" || proto == "http" {
-		return proto
-	}
-	return "http"
-}
-
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	defer r.Body.Close()
-	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return false
-	}
-	return true
+	return httpx.DecodeJSON(w, r, target)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

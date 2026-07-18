@@ -128,32 +128,6 @@ func (s *PGStore) RevokeAPIToken(ctx context.Context, userID string, id string) 
 	return nil
 }
 
-func (s *PGStore) CreateMagicLinkToken(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error {
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO magic_link_tokens (user_id, token_hash, expires_at)
-		VALUES ($1, $2, $3)
-	`, userID, tokenHash, expiresAt)
-	return err
-}
-
-func (s *PGStore) ConsumeMagicLinkToken(ctx context.Context, tokenHash string, now time.Time) (User, error) {
-	var user User
-	err := s.db.QueryRow(ctx, `
-		UPDATE magic_link_tokens
-		SET used_at = $2
-		FROM users
-		WHERE magic_link_tokens.user_id = users.id
-		  AND magic_link_tokens.token_hash = $1
-		  AND magic_link_tokens.used_at IS NULL
-		  AND magic_link_tokens.expires_at > $2
-		RETURNING users.id::text, users.email
-	`, tokenHash, now).Scan(&user.ID, &user.Email)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return User{}, ErrInvalidAuth
-	}
-	return user, err
-}
-
 func (s *PGStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
