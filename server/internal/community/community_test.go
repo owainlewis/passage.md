@@ -113,13 +113,14 @@ func TestDisableAndRevokeDelegateToStore(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
+	redeemedID := "11111111-1111-1111-1111-111111111111"
 	if err := service.Disable(context.Background(), "unused-id"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Revoke(context.Background(), "redeemed-id", "membership ended"); err != nil {
+	if err := service.Revoke(context.Background(), redeemedID, "membership ended"); err != nil {
 		t.Fatal(err)
 	}
-	if store.disabledID != "unused-id" || store.revokedID != "redeemed-id" || store.reason != "membership ended" {
+	if store.disabledID != "unused-id" || store.revokedID != redeemedID || store.reason != "membership ended" {
 		t.Fatalf("disable/revoke = %q/%q/%q", store.disabledID, store.revokedID, store.reason)
 	}
 }
@@ -128,12 +129,25 @@ func TestRevokeDisablesAnUnusedCode(t *testing.T) {
 	store := &memoryStore{invalidateUnused: true}
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
+	unusedID := "22222222-2222-2222-2222-222222222222"
 
-	if err := service.Revoke(context.Background(), "unused-id", "sent to wrong person"); err != nil {
+	if err := service.Revoke(context.Background(), unusedID, "sent to wrong person"); err != nil {
 		t.Fatal(err)
 	}
-	if store.disabledID != "unused-id" || store.revokedID != "" {
+	if store.disabledID != unusedID || store.revokedID != "" {
 		t.Fatalf("disable/revoke IDs = %q/%q", store.disabledID, store.revokedID)
+	}
+}
+
+func TestRevokeRejectsMalformedIDBeforeStore(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store, auth.NewService(nil, "secret", false))
+
+	if err := service.Revoke(context.Background(), "not-a-uuid", "mistyped"); !errors.Is(err, ErrCodeNotFound) {
+		t.Fatalf("error = %v", err)
+	}
+	if store.revokedID != "" || store.reason != "" {
+		t.Fatalf("store called with ID/reason = %q/%q", store.revokedID, store.reason)
 	}
 }
 

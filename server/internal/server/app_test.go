@@ -363,12 +363,13 @@ func TestAdminCanGenerateAndRevokeCommunityCodes(t *testing.T) {
 	}
 
 	revoke := httptest.NewRecorder()
-	revokeReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/redeemed-id/revoke", strings.NewReader(`{"reason":"membership ended"}`))
+	redeemedID := "11111111-1111-1111-1111-111111111111"
+	revokeReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/"+redeemedID+"/revoke", strings.NewReader(`{"reason":"membership ended"}`))
 	revokeReq.Header.Set("Content-Type", "application/json")
 	revokeReq.Header.Set("Origin", "http://passage.test")
 	revokeReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
 	app.Routes().ServeHTTP(revoke, revokeReq)
-	if revoke.Code != http.StatusNoContent || store.revokedID != "redeemed-id" || store.reason != "membership ended" {
+	if revoke.Code != http.StatusNoContent || store.revokedID != redeemedID || store.reason != "membership ended" {
 		t.Fatalf("revoke status/store = %d/%q/%q", revoke.Code, store.revokedID, store.reason)
 	}
 }
@@ -386,24 +387,37 @@ func TestAdminRevokeDisablesUnusedCommunityCode(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/unused-id/revoke", strings.NewReader(`{"reason":"sent to wrong person"}`))
+	unusedID := "22222222-2222-2222-2222-222222222222"
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/"+unusedID+"/revoke", strings.NewReader(`{"reason":"sent to wrong person"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://passage.test")
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
 	app.Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent || store.disabledID != "unused-id" {
+	if rec.Code != http.StatusNoContent || store.disabledID != unusedID {
 		t.Fatalf("status/disabled ID = %d/%q", rec.Code, store.disabledID)
 	}
 
 	store.invalidateErr = community.ErrCodeNotFound
 	notFound := httptest.NewRecorder()
-	notFoundReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/missing-id/revoke", strings.NewReader(`{"reason":"missing"}`))
+	notFoundReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/33333333-3333-3333-3333-333333333333/revoke", strings.NewReader(`{"reason":"missing"}`))
 	notFoundReq.Header.Set("Content-Type", "application/json")
 	notFoundReq.Header.Set("Origin", "http://passage.test")
 	notFoundReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
 	app.Routes().ServeHTTP(notFound, notFoundReq)
 	if notFound.Code != http.StatusNotFound || !strings.Contains(notFound.Body.String(), "community access code not found") {
 		t.Fatalf("not-found status/body = %d/%s", notFound.Code, notFound.Body.String())
+	}
+
+	store.invalidateErr = nil
+	store.disabledID = ""
+	malformed := httptest.NewRecorder()
+	malformedReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/admin/community-access-codes/not-a-uuid/revoke", strings.NewReader(`{"reason":"mistyped"}`))
+	malformedReq.Header.Set("Content-Type", "application/json")
+	malformedReq.Header.Set("Origin", "http://passage.test")
+	malformedReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("admin-session")})
+	app.Routes().ServeHTTP(malformed, malformedReq)
+	if malformed.Code != http.StatusNotFound || store.disabledID != "" {
+		t.Fatalf("malformed status/disabled ID = %d/%q", malformed.Code, store.disabledID)
 	}
 }
 

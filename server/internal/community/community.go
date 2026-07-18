@@ -135,11 +135,33 @@ func (s *Service) Disable(ctx context.Context, id string) error {
 }
 
 func (s *Service) Revoke(ctx context.Context, id string, reason string) error {
+	if !validUUID(id) {
+		return ErrCodeNotFound
+	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return errors.New("revocation reason is required")
 	}
 	return s.store.Invalidate(ctx, id, reason, s.now())
+}
+
+func validUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for i, c := range value {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func NormalizeCode(code string) string {
