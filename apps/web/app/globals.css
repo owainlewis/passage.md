@@ -2141,7 +2141,7 @@ button {
 .loginShell {
   width: min(100%, 420px);
   margin: 0 auto;
-  padding: 16vh 24px 80px;
+  padding: clamp(48px, 9vh, 96px) 24px 80px;
 }
 
 .betaLabel {
