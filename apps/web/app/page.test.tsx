@@ -332,6 +332,39 @@ describe("Referral signup", () => {
 });
 
 describe("Write (editor)", () => {
+  it("surfaces repeated session failures and retries", async () => {
+    let sessionRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests <= 2) {
+          return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+        }
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-retried", publicId: "retried", body: "# Retried session" }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Session could not be loaded.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: /Retried session/ })).toBeInTheDocument();
+    expect(sessionRequests).toBe(3);
+  });
+
   it("rechecks an unverified session before redirecting a protected route", async () => {
     let sessionRequests = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AuthBoundary, PendingStatus, RoutePending, useAuth } from "../auth";
+import { AuthBoundary, PendingStatus, RoutePending, SessionError, useAuth } from "../auth";
 import { Brand } from "../brand";
 
 type AdminUser = {
@@ -58,6 +58,9 @@ function AdminGate() {
   }, [loading, refreshAccount, routeRevalidating, sessionStatus, user]);
 
   if (loading || routeRevalidating || sessionStatus === "unknown") return <RoutePending />;
+  if (sessionStatus === "error") {
+    return <SessionError onRetry={() => void refreshAccount().catch(() => undefined)} />;
+  }
   if (!user) return <RoutePending label="Redirecting to sign in" />;
   return <AdminPage />;
 }

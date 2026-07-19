@@ -31,7 +31,7 @@ type AuthValue = {
   account: Account | null;
   loading: boolean;
   routeRevalidating: boolean;
-  sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown";
+  sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown" | "error";
   refreshAccount: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
@@ -167,7 +167,12 @@ export function AuthProvider({
 
   const refreshAccount = useCallback(async () => {
     if (authMutationsInFlight.current > 0) return;
-    await loadMe();
+    try {
+      await loadMe();
+    } catch (error) {
+      setSessionStatus((current) => current === "unknown" ? "error" : current);
+      throw error;
+    }
   }, [loadMe]);
 
   const value = useMemo(
@@ -190,6 +195,17 @@ export function RoutePending({ label = "Loading" }: { label?: string }) {
 
 export function PendingStatus({ label }: { label: string }) {
   return <div className="pendingStatus" role="status" aria-label={label} aria-live="polite" />;
+}
+
+export function SessionError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <main className="routeStatus" role="alert">
+      <p>Session could not be loaded.</p>
+      <button className="textButton" type="button" onClick={onRetry}>
+        Retry
+      </button>
+    </main>
+  );
 }
 
 export function useAuth(): AuthValue {

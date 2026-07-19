@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AuthBoundary, RoutePending, useAuth } from "../auth";
+import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
 import { Brand } from "../brand";
 
 type APIToken = {
@@ -76,6 +76,9 @@ function AccountGate() {
   }, [loading, refreshAccount, routeRevalidating, sessionStatus, user]);
 
   if (loading || routeRevalidating || sessionStatus === "unknown") return <RoutePending />;
+  if (sessionStatus === "error") {
+    return <SessionError onRetry={() => void refreshAccount().catch(() => undefined)} />;
+  }
   if (!user) return <RoutePending label="Redirecting to sign in" />;
   return <AccountPage />;
 }

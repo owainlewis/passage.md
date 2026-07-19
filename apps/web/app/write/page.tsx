@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Editor from "../editor";
-import { AuthBoundary, RoutePending, useAuth } from "../auth";
+import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
 import { EntitlementsProvider } from "../entitlements";
 
 export default function Write() {
@@ -31,6 +31,10 @@ function WriteGate() {
 
   if (loading || routeRevalidating || sessionStatus === "unknown") {
     return <RoutePending />;
+  }
+
+  if (sessionStatus === "error") {
+    return <SessionError onRetry={() => void refreshAccount().catch(() => undefined)} />;
   }
 
   if (!user) {
