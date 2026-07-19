@@ -143,10 +143,9 @@ describe("AuthProvider", () => {
     expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument();
   });
 
-  it("discards a session refresh that starts while sign out is pending", async () => {
+  it("does not start a background refresh while sign out is pending", async () => {
     let sessionRequests = 0;
     let resolveLogout: ((response: Response) => void) | undefined;
-    let resolveRefresh: ((response: Response) => void) | undefined;
     const user = { id: "user-1", email: "writer@example.com" };
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -155,9 +154,7 @@ describe("AuthProvider", () => {
         if (sessionRequests === 1) {
           return new Response(JSON.stringify({ authenticated: true, user }), { status: 200 });
         }
-        return new Promise<Response>((resolve) => {
-          resolveRefresh = resolve;
-        });
+        return new Response(JSON.stringify({ authenticated: true, user }), { status: 200 });
       }
       if (url === "/api/v1/auth/logout" && init?.method === "POST") {
         return new Promise<Response>((resolve) => {
@@ -178,17 +175,52 @@ describe("AuthProvider", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(resolveLogout).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(resolveRefresh).toBeDefined());
+    expect(sessionRequests).toBe(1);
 
     await act(async () => {
       resolveLogout?.(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     });
     expect(screen.getByText("signed out")).toBeInTheDocument();
+    expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument();
+  });
+
+  it("does not let a background refresh supersede the post-login session load", async () => {
+    let sessionRequests = 0;
+    let resolveLoginSession: ((response: Response) => void) | undefined;
+    const user = { id: "user-1", email: "writer@example.com" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) {
+          return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
+        }
+        return new Promise<Response>((resolve) => {
+          resolveLoginSession = resolve;
+        });
+      }
+      if (url === "/api/v1/auth/login" && init?.method === "POST") {
+        return new Response(JSON.stringify({ authenticated: true, user }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <AuthActionsProbe />
+      </AuthProvider>
+    );
+
+    await screen.findByText("signed out");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(resolveLoginSession).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(sessionRequests).toBe(2);
 
     await act(async () => {
-      resolveRefresh?.(new Response(JSON.stringify({ authenticated: true, user }), { status: 200 }));
+      resolveLoginSession?.(new Response(JSON.stringify({ authenticated: true, user }), { status: 200 }));
     });
-    expect(screen.getByText("signed out")).toBeInTheDocument();
-    expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument();
+    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
   });
 });

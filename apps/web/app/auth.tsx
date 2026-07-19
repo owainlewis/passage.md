@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [sessionStatus, setSessionStatus] = useState<AuthValue["sessionStatus"]>("loading");
   const requestVersion = useRef(0);
+  const authMutationsInFlight = useRef(0);
 
   const loadMe = useCallback(async () => {
     const version = ++requestVersion.current;
@@ -81,24 +82,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const submitCredentials = useCallback(async (path: string, email: string, password: string) => {
+    authMutationsInFlight.current += 1;
     requestVersion.current += 1;
-    const res = await fetch(path, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
-    }
     try {
-      await loadMe();
-    } catch {
-      if (!body.user) throw new Error("Account could not be loaded");
-      setUser(body.user);
-      setAccount(body.account ?? null);
-      setSessionStatus("authenticated");
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
+      }
+      try {
+        await loadMe();
+      } catch {
+        if (!body.user) throw new Error("Account could not be loaded");
+        setUser(body.user);
+        setAccount(body.account ?? null);
+        setSessionStatus("authenticated");
+      }
+    } finally {
+      authMutationsInFlight.current -= 1;
     }
   }, [loadMe]);
 
@@ -108,41 +114,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const referralSignup = useCallback(async (ref: string, code: string, email: string, password: string) => {
+    authMutationsInFlight.current += 1;
     requestVersion.current += 1;
-    const res = await fetch("/api/v1/auth/referral-signup", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref, code, email, password })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(typeof body.error === "string" ? body.error : "Account could not be created");
-    }
     try {
-      await loadMe();
-    } catch {
-      if (!body.user) throw new Error("Account could not be loaded");
-      setUser(body.user);
-      setAccount(body.account ?? null);
-      setSessionStatus("authenticated");
+      const res = await fetch("/api/v1/auth/referral-signup", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref, code, email, password })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof body.error === "string" ? body.error : "Account could not be created");
+      }
+      try {
+        await loadMe();
+      } catch {
+        if (!body.user) throw new Error("Account could not be loaded");
+        setUser(body.user);
+        setAccount(body.account ?? null);
+        setSessionStatus("authenticated");
+      }
+    } finally {
+      authMutationsInFlight.current -= 1;
     }
   }, [loadMe]);
 
   const signOut = useCallback(async () => {
+    authMutationsInFlight.current += 1;
     requestVersion.current += 1;
-    const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(typeof body.error === "string" ? body.error : "Sign out failed");
+    try {
+      const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(typeof body.error === "string" ? body.error : "Sign out failed");
+      }
+      requestVersion.current += 1;
+      setUser(null);
+      setAccount(null);
+      setSessionStatus("anonymous");
+    } finally {
+      authMutationsInFlight.current -= 1;
     }
-    requestVersion.current += 1;
-    setUser(null);
-    setAccount(null);
-    setSessionStatus("anonymous");
   }, []);
 
   const refreshAccount = useCallback(async () => {
+    if (authMutationsInFlight.current > 0) return;
     await loadMe();
   }, [loadMe]);
 
