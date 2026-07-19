@@ -42,9 +42,14 @@ function SessionRevalidator({
   useEffect(() => {
     if (!routeRevalidating) return;
     let cancelled = false;
-    void refreshAccount()
-      .catch(() => undefined)
-      .finally(() => {
+    void refreshAccount({
+      requireVerified: true,
+      shouldCommitError: () => !cancelled
+    })
+      .then((applied) => {
+        if (applied && !cancelled) markRouteVerified();
+      })
+      .catch(() => {
         if (!cancelled) markRouteVerified();
       });
     return () => {
@@ -53,10 +58,12 @@ function SessionRevalidator({
   }, [markRouteVerified, refreshAccount, routeRevalidating]);
 
   useEffect(() => {
-    const refresh = () => void refreshAccount().catch(() => undefined);
+    const refresh = () => {
+      if (!routeRevalidating) void refreshAccount().catch(() => undefined);
+    };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
-  }, [refreshAccount]);
+  }, [refreshAccount, routeRevalidating]);
 
   return null;
 }

@@ -15,6 +15,7 @@ function AuthActionsProbe() {
     <>
       <span>{auth.loading ? "checking" : auth.user?.email ?? "signed out"}</span>
       <span>{error}</span>
+      <span data-testid="session-status">{auth.sessionStatus}</span>
       <button
         type="button"
         onClick={() => void auth.signIn("writer@example.com", "password123").catch((err) => setError(err.message))}
@@ -33,6 +34,14 @@ function AuthActionsProbe() {
       </button>
       <button type="button" onClick={() => void auth.refreshAccount().catch((err) => setError(err.message))}>
         Refresh
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void auth.refreshAccount({ requireVerified: true }).catch((err) => setError(err.message))
+        }
+      >
+        Verify route
       </button>
       <button type="button" onClick={() => void auth.signOut().catch((err) => setError(err.message))}>
         Sign out
@@ -222,5 +231,70 @@ describe("AuthProvider", () => {
       resolveLoginSession?.(new Response(JSON.stringify({ authenticated: true, user }), { status: 200 }));
     });
     expect(screen.getByText("writer@example.com")).toBeInTheDocument();
+  });
+
+  it("preserves a known session when an ordinary background refresh fails", async () => {
+    let sessionRequests = 0;
+    const user = { id: "user-1", email: "writer@example.com" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) {
+          return new Response(JSON.stringify({ authenticated: true, user }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <AuthActionsProbe />
+      </AuthProvider>
+    );
+
+    await screen.findByText("writer@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(sessionRequests).toBe(2));
+    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
+  });
+
+  it("ignores a stale route failure after a newer refresh succeeds", async () => {
+    let sessionRequests = 0;
+    let resolveRoute: ((response: Response) => void) | undefined;
+    const user = { id: "user-1", email: "writer@example.com" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) !== "/api/v1/me") {
+        return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+      }
+      sessionRequests += 1;
+      if (sessionRequests === 1 || sessionRequests === 3) {
+        return new Response(JSON.stringify({ authenticated: true, user }), { status: 200 });
+      }
+      return new Promise<Response>((resolve) => {
+        resolveRoute = resolve;
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <AuthActionsProbe />
+      </AuthProvider>
+    );
+
+    await screen.findByText("writer@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Verify route" }));
+    await waitFor(() => expect(resolveRoute).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(sessionRequests).toBe(3));
+
+    await act(async () => {
+      resolveRoute?.(new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 }));
+    });
+    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
+    expect(screen.getByTestId("session-status")).toHaveTextContent("authenticated");
   });
 });

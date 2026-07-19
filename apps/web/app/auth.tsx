@@ -32,13 +32,18 @@ type AuthValue = {
   loading: boolean;
   routeRevalidating: boolean;
   sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown" | "error";
-  refreshAccount: () => Promise<void>;
+  refreshAccount: (options?: {
+    requireVerified?: boolean;
+    shouldCommitError?: () => boolean;
+  }) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<void>;
   referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
+
+class SupersededSessionRequest extends Error {}
 
 export function AuthProvider({
   children,
@@ -60,11 +65,12 @@ export function AuthProvider({
       const res = await fetch("/api/v1/me", { credentials: "include" });
       if (!res.ok) throw new Error("Account could not be loaded");
       const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
-      if (version !== requestVersion.current) return;
+      if (version !== requestVersion.current) throw new SupersededSessionRequest();
       setUser(body.authenticated ? body.user ?? null : null);
       setAccount(body.authenticated ? body.account ?? null : null);
       setSessionStatus(body.authenticated ? "authenticated" : "anonymous");
     } catch (error) {
+      if (version !== requestVersion.current) throw new SupersededSessionRequest();
       if (version === requestVersion.current) {
         setSessionStatus((current) => current === "loading" ? "unknown" : current);
       }
@@ -165,12 +171,21 @@ export function AuthProvider({
     }
   }, []);
 
-  const refreshAccount = useCallback(async () => {
-    if (authMutationsInFlight.current > 0) return;
+  const refreshAccount = useCallback(async (options?: {
+    requireVerified?: boolean;
+    shouldCommitError?: () => boolean;
+  }) => {
+    if (authMutationsInFlight.current > 0) return false;
     try {
       await loadMe();
+      return true;
     } catch (error) {
-      setSessionStatus((current) => current === "unknown" ? "error" : current);
+      if (error instanceof SupersededSessionRequest) return false;
+      if (options?.shouldCommitError?.() !== false) {
+        setSessionStatus((current) =>
+          options?.requireVerified || current === "unknown" ? "error" : current
+        );
+      }
       throw error;
     }
   }, [loadMe]);

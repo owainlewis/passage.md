@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { AppProviders, sessionRouteKey } from "./app-providers";
 import { useAuth } from "./auth";
 
@@ -10,12 +10,17 @@ vi.mock("next/navigation", () => ({
 
 function AuthProbe() {
   const auth = useAuth();
-  return <span>{auth.loading ? "checking" : auth.user?.email ?? "signed out"}</span>;
+  return (
+    <span data-route-revalidating={String(auth.routeRevalidating)}>
+      {auth.loading ? "checking" : auth.user?.email ?? "signed out"}
+    </span>
+  );
 }
 
 function ProtectedProbe() {
   const auth = useAuth();
   if (auth.loading || auth.routeRevalidating) return <span>waiting for session</span>;
+  if (auth.sessionStatus === "error") return <span>session error</span>;
   return <span>{auth.user ? "protected content" : "signed out"}</span>;
 }
 
@@ -51,6 +56,9 @@ describe("AppProviders", () => {
       </AppProviders>
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByText("writer@example.com")).toHaveAttribute("data-route-revalidating", "false")
+    );
     expect(screen.queryByText("checking")).not.toBeInTheDocument();
 
     window.dispatchEvent(new Event("focus"));
@@ -167,5 +175,90 @@ describe("AppProviders", () => {
     expect(screen.getByText("protected content")).toBeInTheDocument();
     expect(screen.queryByText("waiting for session")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trust cached auth when protected route verification fails", async () => {
+    navigation.pathname = "/write";
+    let sessionRequests = 0;
+    const fetchMock = vi.fn(async () => {
+      sessionRequests += 1;
+      if (sessionRequests === 1) {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(
+      <AppProviders>
+        <ProtectedProbe />
+      </AppProviders>
+    );
+    await screen.findByText("protected content");
+
+    navigation.pathname = "/account";
+    view.rerender(
+      <AppProviders>
+        <ProtectedProbe />
+      </AppProviders>
+    );
+
+    expect(screen.getByText("waiting for session")).toBeInTheDocument();
+    expect(await screen.findByText("session error")).toBeInTheDocument();
+    expect(screen.queryByText("protected content")).not.toBeInTheDocument();
+  });
+
+  it("ignores a failed verification after navigating back to the verified route", async () => {
+    navigation.pathname = "/write";
+    let sessionRequests = 0;
+    let resolveAbandonedRoute: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async () => {
+      sessionRequests += 1;
+      if (sessionRequests === 1) {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+          { status: 200 }
+        );
+      }
+      return new Promise<Response>((resolve) => {
+        resolveAbandonedRoute = resolve;
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(
+      <AppProviders>
+        <ProtectedProbe />
+      </AppProviders>
+    );
+    await screen.findByText("protected content");
+
+    navigation.pathname = "/account";
+    view.rerender(
+      <AppProviders>
+        <ProtectedProbe />
+      </AppProviders>
+    );
+    expect(screen.getByText("waiting for session")).toBeInTheDocument();
+    await waitFor(() => expect(resolveAbandonedRoute).toBeDefined());
+
+    navigation.pathname = "/write";
+    view.rerender(
+      <AppProviders>
+        <ProtectedProbe />
+      </AppProviders>
+    );
+    expect(screen.getByText("protected content")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveAbandonedRoute?.(
+        new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 })
+      );
+    });
+    expect(screen.getByText("protected content")).toBeInTheDocument();
+    expect(screen.queryByText("session error")).not.toBeInTheDocument();
   });
 });
