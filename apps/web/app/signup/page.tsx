@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { AuthProvider, useAuth } from "../auth";
+import { AuthBoundary, useAuth } from "../auth";
 import { Brand } from "../brand";
 
 type Referral = { ref: string; code: string; name: string };
 
 export default function Signup() {
   return (
-    <AuthProvider>
+    <AuthBoundary>
       <SignupForm />
-    </AuthProvider>
+    </AuthBoundary>
   );
 }
 
@@ -25,10 +25,10 @@ function SignupForm() {
   const capturedCredentials = useRef<{ ref: string; code: string } | null | undefined>(undefined);
 
   useEffect(() => {
-    if (!auth.loading && auth.user) {
+    if (!auth.loading && !auth.routeRevalidating && auth.user) {
       window.location.replace("/write");
     }
-  }, [auth.loading, auth.user]);
+  }, [auth.loading, auth.routeRevalidating, auth.user]);
 
   useEffect(() => {
     if (capturedCredentials.current === undefined) {
@@ -73,7 +73,6 @@ function SignupForm() {
     setSubmitting(true);
     try {
       await auth.referralSignup(referral.ref, referral.code, email, password);
-      window.location.replace("/write");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Account could not be created");
       setSubmitting(false);
@@ -136,7 +135,11 @@ function SignupForm() {
               />
             </label>
             {error && <p className="authError">{error}</p>}
-            <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading || submitting}>
+            <button
+              className="btnPrimary loginSubmit"
+              type="submit"
+              disabled={auth.loading || auth.routeRevalidating || submitting}
+            >
               {submitting ? "Creating account" : "Create account"}
             </button>
           </form>

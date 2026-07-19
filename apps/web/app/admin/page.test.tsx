@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import { AppProviders } from "../app-providers";
 import Admin from "./page";
 
 beforeEach(() => {
@@ -12,6 +13,36 @@ afterEach(() => {
 });
 
 describe("Admin", () => {
+  it("keeps the admin shell visible while accounts load", async () => {
+    let resolveDashboard: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "owner", email: "owain@owainlewis.com" } }),
+          { status: 200 }
+        );
+      }
+      if (String(input) === "/api/v1/admin/dashboard") {
+        return new Promise<Response>((resolve) => {
+          resolveDashboard = resolve;
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Admin />);
+
+    expect(await screen.findByRole("heading", { name: "Accounts" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading accounts" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Admin navigation" })).toBeInTheDocument();
+
+    await vi.waitFor(() => expect(resolveDashboard).toBeDefined());
+    resolveDashboard?.(
+      new Response(JSON.stringify({ totals: { users: 0, free: 0, pro: 0 }, users: [] }), { status: 200 })
+    );
+  });
+
   it("renders account totals and users for an owner", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === "/api/v1/me") {
@@ -62,7 +93,7 @@ describe("Admin", () => {
     render(<Admin />);
 
     expect(await screen.findByRole("heading", { name: "Accounts" })).toBeInTheDocument();
-    const totals = screen.getByLabelText("Account totals");
+    const totals = await screen.findByLabelText("Account totals");
     expect(within(totals).getByText("3")).toBeInTheDocument();
     expect(within(totals).getByText("1")).toBeInTheDocument();
     expect(within(totals).getByText("2")).toBeInTheDocument();
@@ -79,7 +110,7 @@ describe("Admin", () => {
 
     render(<Admin />);
 
-    expect(await screen.findByText("Redirecting to sign in")).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Redirecting to sign in" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/admin/dashboard", expect.anything());
   });
 
@@ -99,5 +130,56 @@ describe("Admin", () => {
 
     expect(await screen.findByText("Admin access required")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Accounts" })).not.toBeInTheDocument();
+  });
+
+  it("clears the previous admin dashboard when focus discovers a different user", async () => {
+    let sessionRequests = 0;
+    let dashboardRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        const user = sessionRequests === 1
+          ? { id: "owner", email: "owain@owainlewis.com" }
+          : { id: "member", email: "member@example.com" };
+        return new Response(JSON.stringify({ authenticated: true, user }), { status: 200 });
+      }
+      if (url === "/api/v1/admin/dashboard") {
+        dashboardRequests += 1;
+        if (dashboardRequests === 1) {
+          return new Response(
+            JSON.stringify({
+              totals: { users: 1, free: 0, pro: 1 },
+              users: [{
+                id: "owner",
+                email: "owain@owainlewis.com",
+                createdAt: "2026-07-18T10:00:00Z",
+                plan: "pro",
+                source: "owner",
+                savedDocs: 2
+              }]
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({ error: "admin access required" }), { status: 403 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppProviders>
+        <Admin />
+      </AppProviders>
+    );
+
+    expect(await screen.findByText("owain@owainlewis.com")).toBeInTheDocument();
+    window.dispatchEvent(new Event("focus"));
+
+    expect(await screen.findByText("Admin access required")).toBeInTheDocument();
+    expect(screen.queryByText("owain@owainlewis.com")).not.toBeInTheDocument();
+    expect(sessionRequests).toBe(2);
+    expect(dashboardRequests).toBe(2);
   });
 });

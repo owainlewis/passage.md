@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Account from "./account/page";
+import { AppProviders } from "./app-providers";
+import { AuthProvider } from "./auth";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
 import Signup from "./signup/page";
@@ -108,6 +110,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
 async function renderWrite() {
   const view = render(<Write />);
   await screen.findByRole("region", { name: "Markdown editor" });
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
   return view;
 }
 
@@ -330,6 +333,90 @@ describe("Referral signup", () => {
 });
 
 describe("Write (editor)", () => {
+  it("surfaces repeated session failures and retries", async () => {
+    let sessionRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests <= 2) {
+          return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+        }
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-retried", publicId: "retried", body: "# Retried session" }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Session could not be loaded.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: /Retried session/ })).toBeInTheDocument();
+    expect(sessionRequests).toBe(3);
+  });
+
+  it("rechecks an unverified session before redirecting a protected route", async () => {
+    let sessionRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) {
+          throw new TypeError("network unavailable");
+        }
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-recovered", publicId: "recovered", body: "# Recovered session" }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect(await screen.findByRole("button", { name: /Recovered session/ })).toBeInTheDocument();
+    expect(sessionRequests).toBe(2);
+  });
+
+  it("does not flash loading copy while the session check resolves", async () => {
+    let resolveSession: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/v1/me") {
+          return new Promise<Response>((resolve) => {
+            resolveSession = resolve;
+          });
+        }
+        return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+      })
+    );
+
+    render(<Write />);
+
+    expect(screen.queryByText("Loading")).not.toBeInTheDocument();
+    await waitFor(() => expect(resolveSession).toBeDefined());
+    resolveSession?.(new Response(JSON.stringify({ authenticated: false }), { status: 200 }));
+  });
+
   it("hides the save status once server state is current", async () => {
     await renderWrite();
 
@@ -360,8 +447,9 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByText("Loading saved docs")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Loading saved docs" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
 
     await waitFor(() => expect(resolveDocs).toBeDefined());
@@ -936,6 +1024,31 @@ describe("Write (editor)", () => {
     expect(screen.queryByText("Dark mode is a Pro feature.")).not.toBeInTheDocument();
   });
 
+  it("keeps the sign-in action stable while the session check resolves", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+
+    render(<Login />);
+
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
+    expect(screen.queryByText("Checking")).not.toBeInTheDocument();
+  });
+
+  it("keeps sign-in disabled until route revalidation finishes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ authenticated: false }), { status: 200 }))
+    );
+
+    render(
+      <AuthProvider routeRevalidating>
+        <Login />
+      </AuthProvider>
+    );
+
+    await screen.findByText("Closed beta");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
+  });
+
   it("signs in from the closed beta login page without showing sign up", async () => {
     const fetchMock = vi
       .fn()
@@ -1035,7 +1148,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByText("Redirecting to sign in")).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Redirecting to sign in" })).toBeInTheDocument();
     expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/api-tokens", expect.anything());
   });
@@ -1168,6 +1281,56 @@ describe("Write (editor)", () => {
         })
       )
     );
+  });
+
+  it("keeps a pending edit when the same user session refreshes", async () => {
+    let documentLoads = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        documentLoads += 1;
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
+          status: 200
+        });
+      }
+      if (url === "/api/v1/docs/doc-1" && init?.method === "PATCH") {
+        return new Response(JSON.stringify({ id: "doc-1", body: JSON.parse(String(init.body)).body }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppProviders>
+        <Write />
+      </AppProviders>
+    );
+
+    expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Saved draft\n\nSurvives refresh." }
+    });
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/docs/doc-1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ body: "# Saved draft\n\nSurvives refresh." })
+        })
+      )
+    );
+    expect(documentLoads).toBe(1);
   });
 
   it("creates a server share link for a signed-in document", async () => {

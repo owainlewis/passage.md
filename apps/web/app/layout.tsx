@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, IBM_Plex_Mono, Newsreader } from "next/font/google";
+import { AppProviders } from "./app-providers";
 import "./globals.css";
 
 const sans = Inter({
@@ -56,7 +57,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
-      <body>{children}</body>
+      <body>
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }

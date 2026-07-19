@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 type User = {
   id: string;
@@ -30,7 +30,12 @@ type AuthValue = {
   user: User | null;
   account: Account | null;
   loading: boolean;
-  refreshAccount: () => Promise<void>;
+  routeRevalidating: boolean;
+  sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown" | "error";
+  refreshAccount: (options?: {
+    requireVerified?: boolean;
+    shouldCommitError?: () => boolean;
+  }) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<void>;
   referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -38,32 +43,49 @@ type AuthValue = {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+class SupersededSessionRequest extends Error {}
+
+export function AuthProvider({
+  children,
+  routeRevalidating = false
+}: {
+  children: React.ReactNode;
+  routeRevalidating?: boolean;
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionStatus, setSessionStatus] = useState<AuthValue["sessionStatus"]>("loading");
+  const requestVersion = useRef(0);
+  const authMutationsInFlight = useRef(0);
 
   const loadMe = useCallback(async () => {
-    const res = await fetch("/api/v1/me", { credentials: "include" });
-    if (!res.ok) return;
-    const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
-    setUser(body.authenticated ? body.user ?? null : null);
-    setAccount(body.authenticated ? body.account ?? null : null);
+    const version = ++requestVersion.current;
+    try {
+      const res = await fetch("/api/v1/me", { credentials: "include" });
+      if (!res.ok) throw new Error("Account could not be loaded");
+      const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
+      if (version !== requestVersion.current) throw new SupersededSessionRequest();
+      setUser(body.authenticated ? body.user ?? null : null);
+      setAccount(body.authenticated ? body.account ?? null : null);
+      setSessionStatus(body.authenticated ? "authenticated" : "anonymous");
+      return body.authenticated === true;
+    } catch (error) {
+      if (version !== requestVersion.current) throw new SupersededSessionRequest();
+      if (version === requestVersion.current) {
+        setSessionStatus((current) => current === "loading" ? "unknown" : current);
+      }
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/v1/me", { credentials: "include" });
-        if (!res.ok) return;
-        const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
-        if (!cancelled) {
-          setUser(body.authenticated ? body.user ?? null : null);
-          setAccount(body.authenticated ? body.account ?? null : null);
-        }
+        await loadMe();
       } catch {
-        // Treat auth lookup failures as signed out.
+        // Keep a failed lookup distinct from a confirmed signed-out session.
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -74,19 +96,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const submitCredentials = useCallback(async (path: string, email: string, password: string) => {
-    const res = await fetch(path, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
+    authMutationsInFlight.current += 1;
+    requestVersion.current += 1;
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
+      }
+      let authenticated = false;
+      try {
+        authenticated = await loadMe();
+      } catch {
+        if (!body.user) throw new Error("Account could not be loaded");
+        setUser(body.user);
+        setAccount(body.account ?? null);
+        setSessionStatus("authenticated");
+        return;
+      }
+      if (!authenticated) throw new Error("Session could not be established");
+    } finally {
+      authMutationsInFlight.current -= 1;
     }
-    setUser(body.user ?? null);
-    setAccount(body.account ?? null);
-    void loadMe().catch(() => undefined);
   }, [loadMe]);
 
   const signIn = useCallback(
@@ -95,41 +131,103 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const referralSignup = useCallback(async (ref: string, code: string, email: string, password: string) => {
-    const res = await fetch("/api/v1/auth/referral-signup", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref, code, email, password })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(typeof body.error === "string" ? body.error : "Account could not be created");
+    authMutationsInFlight.current += 1;
+    requestVersion.current += 1;
+    try {
+      const res = await fetch("/api/v1/auth/referral-signup", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref, code, email, password })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof body.error === "string" ? body.error : "Account could not be created");
+      }
+      let authenticated = false;
+      try {
+        authenticated = await loadMe();
+      } catch {
+        if (!body.user) throw new Error("Account could not be loaded");
+        setUser(body.user);
+        setAccount(body.account ?? null);
+        setSessionStatus("authenticated");
+        return;
+      }
+      if (!authenticated) throw new Error("Session could not be established");
+    } finally {
+      authMutationsInFlight.current -= 1;
     }
-    setUser(body.user ?? null);
-    setAccount(body.account ?? null);
-    void loadMe().catch(() => undefined);
   }, [loadMe]);
 
   const signOut = useCallback(async () => {
-    const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(typeof body.error === "string" ? body.error : "Sign out failed");
+    authMutationsInFlight.current += 1;
+    requestVersion.current += 1;
+    try {
+      const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(typeof body.error === "string" ? body.error : "Sign out failed");
+      }
+      requestVersion.current += 1;
+      setUser(null);
+      setAccount(null);
+      setSessionStatus("anonymous");
+    } finally {
+      authMutationsInFlight.current -= 1;
     }
-    setUser(null);
-    setAccount(null);
   }, []);
 
-  const refreshAccount = useCallback(async () => {
-    await loadMe();
+  const refreshAccount = useCallback(async (options?: {
+    requireVerified?: boolean;
+    shouldCommitError?: () => boolean;
+  }) => {
+    if (authMutationsInFlight.current > 0) return false;
+    try {
+      await loadMe();
+      return true;
+    } catch (error) {
+      if (error instanceof SupersededSessionRequest) return false;
+      if (options?.shouldCommitError?.() !== false) {
+        setSessionStatus((current) =>
+          options?.requireVerified || current === "unknown" ? "error" : current
+        );
+      }
+      throw error;
+    }
   }, [loadMe]);
 
   const value = useMemo(
-    () => ({ user, account, loading, refreshAccount, signIn, referralSignup, signOut }),
-    [user, account, loading, refreshAccount, signIn, referralSignup, signOut]
+    () => ({ user, account, loading, routeRevalidating, sessionStatus, refreshAccount, signIn, referralSignup, signOut }),
+    [user, account, loading, routeRevalidating, sessionStatus, refreshAccount, signIn, referralSignup, signOut]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
+}
+
+export function AuthBoundary({ children }: { children: React.ReactNode }) {
+  const value = useContext(AuthContext);
+  if (value) return children;
+  return <AuthProvider>{children}</AuthProvider>;
+}
+
+export function RoutePending({ label = "Loading" }: { label?: string }) {
+  return <main className="routePending" role="status" aria-label={label} aria-live="polite" />;
+}
+
+export function PendingStatus({ label }: { label: string }) {
+  return <div className="pendingStatus" role="status" aria-label={label} aria-live="polite" />;
+}
+
+export function SessionError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <main className="routeStatus" role="alert">
+      <p>Session could not be loaded.</p>
+      <button className="textButton" type="button" onClick={onRetry}>
+        Retry
+      </button>
+    </main>
+  );
 }
 
 export function useAuth(): AuthValue {

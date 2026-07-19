@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useAuth } from "./auth";
+import { PendingStatus, useAuth } from "./auth";
 import { Brand } from "./brand";
 import {
   bodyWithoutFrontmatter,
@@ -236,6 +236,7 @@ export default function Editor() {
   const initialURLPublicId = useRef("");
 
   const auth = useAuth();
+  const userId = auth.user?.id;
   const entitlements = useEntitlements();
   const darkActive = theme === "dark";
 
@@ -248,7 +249,7 @@ export default function Editor() {
   }, []);
 
   useEffect(() => {
-    if (!auth.user) {
+    if (!userId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingSave(null);
       return;
@@ -273,10 +274,10 @@ export default function Editor() {
     return () => {
       cancelled = true;
     };
-  }, [auth.user]);
+  }, [userId]);
 
   useEffect(() => {
-    if (!auth.user || !pendingSave) return;
+    if (!userId || !pendingSave) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -298,7 +299,7 @@ export default function Editor() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [pendingSave, auth.user]);
+  }, [pendingSave, userId]);
 
   // Hydrate the saved theme preference after mount.
   useEffect(() => {
@@ -338,12 +339,12 @@ export default function Editor() {
             : "Share";
 
   useEffect(() => {
-    if (!auth.user || saveState === "loading" || !active?.publicId) return;
+    if (!userId || saveState === "loading" || !active?.publicId) return;
     const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
     if (window.location.pathname !== nextPath) {
       window.history.replaceState(null, "", nextPath);
     }
-  }, [active?.id, active?.publicId, auth.user, saveState]);
+  }, [active?.id, active?.publicId, saveState, userId]);
 
   // Grow the textarea with its content so the pane scrolls as one surface.
   // Modern browsers do this natively with `field-sizing: content`, which avoids
@@ -587,11 +588,12 @@ export default function Editor() {
 
   const words = active ? wordCount(active.body) : 0;
   const title = active ? titleOf(active.body) : "";
+  const docsReady = saveState !== "loading";
   const tagFilterQuery = tagFilter.trim().toLowerCase();
   const showSaveState = saveState !== "saved";
   const folderRows = [
-    { id: PRIVATE_FOLDER, label: "Private", count: docs.filter((doc) => !isShared(doc)).length },
-    { id: SHARED_FOLDER, label: "Shared", count: docs.filter(isShared).length }
+    { id: PRIVATE_FOLDER, label: "Private", count: docsReady ? docs.filter((doc) => !isShared(doc)).length : 0 },
+    { id: SHARED_FOLDER, label: "Shared", count: docsReady ? docs.filter(isShared).length : 0 }
   ];
 
   // Naive in-memory search over title, body, and tags.
@@ -605,7 +607,7 @@ export default function Editor() {
     if (aUpdated || bUpdated) return bUpdated - aUpdated;
     return a.index - b.index;
   };
-  const visibleDocs = indexedDocs
+  const visibleDocs = (docsReady ? indexedDocs : [])
     .filter(({ doc }) => {
       const tags = parseTags(doc.body);
       if (!docMatchesFolder(doc, selectedFolder)) return false;
@@ -638,10 +640,6 @@ export default function Editor() {
 
   function clearTagFilter() {
     setTagFilter("");
-  }
-
-  if (saveState === "loading") {
-    return <main className="routeStatus">Loading saved docs</main>;
   }
 
   return (
@@ -742,7 +740,9 @@ export default function Editor() {
               </div>
             );
           })}
-          {visibleDocs.length === 0 && (
+          {saveState === "loading" ? (
+            <div className="pendingStatus" aria-hidden="true" />
+          ) : visibleDocs.length === 0 && (
             <p className="docListEmpty">{docs.length === 0 ? "No documents." : "No documents match."}</p>
           )}
         </nav>
@@ -805,13 +805,19 @@ export default function Editor() {
             >
               <SidebarIcon />
             </button>
-            <button type="button" className="iconButton" aria-label="New document" onClick={createDoc}>
+            <button
+              type="button"
+              className="iconButton"
+              aria-label="New document"
+              disabled={saveState === "loading"}
+              onClick={createDoc}
+            >
               <PlusIcon />
             </button>
           </div>
 
-          <h1 className="docTitle" title={title}>
-            {title}
+          <h1 className="docTitle" title={docsReady ? title : ""}>
+            {docsReady ? title : ""}
           </h1>
 
           <div className="topCluster end">
@@ -856,7 +862,9 @@ export default function Editor() {
         )}
 
         <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
-          {!active ? (
+          {saveState === "loading" ? (
+            <PendingStatus label="Loading saved docs" />
+          ) : !active ? (
             <div className="emptyDocuments">
               <h2>No documents yet.</h2>
               <p>Create a document to start writing.</p>
@@ -881,7 +889,7 @@ export default function Editor() {
           )}
         </section>
 
-        {active && <footer className="statusBar" aria-label="Editor status">
+        {docsReady && active && <footer className="statusBar" aria-label="Editor status">
           <div className="statusDock">
             <div className="dockGroup dockGroupMode">
               <div className="modeToggle" role="group" aria-label="View mode">
