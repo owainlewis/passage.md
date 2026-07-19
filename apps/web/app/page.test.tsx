@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Account from "./account/page";
 import { AppProviders } from "./app-providers";
+import { AuthProvider } from "./auth";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
 import Signup from "./signup/page";
@@ -1030,6 +1031,22 @@ describe("Write (editor)", () => {
 
     expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
     expect(screen.queryByText("Checking")).not.toBeInTheDocument();
+  });
+
+  it("keeps sign-in disabled until route revalidation finishes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ authenticated: false }), { status: 200 }))
+    );
+
+    render(
+      <AuthProvider routeRevalidating>
+        <Login />
+      </AuthProvider>
+    );
+
+    await screen.findByText("Closed beta");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
   });
 
   it("signs in from the closed beta login page without showing sign up", async () => {

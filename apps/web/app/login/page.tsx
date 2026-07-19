@@ -22,10 +22,10 @@ function LoginForm() {
   const next = loginNextPath();
 
   useEffect(() => {
-    if (!auth.loading && auth.user) {
+    if (!auth.loading && !auth.routeRevalidating && auth.user) {
       window.location.replace(next);
     }
-  }, [auth.loading, auth.user, next]);
+  }, [auth.loading, auth.routeRevalidating, auth.user, next]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +73,7 @@ function LoginForm() {
               />
             </label>
             {error && <p className="authError">{error}</p>}
-            <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading}>
+            <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading || auth.routeRevalidating}>
               Sign in
             </button>
 		</form>
