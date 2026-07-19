@@ -80,7 +80,7 @@ function AccountGate() {
     return <SessionError onRetry={() => void refreshAccount().catch(() => undefined)} />;
   }
   if (!user) return <RoutePending label="Redirecting to sign in" />;
-  return <AccountPage />;
+  return <AccountPage key={user.id} />;
 }
 
 function AccountPage() {

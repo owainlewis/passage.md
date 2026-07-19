@@ -62,7 +62,7 @@ function AdminGate() {
     return <SessionError onRetry={() => void refreshAccount().catch(() => undefined)} />;
   }
   if (!user) return <RoutePending label="Redirecting to sign in" />;
-  return <AdminPage />;
+  return <AdminPage key={user.id} />;
 }
 
 function AdminPage() {

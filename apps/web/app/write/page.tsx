@@ -42,7 +42,7 @@ function WriteGate() {
   }
 
   return (
-    <EntitlementsProvider>
+    <EntitlementsProvider key={user.id}>
       <Editor />
     </EntitlementsProvider>
   );
