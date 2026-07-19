@@ -69,6 +69,7 @@ export function AuthProvider({
       setUser(body.authenticated ? body.user ?? null : null);
       setAccount(body.authenticated ? body.account ?? null : null);
       setSessionStatus(body.authenticated ? "authenticated" : "anonymous");
+      return body.authenticated === true;
     } catch (error) {
       if (version !== requestVersion.current) throw new SupersededSessionRequest();
       if (version === requestVersion.current) {
@@ -108,14 +109,17 @@ export function AuthProvider({
       if (!res.ok) {
         throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
       }
+      let authenticated = false;
       try {
-        await loadMe();
+        authenticated = await loadMe();
       } catch {
         if (!body.user) throw new Error("Account could not be loaded");
         setUser(body.user);
         setAccount(body.account ?? null);
         setSessionStatus("authenticated");
+        return;
       }
+      if (!authenticated) throw new Error("Session could not be established");
     } finally {
       authMutationsInFlight.current -= 1;
     }
@@ -140,14 +144,17 @@ export function AuthProvider({
       if (!res.ok) {
         throw new Error(typeof body.error === "string" ? body.error : "Account could not be created");
       }
+      let authenticated = false;
       try {
-        await loadMe();
+        authenticated = await loadMe();
       } catch {
         if (!body.user) throw new Error("Account could not be loaded");
         setUser(body.user);
         setAccount(body.account ?? null);
         setSessionStatus("authenticated");
+        return;
       }
+      if (!authenticated) throw new Error("Session could not be established");
     } finally {
       authMutationsInFlight.current -= 1;
     }

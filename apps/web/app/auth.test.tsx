@@ -111,6 +111,42 @@ describe("AuthProvider", () => {
     expect(screen.queryByText("Account could not be loaded")).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["Sign in", "/api/v1/auth/login"],
+    ["Join", "/api/v1/auth/referral-signup"]
+  ])("rejects a successful %s response when the session remains anonymous", async (button, path) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
+      }
+      if (url === path && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            authenticated: true,
+            user: { id: "user-1", email: "writer@example.com" }
+          }),
+          { status: path.endsWith("referral-signup") ? 201 : 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <AuthActionsProbe />
+      </AuthProvider>
+    );
+
+    await screen.findByText("signed out");
+    fireEvent.click(screen.getByRole("button", { name: button }));
+
+    expect(await screen.findByText("Session could not be established")).toBeInTheDocument();
+    expect(screen.getByText("signed out")).toBeInTheDocument();
+    expect(screen.getByTestId("session-status")).toHaveTextContent("anonymous");
+  });
+
   it("discards a session refresh that started before sign out", async () => {
     let sessionRequests = 0;
     let resolveRefresh: ((response: Response) => void) | undefined;
