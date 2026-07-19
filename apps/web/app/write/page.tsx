@@ -18,17 +18,18 @@ export function WriteShell() {
 }
 
 function WriteGate() {
-  const { loading, refreshAccount, sessionStatus, user } = useAuth();
+  const { loading, refreshAccount, routeRevalidating, sessionStatus, user } = useAuth();
 
   useEffect(() => {
+    if (routeRevalidating) return;
     if (!loading && !user && sessionStatus === "unknown") {
       void refreshAccount().catch(() => undefined);
     } else if (!loading && !user && sessionStatus === "anonymous") {
       window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     }
-  }, [loading, refreshAccount, sessionStatus, user]);
+  }, [loading, refreshAccount, routeRevalidating, sessionStatus, user]);
 
-  if (loading || sessionStatus === "unknown") {
+  if (loading || routeRevalidating || sessionStatus === "unknown") {
     return <RoutePending />;
   }
 

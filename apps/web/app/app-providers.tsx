@@ -1,28 +1,56 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "./auth";
 
+export function sessionRouteKey(pathname: string | null) {
+  if (!pathname) return "public";
+  if (pathname === "/write" || pathname.startsWith("/write/")) return "/write";
+  if (pathname === "/account") return "/account";
+  if (pathname === "/admin") return "/admin";
+  return "public";
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const routeKey = sessionRouteKey(pathname);
+  const [verifiedRouteKey, setVerifiedRouteKey] = useState(routeKey);
+  const routeRevalidating = routeKey !== verifiedRouteKey;
+  const markRouteVerified = useCallback(() => setVerifiedRouteKey(routeKey), [routeKey]);
+
   return (
-    <AuthProvider>
-      <SessionRevalidator />
+    <AuthProvider routeRevalidating={routeRevalidating}>
+      <SessionRevalidator
+        markRouteVerified={markRouteVerified}
+        routeRevalidating={routeRevalidating}
+      />
       {children}
     </AuthProvider>
   );
 }
 
-function SessionRevalidator() {
-  const pathname = usePathname();
+function SessionRevalidator({
+  markRouteVerified,
+  routeRevalidating
+}: {
+  markRouteVerified: () => void;
+  routeRevalidating: boolean;
+}) {
   const { refreshAccount } = useAuth();
-  const previousPath = useRef(pathname);
 
   useEffect(() => {
-    if (previousPath.current === pathname) return;
-    previousPath.current = pathname;
-    void refreshAccount().catch(() => undefined);
-  }, [pathname, refreshAccount]);
+    if (!routeRevalidating) return;
+    let cancelled = false;
+    void refreshAccount()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) markRouteVerified();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [markRouteVerified, refreshAccount, routeRevalidating]);
 
   useEffect(() => {
     const refresh = () => void refreshAccount().catch(() => undefined);

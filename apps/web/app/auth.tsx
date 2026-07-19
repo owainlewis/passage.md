@@ -30,6 +30,7 @@ type AuthValue = {
   user: User | null;
   account: Account | null;
   loading: boolean;
+  routeRevalidating: boolean;
   sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown";
   refreshAccount: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -39,7 +40,13 @@ type AuthValue = {
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({
+  children,
+  routeRevalidating = false
+}: {
+  children: React.ReactNode;
+  routeRevalidating?: boolean;
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,8 +171,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const value = useMemo(
-    () => ({ user, account, loading, sessionStatus, refreshAccount, signIn, referralSignup, signOut }),
-    [user, account, loading, sessionStatus, refreshAccount, signIn, referralSignup, signOut]
+    () => ({ user, account, loading, routeRevalidating, sessionStatus, refreshAccount, signIn, referralSignup, signOut }),
+    [user, account, loading, routeRevalidating, sessionStatus, refreshAccount, signIn, referralSignup, signOut]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
