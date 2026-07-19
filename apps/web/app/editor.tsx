@@ -236,6 +236,7 @@ export default function Editor() {
   const initialURLPublicId = useRef("");
 
   const auth = useAuth();
+  const userId = auth.user?.id;
   const entitlements = useEntitlements();
   const darkActive = theme === "dark";
 
@@ -248,7 +249,7 @@ export default function Editor() {
   }, []);
 
   useEffect(() => {
-    if (!auth.user) {
+    if (!userId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingSave(null);
       return;
@@ -273,10 +274,10 @@ export default function Editor() {
     return () => {
       cancelled = true;
     };
-  }, [auth.user]);
+  }, [userId]);
 
   useEffect(() => {
-    if (!auth.user || !pendingSave) return;
+    if (!userId || !pendingSave) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -298,7 +299,7 @@ export default function Editor() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [pendingSave, auth.user]);
+  }, [pendingSave, userId]);
 
   // Hydrate the saved theme preference after mount.
   useEffect(() => {
@@ -338,12 +339,12 @@ export default function Editor() {
             : "Share";
 
   useEffect(() => {
-    if (!auth.user || saveState === "loading" || !active?.publicId) return;
+    if (!userId || saveState === "loading" || !active?.publicId) return;
     const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
     if (window.location.pathname !== nextPath) {
       window.history.replaceState(null, "", nextPath);
     }
-  }, [active?.id, active?.publicId, auth.user, saveState]);
+  }, [active?.id, active?.publicId, saveState, userId]);
 
   // Grow the textarea with its content so the pane scrolls as one surface.
   // Modern browsers do this natively with `field-sizing: content`, which avoids

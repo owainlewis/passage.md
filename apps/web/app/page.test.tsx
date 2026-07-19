@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Account from "./account/page";
+import { AppProviders } from "./app-providers";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
 import Signup from "./signup/page";
@@ -1230,6 +1231,56 @@ describe("Write (editor)", () => {
         })
       )
     );
+  });
+
+  it("keeps a pending edit when the same user session refreshes", async () => {
+    let documentLoads = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        documentLoads += 1;
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
+          status: 200
+        });
+      }
+      if (url === "/api/v1/docs/doc-1" && init?.method === "PATCH") {
+        return new Response(JSON.stringify({ id: "doc-1", body: JSON.parse(String(init.body)).body }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppProviders>
+        <Write />
+      </AppProviders>
+    );
+
+    expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Saved draft\n\nSurvives refresh." }
+    });
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/docs/doc-1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ body: "# Saved draft\n\nSurvives refresh." })
+        })
+      )
+    );
+    expect(documentLoads).toBe(1);
   });
 
   it("creates a server share link for a signed-in document", async () => {
