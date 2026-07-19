@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 type User = {
   id: string;
@@ -30,6 +30,7 @@ type AuthValue = {
   user: User | null;
   account: Account | null;
   loading: boolean;
+  sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown";
   refreshAccount: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
@@ -42,28 +43,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionStatus, setSessionStatus] = useState<AuthValue["sessionStatus"]>("loading");
+  const requestVersion = useRef(0);
 
   const loadMe = useCallback(async () => {
-    const res = await fetch("/api/v1/me", { credentials: "include" });
-    if (!res.ok) return;
-    const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
-    setUser(body.authenticated ? body.user ?? null : null);
-    setAccount(body.authenticated ? body.account ?? null : null);
+    const version = ++requestVersion.current;
+    try {
+      const res = await fetch("/api/v1/me", { credentials: "include" });
+      if (!res.ok) throw new Error("Account could not be loaded");
+      const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
+      if (version !== requestVersion.current) return;
+      setUser(body.authenticated ? body.user ?? null : null);
+      setAccount(body.authenticated ? body.account ?? null : null);
+      setSessionStatus(body.authenticated ? "authenticated" : "anonymous");
+    } catch (error) {
+      if (version === requestVersion.current) {
+        setSessionStatus((current) => current === "loading" ? "unknown" : current);
+      }
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/v1/me", { credentials: "include" });
-        if (!res.ok) return;
-        const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
-        if (!cancelled) {
-          setUser(body.authenticated ? body.user ?? null : null);
-          setAccount(body.authenticated ? body.account ?? null : null);
-        }
+        await loadMe();
       } catch {
-        // Treat auth lookup failures as signed out.
+        // Keep a failed lookup distinct from a confirmed signed-out session.
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -74,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const submitCredentials = useCallback(async (path: string, email: string, password: string) => {
+    requestVersion.current += 1;
     const res = await fetch(path, {
       method: "POST",
       credentials: "include",
@@ -84,9 +92,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) {
       throw new Error(typeof body.error === "string" ? body.error : "Authentication failed");
     }
-    setUser(body.user ?? null);
-    setAccount(body.account ?? null);
-    void loadMe().catch(() => undefined);
+    try {
+      await loadMe();
+    } catch {
+      if (!body.user) throw new Error("Account could not be loaded");
+      setUser(body.user);
+      setAccount(body.account ?? null);
+      setSessionStatus("authenticated");
+    }
   }, [loadMe]);
 
   const signIn = useCallback(
@@ -95,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const referralSignup = useCallback(async (ref: string, code: string, email: string, password: string) => {
+    requestVersion.current += 1;
     const res = await fetch("/api/v1/auth/referral-signup", {
       method: "POST",
       credentials: "include",
@@ -105,19 +119,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) {
       throw new Error(typeof body.error === "string" ? body.error : "Account could not be created");
     }
-    setUser(body.user ?? null);
-    setAccount(body.account ?? null);
-    void loadMe().catch(() => undefined);
+    try {
+      await loadMe();
+    } catch {
+      if (!body.user) throw new Error("Account could not be loaded");
+      setUser(body.user);
+      setAccount(body.account ?? null);
+      setSessionStatus("authenticated");
+    }
   }, [loadMe]);
 
   const signOut = useCallback(async () => {
+    requestVersion.current += 1;
     const res = await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(typeof body.error === "string" ? body.error : "Sign out failed");
     }
+    requestVersion.current += 1;
     setUser(null);
     setAccount(null);
+    setSessionStatus("anonymous");
   }, []);
 
   const refreshAccount = useCallback(async () => {
@@ -125,11 +147,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadMe]);
 
   const value = useMemo(
-    () => ({ user, account, loading, refreshAccount, signIn, referralSignup, signOut }),
-    [user, account, loading, refreshAccount, signIn, referralSignup, signOut]
+    () => ({ user, account, loading, sessionStatus, refreshAccount, signIn, referralSignup, signOut }),
+    [user, account, loading, sessionStatus, refreshAccount, signIn, referralSignup, signOut]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
+}
+
+export function AuthBoundary({ children }: { children: React.ReactNode }) {
+  const value = useContext(AuthContext);
+  if (value) return children;
+  return <AuthProvider>{children}</AuthProvider>;
+}
+
+export function RoutePending({ label = "Loading" }: { label?: string }) {
+  return <main className="routePending" role="status" aria-label={label} aria-live="polite" />;
+}
+
+export function PendingStatus({ label }: { label: string }) {
+  return <div className="pendingStatus" role="status" aria-label={label} aria-live="polite" />;
 }
 
 export function useAuth(): AuthValue {

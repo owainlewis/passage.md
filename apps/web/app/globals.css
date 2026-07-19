@@ -2190,6 +2190,49 @@ button {
   color: var(--muted);
 }
 
+.routePending {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+.routePending::after {
+  content: "";
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0;
+  animation: reveal-route-pending 0s 400ms forwards;
+}
+
+.pendingStatus {
+  min-height: 96px;
+  position: relative;
+}
+
+.pendingStatus::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0;
+  animation: reveal-route-pending 0s 400ms forwards;
+}
+
+@keyframes reveal-route-pending {
+  to {
+    opacity: 0.45;
+  }
+}
+
 /* --------------------------------------------------------------- account */
 
 .billingNotice {

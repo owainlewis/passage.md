@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { AuthProvider, useAuth } from "../auth";
+import { AuthBoundary, useAuth } from "../auth";
 import { Brand } from "../brand";
 
 type Referral = { ref: string; code: string; name: string };
 
 export default function Signup() {
   return (
-    <AuthProvider>
+    <AuthBoundary>
       <SignupForm />
-    </AuthProvider>
+    </AuthBoundary>
   );
 }
 
@@ -73,7 +73,6 @@ function SignupForm() {
     setSubmitting(true);
     try {
       await auth.referralSignup(referral.ref, referral.code, email, password);
-      window.location.replace("/write");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Account could not be created");
       setSubmitting(false);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AuthProvider, useAuth } from "../auth";
+import { AuthBoundary, RoutePending, useAuth } from "../auth";
 import { Brand } from "../brand";
 
 type APIToken = {
@@ -57,23 +57,25 @@ function formatDate(value?: string | null) {
 
 export default function Account() {
   return (
-    <AuthProvider>
+    <AuthBoundary>
       <AccountGate />
-    </AuthProvider>
+    </AuthBoundary>
   );
 }
 
 function AccountGate() {
-  const auth = useAuth();
+  const { loading, refreshAccount, sessionStatus, user } = useAuth();
 
   useEffect(() => {
-    if (!auth.loading && !auth.user) {
+    if (!loading && !user && sessionStatus === "unknown") {
+      void refreshAccount().catch(() => undefined);
+    } else if (!loading && !user && sessionStatus === "anonymous") {
       window.location.replace(`/login?next=${encodeURIComponent("/account")}`);
     }
-  }, [auth.loading, auth.user]);
+  }, [loading, refreshAccount, sessionStatus, user]);
 
-  if (auth.loading) return <main className="routeStatus">Loading</main>;
-  if (!auth.user) return <main className="routeStatus">Redirecting to sign in</main>;
+  if (loading || sessionStatus === "unknown") return <RoutePending />;
+  if (!user) return <RoutePending label="Redirecting to sign in" />;
   return <AccountPage />;
 }
 

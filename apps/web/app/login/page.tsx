@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { AuthProvider, useAuth } from "../auth";
+import { AuthBoundary, useAuth } from "../auth";
 import { Brand } from "../brand";
 
 export default function Login() {
   return (
-    <AuthProvider>
+    <AuthBoundary>
       <LoginForm />
-    </AuthProvider>
+    </AuthBoundary>
   );
 }
 
@@ -32,7 +32,6 @@ function LoginForm() {
     setError("");
     try {
       await auth.signIn(email, password);
-      window.location.replace(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     }
@@ -75,7 +74,7 @@ function LoginForm() {
             </label>
             {error && <p className="authError">{error}</p>}
             <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading}>
-              {auth.loading ? "Checking" : "Sign in"}
+              Sign in
             </button>
 		</form>
       </section>

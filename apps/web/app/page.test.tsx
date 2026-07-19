@@ -108,6 +108,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
 async function renderWrite() {
   const view = render(<Write />);
   await screen.findByRole("region", { name: "Markdown editor" });
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
   return view;
 }
 
@@ -330,6 +331,57 @@ describe("Referral signup", () => {
 });
 
 describe("Write (editor)", () => {
+  it("rechecks an unverified session before redirecting a protected route", async () => {
+    let sessionRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) {
+          throw new TypeError("network unavailable");
+        }
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-recovered", publicId: "recovered", body: "# Recovered session" }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect(await screen.findByRole("button", { name: /Recovered session/ })).toBeInTheDocument();
+    expect(sessionRequests).toBe(2);
+  });
+
+  it("does not flash loading copy while the session check resolves", async () => {
+    let resolveSession: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/v1/me") {
+          return new Promise<Response>((resolve) => {
+            resolveSession = resolve;
+          });
+        }
+        return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+      })
+    );
+
+    render(<Write />);
+
+    expect(screen.queryByText("Loading")).not.toBeInTheDocument();
+    await waitFor(() => expect(resolveSession).toBeDefined());
+    resolveSession?.(new Response(JSON.stringify({ authenticated: false }), { status: 200 }));
+  });
+
   it("hides the save status once server state is current", async () => {
     await renderWrite();
 
@@ -360,8 +412,9 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByText("Loading saved docs")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Loading saved docs" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
 
     await waitFor(() => expect(resolveDocs).toBeDefined());
@@ -936,6 +989,15 @@ describe("Write (editor)", () => {
     expect(screen.queryByText("Dark mode is a Pro feature.")).not.toBeInTheDocument();
   });
 
+  it("keeps the sign-in action stable while the session check resolves", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+
+    render(<Login />);
+
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
+    expect(screen.queryByText("Checking")).not.toBeInTheDocument();
+  });
+
   it("signs in from the closed beta login page without showing sign up", async () => {
     const fetchMock = vi
       .fn()
@@ -1035,7 +1097,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByText("Redirecting to sign in")).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Redirecting to sign in" })).toBeInTheDocument();
     expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/api-tokens", expect.anything());
   });

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Editor from "../editor";
-import { AuthProvider, useAuth } from "../auth";
+import { AuthBoundary, RoutePending, useAuth } from "../auth";
 import { EntitlementsProvider } from "../entitlements";
 
 export default function Write() {
@@ -11,27 +11,29 @@ export default function Write() {
 
 export function WriteShell() {
   return (
-    <AuthProvider>
+    <AuthBoundary>
       <WriteGate />
-    </AuthProvider>
+    </AuthBoundary>
   );
 }
 
 function WriteGate() {
-  const auth = useAuth();
+  const { loading, refreshAccount, sessionStatus, user } = useAuth();
 
   useEffect(() => {
-    if (!auth.loading && !auth.user) {
+    if (!loading && !user && sessionStatus === "unknown") {
+      void refreshAccount().catch(() => undefined);
+    } else if (!loading && !user && sessionStatus === "anonymous") {
       window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     }
-  }, [auth.loading, auth.user]);
+  }, [loading, refreshAccount, sessionStatus, user]);
 
-  if (auth.loading) {
-    return <main className="routeStatus">Loading</main>;
+  if (loading || sessionStatus === "unknown") {
+    return <RoutePending />;
   }
 
-  if (!auth.user) {
-    return <main className="routeStatus">Redirecting to sign in</main>;
+  if (!user) {
+    return <RoutePending label="Redirecting to sign in" />;
   }
 
   return (
