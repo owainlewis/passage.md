@@ -42,16 +42,25 @@ function SessionRevalidator({
   useEffect(() => {
     if (!routeRevalidating) return;
     let cancelled = false;
-    void refreshAccount({
-      requireVerified: true,
-      shouldCommitError: () => !cancelled
-    })
-      .then((applied) => {
-        if (applied && !cancelled) markRouteVerified();
-      })
-      .catch(() => {
-        if (!cancelled) markRouteVerified();
-      });
+    void (async () => {
+      while (!cancelled) {
+        try {
+          const applied = await refreshAccount({
+            requireVerified: true,
+            shouldCommitError: () => !cancelled
+          });
+          if (cancelled) return;
+          if (applied) {
+            markRouteVerified();
+            return;
+          }
+        } catch {
+          if (!cancelled) markRouteVerified();
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 25));
+      }
+    })();
     return () => {
       cancelled = true;
     };

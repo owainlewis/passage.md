@@ -24,6 +24,18 @@ function ProtectedProbe() {
   return <span>{auth.user ? "protected content" : "signed out"}</span>;
 }
 
+function ProtectedMutationProbe() {
+  const auth = useAuth();
+  return (
+    <>
+      <button type="button" onClick={() => void auth.signOut()}>
+        Sign out
+      </button>
+      <ProtectedProbe />
+    </>
+  );
+}
+
 describe("AppProviders", () => {
   it("treats editor document URLs as one session route", () => {
     expect(sessionRouteKey("/write")).toBe("/write");
@@ -260,5 +272,55 @@ describe("AppProviders", () => {
     });
     expect(screen.getByText("protected content")).toBeInTheDocument();
     expect(screen.queryByText("session error")).not.toBeInTheDocument();
+  });
+
+  it("retries route verification after an auth mutation finishes", async () => {
+    navigation.pathname = "/write";
+    let sessionRequests = 0;
+    let resolveLogout: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        if (sessionRequests === 1) {
+          return new Response(
+            JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" } }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
+      }
+      if (url === "/api/v1/auth/logout" && init?.method === "POST") {
+        return new Promise<Response>((resolve) => {
+          resolveLogout = resolve;
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(
+      <AppProviders>
+        <ProtectedMutationProbe />
+      </AppProviders>
+    );
+    await screen.findByText("protected content");
+    act(() => screen.getByRole("button", { name: "Sign out" }).click());
+    await waitFor(() => expect(resolveLogout).toBeDefined());
+
+    navigation.pathname = "/account";
+    view.rerender(
+      <AppProviders>
+        <ProtectedMutationProbe />
+      </AppProviders>
+    );
+    expect(screen.getByText("waiting for session")).toBeInTheDocument();
+    expect(sessionRequests).toBe(1);
+
+    await act(async () => {
+      resolveLogout?.(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+    expect(await screen.findByText("signed out")).toBeInTheDocument();
+    expect(sessionRequests).toBe(2);
   });
 });
