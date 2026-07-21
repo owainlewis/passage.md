@@ -51,7 +51,7 @@ func TestValidateServeAllowsProductionWithoutStripeWhenBillingDisabled(t *testin
 		PasswordReset: PasswordResetConfig{
 			AppBaseURL:   "https://passage.md",
 			ResendAPIKey: "re_secret",
-			ResendFrom:   "passage.md <passwords@mail.passage.md>",
+			ResendFrom:   "passage.md <mail@passage.md>",
 		},
 		Billing: BillingConfig{
 			StripeBillingEnabled: false,
@@ -84,7 +84,7 @@ func TestValidateServeRequiresStripeConfigWhenBillingEnabled(t *testing.T) {
 		PasswordReset: PasswordResetConfig{
 			AppBaseURL:   "https://passage.md",
 			ResendAPIKey: "re_secret",
-			ResendFrom:   "passage.md <passwords@mail.passage.md>",
+			ResendFrom:   "passage.md <mail@passage.md>",
 		},
 		Billing: BillingConfig{
 			StripeBillingEnabled: true,
@@ -125,10 +125,10 @@ func TestFromEnvEnablesStripeBillingExplicitly(t *testing.T) {
 func TestFromEnvLoadsPasswordResetConfiguration(t *testing.T) {
 	t.Setenv("APP_BASE_URL", "https://passage.md")
 	t.Setenv("RESEND_API_KEY", " re_secret ")
-	t.Setenv("RESEND_FROM", " passage.md <passwords@mail.passage.md> ")
+	t.Setenv("RESEND_FROM", " passage.md <mail@passage.md> ")
 
 	cfg := FromEnv()
-	if cfg.PasswordReset.AppBaseURL != "https://passage.md" || cfg.PasswordReset.ResendAPIKey != "re_secret" || cfg.PasswordReset.ResendFrom != "passage.md <passwords@mail.passage.md>" {
+	if cfg.PasswordReset.AppBaseURL != "https://passage.md" || cfg.PasswordReset.ResendAPIKey != "re_secret" || cfg.PasswordReset.ResendFrom != "passage.md <mail@passage.md>" {
 		t.Fatalf("password reset config = %#v", cfg.PasswordReset)
 	}
 	if !cfg.PasswordReset.ResendConfigured() {
@@ -146,7 +146,7 @@ func TestValidateServeRejectsPartialPasswordResetConfiguration(t *testing.T) {
 		t.Fatalf("ValidateServe error = %v", err)
 	}
 
-	cfg.PasswordReset.ResendFrom = "passage.md <passwords@mail.passage.md>"
+	cfg.PasswordReset.ResendFrom = "passage.md <mail@passage.md>"
 	cfg.AppEnv = "production"
 	cfg.PasswordReset.AppBaseURL = "http://localhost:8080"
 	if err := cfg.ValidateServe(); err == nil || err.Error() != "APP_BASE_URL must be set to the production URL when password reset email is enabled" {

@@ -28,7 +28,7 @@ func TestResendSenderSendsExpectedRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sender := NewResendSender("re_secret", "passage.md <passwords@mail.passage.md>", server.Client())
+	sender := NewResendSender("re_secret", "passage.md <mail@passage.md>", server.Client())
 	sender.apiURL = server.URL
 	if err := sender.SendPasswordReset(context.Background(), "person@example.com", "https://passage.md/reset-password#token=secret", "password-reset-request-1"); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestResendSenderSendsExpectedRequest(t *testing.T) {
 	if authorization != "Bearer re_secret" || idempotencyKey != "password-reset-request-1" {
 		t.Fatalf("authorization = %q, idempotency key = %q", authorization, idempotencyKey)
 	}
-	if payload.From != "passage.md <passwords@mail.passage.md>" || len(payload.To) != 1 || payload.To[0] != "person@example.com" || payload.Subject == "" || payload.HTML == "" || payload.Text == "" {
+	if payload.From != "passage.md <mail@passage.md>" || len(payload.To) != 1 || payload.To[0] != "person@example.com" || payload.Subject == "" || payload.HTML == "" || payload.Text == "" {
 		t.Fatalf("payload = %#v", payload)
 	}
 }
@@ -46,7 +46,7 @@ func TestResendSenderRejectsNonSuccessWithoutLeakingBody(t *testing.T) {
 		http.Error(w, "provider details", http.StatusForbidden)
 	}))
 	defer server.Close()
-	sender := NewResendSender("re_secret", "passage.md <passwords@mail.passage.md>", server.Client())
+	sender := NewResendSender("re_secret", "passage.md <mail@passage.md>", server.Client())
 	sender.apiURL = server.URL
 	if err := sender.SendPasswordReset(context.Background(), "person@example.com", "https://passage.md/reset-password#token=secret", "request-1"); err == nil || err.Error() != "send password reset: resend returned status 403" {
 		t.Fatalf("error = %v", err)

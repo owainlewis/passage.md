@@ -16,7 +16,7 @@ env:
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
   IMAGE_NAME: passage-md
   APP_BASE_URL: https://passage.md
-  RESEND_FROM: passage.md <passwords@mail.passage.md>
+  RESEND_FROM: passage.md <mail@passage.md>
   WORKLOAD_IDENTITY_PROVIDER: projects/311711068171/locations/global/workloadIdentityPools/github/providers/passage-md
   DEPLOY_SERVICE_ACCOUNT: passage-md-build@passage-md-prod.iam.gserviceaccount.com
 

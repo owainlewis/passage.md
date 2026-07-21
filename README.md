@@ -102,10 +102,10 @@ Set `STRIPE_BILLING_ENABLED=true` only after `STRIPE_SECRET_KEY`, `STRIPE_MONTHL
 
 ### Production password reset email
 
-Passage sends password reset email through Resend from `passage.md <passwords@mail.passage.md>`.
+Passage sends password reset email through Resend from `passage.md <mail@passage.md>`.
 
-Add `mail.passage.md` as a sending domain in Resend.
-Create the DNS records Resend supplies for that subdomain, then wait for Resend to show the domain as verified.
+Add `passage.md` as a sending domain in Resend.
+Create the DNS records Resend supplies, then wait for Resend to show the domain as verified.
 The exact DNS values come from Resend and must not be copied from another domain.
 
 The deployment workflow expects the API key in Google Secret Manager as `passage-resend-api-key`.
