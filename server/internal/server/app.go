@@ -20,9 +20,11 @@ import (
 )
 
 type Options struct {
-	SessionSecret string
-	CookieSecure  bool
-	Billing       config.BillingConfig
+	SessionSecret       string
+	CookieSecure        bool
+	AppBaseURL          string
+	PasswordResetSender auth.PasswordResetSender
+	Billing             config.BillingConfig
 }
 
 type App struct {
@@ -55,12 +57,21 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	}
 	if db != nil {
 		app.databaseHealth = db
-		app.auth = auth.NewService(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure)
+		app.auth = auth.NewServiceWithOptions(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure, auth.Options{
+			AppBaseURL:          options.AppBaseURL,
+			PasswordResetSender: options.PasswordResetSender,
+		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)
 	}
 	return app
+}
+
+func (a *App) RunPasswordResetWorker(ctx context.Context) {
+	if a.auth != nil {
+		a.auth.RunPasswordResetWorker(ctx)
+	}
 }
 
 func (a *App) Routes() http.Handler {
@@ -72,6 +83,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/referral-signup", a.referralSignup)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
+	mux.HandleFunc("POST /api/v1/auth/password-reset/request", a.requestPasswordReset)
+	mux.HandleFunc("POST /api/v1/auth/password-reset/confirm", a.resetPassword)
 	mux.HandleFunc("GET /api/v1/admin/dashboard", a.adminDashboard)
 	mux.HandleFunc("GET /api/v1/admin/users/{email}/account", a.adminGetAccount)
 	mux.HandleFunc("PATCH /api/v1/admin/users/{email}/account", a.adminUpdateAccount)
@@ -213,6 +226,20 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.Login(w, r)
+}
+
+func (a *App) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.RequestPasswordReset(w, r)
+}
+
+func (a *App) resetPassword(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.ResetPassword(w, r)
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {

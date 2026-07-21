@@ -72,6 +72,9 @@ function LoginForm() {
                 required
               />
             </label>
+            <Link className="loginTextLink" href="/forgot-password">
+              Forgot your password?
+            </Link>
             {error && <p className="authError">{error}</p>}
             <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading || auth.routeRevalidating}>
               Sign in

@@ -9,7 +9,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"net/netip"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,14 +22,22 @@ import (
 )
 
 const (
-	CookieName      = "passage_session"
-	sessionDuration = 30 * 24 * time.Hour
+	CookieName            = "passage_session"
+	sessionDuration       = 30 * 24 * time.Hour
+	passwordResetDuration = time.Hour
+	passwordResetWindow   = 15 * time.Minute
+	passwordResetLimit    = 5
+	passwordConfirmWindow = 15 * time.Minute
+	passwordConfirmLimit  = 10
 )
 
 var (
-	ErrEmailTaken   = errors.New("email already exists")
-	ErrInvalidAuth  = errors.New("invalid email or password")
-	ErrUnauthorized = errors.New("unauthorized")
+	ErrEmailTaken        = errors.New("email already exists")
+	ErrInvalidAuth       = errors.New("invalid email or password")
+	ErrUnauthorized      = errors.New("unauthorized")
+	ErrRateLimited       = errors.New("rate limit reached")
+	ErrInvalidResetToken = errors.New("invalid or expired password reset token")
+	ErrNoPendingReset    = errors.New("no pending password reset request")
 )
 
 type User struct {
@@ -51,6 +63,12 @@ type PreparedSession struct {
 	ExpiresAt   time.Time
 }
 
+type PasswordResetRequest struct {
+	ID       string
+	Email    string
+	Attempts int
+}
+
 type Store interface {
 	CreateUser(ctx context.Context, email string, passwordHash string) (User, error)
 	FindUserByEmail(ctx context.Context, email string) (UserWithPassword, error)
@@ -63,19 +81,47 @@ type Store interface {
 	FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
 }
 
+type PasswordResetStore interface {
+	ConsumePasswordResetAttempt(ctx context.Context, ipHash string, emailHash string, now time.Time, window time.Duration, limit int) (time.Duration, error)
+	ConsumePasswordResetConfirmationAttempt(ctx context.Context, ipHash string, tokenHash string, now time.Time, window time.Duration, limit int) (time.Duration, error)
+	QueuePasswordResetRequest(ctx context.Context, email string, now time.Time) error
+	ClaimPasswordResetRequest(ctx context.Context, now time.Time) (PasswordResetRequest, error)
+	CompletePasswordResetRequest(ctx context.Context, id string, now time.Time) error
+	RetryPasswordResetRequest(ctx context.Context, id string, availableAt time.Time) error
+	CreatePasswordResetToken(ctx context.Context, email string, tokenHash string, expiresAt time.Time) error
+	PasswordResetTokenValid(ctx context.Context, tokenHash string, now time.Time) (bool, error)
+	ResetPassword(ctx context.Context, tokenHash string, passwordHash string, now time.Time) error
+}
+
+type Options struct {
+	AppBaseURL          string
+	PasswordResetSender PasswordResetSender
+}
+
 type Service struct {
-	store        Store
-	secret       []byte
-	cookieSecure bool
-	now          func() time.Time
+	store               Store
+	passwordResetStore  PasswordResetStore
+	secret              []byte
+	cookieSecure        bool
+	appBaseURL          string
+	passwordResetSender PasswordResetSender
+	now                 func() time.Time
 }
 
 func NewService(store Store, secret string, cookieSecure bool) *Service {
+	return NewServiceWithOptions(store, secret, cookieSecure, Options{})
+}
+
+func NewServiceWithOptions(store Store, secret string, cookieSecure bool, options Options) *Service {
+	resetStore, _ := store.(PasswordResetStore)
 	return &Service{
-		store:        store,
-		secret:       []byte(secret),
-		cookieSecure: cookieSecure,
-		now:          time.Now,
+		store:               store,
+		passwordResetStore:  resetStore,
+		secret:              []byte(secret),
+		cookieSecure:        cookieSecure,
+		appBaseURL:          strings.TrimRight(strings.TrimSpace(options.AppBaseURL), "/"),
+		passwordResetSender: options.PasswordResetSender,
+		now:                 time.Now,
 	}
 }
 
@@ -143,6 +189,162 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, meResponse{Authenticated: true, User: &account.User})
+}
+
+func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if !validateAuthPost(w, r) {
+		return
+	}
+	var input struct {
+		Email string `json:"email"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if !strings.Contains(email, "@") {
+		writeError(w, http.StatusBadRequest, "valid email is required")
+		return
+	}
+	if s.passwordResetStore == nil || s.passwordResetSender == nil || s.appBaseURL == "" {
+		writeError(w, http.StatusServiceUnavailable, "password reset is temporarily unavailable")
+		return
+	}
+	_, err := s.passwordResetStore.ConsumePasswordResetAttempt(r.Context(), hashToken(clientIP(r)), hashToken(email), s.now(), passwordResetWindow, passwordResetLimit)
+	if err != nil {
+		if !errors.Is(err, ErrRateLimited) {
+			slog.Error("password reset rate limit failed", "error", err)
+		}
+		writePasswordResetAccepted(w)
+		return
+	}
+	if err := s.passwordResetStore.QueuePasswordResetRequest(r.Context(), email, s.now()); err != nil {
+		slog.Error("password reset request queue failed", "error", err)
+	}
+	writePasswordResetAccepted(w)
+}
+
+func (s *Service) RunPasswordResetWorker(ctx context.Context) {
+	if s == nil || s.passwordResetStore == nil || s.passwordResetSender == nil || s.appBaseURL == "" {
+		return
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		processed, err := s.processPasswordResetRequest(ctx)
+		if err != nil {
+			slog.Error("password reset worker failed", "error", err)
+		}
+		if processed && err == nil {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Service) processPasswordResetRequest(ctx context.Context) (bool, error) {
+	now := s.now()
+	request, err := s.passwordResetStore.ClaimPasswordResetRequest(ctx, now)
+	if errors.Is(err, ErrNoPendingReset) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	retry := func(processErr error) (bool, error) {
+		delay := time.Duration(request.Attempts) * time.Minute
+		if delay > time.Hour {
+			delay = time.Hour
+		}
+		if err := s.passwordResetStore.RetryPasswordResetRequest(ctx, request.ID, now.Add(delay)); err != nil {
+			return true, err
+		}
+		slog.Error("password reset delivery failed", "error", processErr, "attempt", request.Attempts)
+		return true, nil
+	}
+	token, err := randomToken()
+	if err != nil {
+		return retry(err)
+	}
+	if err := s.passwordResetStore.CreatePasswordResetToken(ctx, request.Email, hashToken(token), now.Add(passwordResetDuration)); errors.Is(err, ErrInvalidAuth) {
+		return true, s.passwordResetStore.CompletePasswordResetRequest(ctx, request.ID, now)
+	} else if err != nil {
+		return retry(err)
+	}
+	resetURL := s.appBaseURL + "/reset-password#token=" + url.QueryEscape(token)
+	idempotencyKey := "password-reset-" + request.ID + "-" + strconv.Itoa(request.Attempts)
+	if err := s.passwordResetSender.SendPasswordReset(ctx, request.Email, resetURL, idempotencyKey); err != nil {
+		return retry(err)
+	}
+	return true, s.passwordResetStore.CompletePasswordResetRequest(ctx, request.ID, now)
+}
+
+func writePasswordResetAccepted(w http.ResponseWriter) {
+	writeJSON(w, http.StatusAccepted, map[string]string{"message": "If an account exists for that email, a password reset link is on its way."})
+}
+
+func (s *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if !validateAuthPost(w, r) {
+		return
+	}
+	var input struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if s.passwordResetStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "password reset is temporarily unavailable")
+		return
+	}
+	if strings.TrimSpace(input.Token) == "" {
+		writeError(w, http.StatusBadRequest, "reset link is invalid or has expired")
+		return
+	}
+	if len(input.Password) < 8 || len([]byte(input.Password)) > 72 {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters and no more than 72 bytes")
+		return
+	}
+	if retryAfter, err := s.passwordResetStore.ConsumePasswordResetConfirmationAttempt(r.Context(), hashToken(clientIP(r)), hashToken(input.Token), s.now(), passwordConfirmWindow, passwordConfirmLimit); errors.Is(err, ErrRateLimited) {
+		retrySeconds := (retryAfter + time.Second - 1) / time.Second
+		if retrySeconds < 1 {
+			retrySeconds = 1
+		}
+		w.Header().Set("Retry-After", strconv.FormatInt(int64(retrySeconds), 10))
+		writeError(w, http.StatusTooManyRequests, "too many reset attempts; try again later")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "password reset is temporarily unavailable")
+		return
+	}
+	valid, err := s.passwordResetStore.PasswordResetTokenValid(r.Context(), hashToken(input.Token), s.now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "password could not be reset")
+		return
+	}
+	if !valid {
+		writeError(w, http.StatusBadRequest, "reset link is invalid or has expired")
+		return
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "password could not be reset")
+		return
+	}
+	if err := s.passwordResetStore.ResetPassword(r.Context(), hashToken(input.Token), string(passwordHash), s.now()); errors.Is(err, ErrInvalidResetToken) {
+		writeError(w, http.StatusBadRequest, "reset link is invalid or has expired")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "password could not be reset")
+		return
+	}
+	clearSessionCookie(w, s.cookieSecure)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +572,29 @@ func randomAPIToken() (string, error) {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func clientIP(r *http.Request) string {
+	var forwarded []netip.Addr
+	for _, part := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
+		if addr, err := netip.ParseAddr(strings.TrimSpace(part)); err == nil {
+			forwarded = append(forwarded, addr.Unmap())
+		}
+	}
+	if len(forwarded) >= 2 {
+		return forwarded[len(forwarded)-2].String()
+	}
+	if len(forwarded) == 1 {
+		return forwarded[0].String()
+	}
+	host := strings.TrimSpace(r.RemoteAddr)
+	if addrPort, err := netip.ParseAddrPort(host); err == nil {
+		return addrPort.Addr().Unmap().String()
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addr.Unmap().String()
+	}
+	return "unknown"
 }
 
 func setSessionCookie(w http.ResponseWriter, value string, expires time.Time, secure bool) {

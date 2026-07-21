@@ -92,8 +92,39 @@ The Go server runs at `http://localhost:3000` by default and serves `/api/health
 
 `SESSION_SECRET` must be set explicitly when `APP_ENV=production`.
 
+Copy `.env.example` to `.env` for local environment values.
+
+Password reset links are logged by the Go server in local development when Resend is not configured.
+To send real local email, set both `RESEND_API_KEY` and `RESEND_FROM` in `.env`.
+
 Stripe billing is off by default.
 Set `STRIPE_BILLING_ENABLED=true` only after `STRIPE_SECRET_KEY`, `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and `APP_BASE_URL` are configured.
+
+### Production password reset email
+
+Passage sends password reset email through Resend from `passage.md <passwords@mail.passage.md>`.
+
+Add `mail.passage.md` as a sending domain in Resend.
+Create the DNS records Resend supplies for that subdomain, then wait for Resend to show the domain as verified.
+The exact DNS values come from Resend and must not be copied from another domain.
+
+The deployment workflow expects the API key in Google Secret Manager as `passage-resend-api-key`.
+Create the secret once, then add the key over standard input so it does not appear in shell history:
+
+```sh
+gcloud secrets create passage-resend-api-key --replication-policy=automatic
+gcloud secrets versions add passage-resend-api-key --data-file=-
+gcloud secrets add-iam-policy-binding passage-resend-api-key \
+  --member='serviceAccount:passage-md-build@passage-md-prod.iam.gserviceaccount.com' \
+  --role='roles/secretmanager.secretAccessor'
+gcloud secrets add-iam-policy-binding passage-resend-api-key \
+  --member='serviceAccount:passage-md-run@passage-md-prod.iam.gserviceaccount.com' \
+  --role='roles/secretmanager.secretAccessor'
+```
+
+The production deployment sets `APP_BASE_URL=https://passage.md`, binds the secret as `RESEND_API_KEY`, and sets `RESEND_FROM` to the verified sender.
+It also keeps one Cloud Run instance running with CPU available so queued reset email is delivered without waiting for another web request.
+Do not commit or paste the API key into GitHub, logs, or screenshots.
 
 For frontend-only UI iteration, `npm run dev:web` starts Next.js at `http://localhost:3001`.
 

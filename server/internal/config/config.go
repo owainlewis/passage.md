@@ -14,7 +14,14 @@ type Config struct {
 	StaticDir     string
 	SessionSecret string
 	CookieSecure  bool
+	PasswordReset PasswordResetConfig
 	Billing       BillingConfig
+}
+
+type PasswordResetConfig struct {
+	AppBaseURL   string
+	ResendAPIKey string
+	ResendFrom   string
 }
 
 type BillingConfig struct {
@@ -31,6 +38,7 @@ type BillingConfig struct {
 func FromEnv() Config {
 	appEnv := os.Getenv("APP_ENV")
 	sessionSecret := os.Getenv("SESSION_SECRET")
+	appBaseURL := valueOrDefault(os.Getenv("APP_BASE_URL"), "http://localhost:8080")
 	if sessionSecret == "" && appEnv != "production" {
 		sessionSecret = "dev-session-secret-change-me"
 	}
@@ -41,6 +49,11 @@ func FromEnv() Config {
 		StaticDir:     os.Getenv("STATIC_DIR"),
 		SessionSecret: sessionSecret,
 		CookieSecure:  appEnv == "production",
+		PasswordReset: PasswordResetConfig{
+			AppBaseURL:   appBaseURL,
+			ResendAPIKey: strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+			ResendFrom:   strings.TrimSpace(os.Getenv("RESEND_FROM")),
+		},
 		Billing: BillingConfig{
 			StripeBillingEnabled: boolFromEnv(os.Getenv("STRIPE_BILLING_ENABLED")),
 			FreeMaxSavedDocs:     intOrDefault(os.Getenv("PASSAGE_FREE_MAX_SAVED_DOCS"), 5),
@@ -49,7 +62,7 @@ func FromEnv() Config {
 			StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 			StripeMonthlyPrice:   valueOrDefault(os.Getenv("STRIPE_MONTHLY_PRICE_ID"), "price_1TpAeQRiiEo9jrWNlLdI9HwB"),
 			StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
-			AppBaseURL:           valueOrDefault(os.Getenv("APP_BASE_URL"), "http://localhost:8080"),
+			AppBaseURL:           appBaseURL,
 		},
 	}
 }
@@ -60,6 +73,15 @@ func (c Config) ValidateServe() error {
 	}
 	if c.DatabaseURL == "" {
 		return errors.New("DATABASE_URL is required")
+	}
+	if c.AppEnv == "production" && !c.PasswordReset.ResendConfigured() {
+		return errors.New("RESEND_API_KEY and RESEND_FROM are required in production")
+	}
+	if (c.PasswordReset.ResendAPIKey == "") != (c.PasswordReset.ResendFrom == "") {
+		return errors.New("RESEND_API_KEY and RESEND_FROM must be set together")
+	}
+	if c.PasswordReset.ResendAPIKey != "" && c.AppEnv == "production" && !validProductionAppBaseURL(c.PasswordReset.AppBaseURL) {
+		return errors.New("APP_BASE_URL must be set to the production URL when password reset email is enabled")
 	}
 	if c.Billing.StripeBillingEnabled {
 		if c.Billing.StripeSecretKey == "" {
@@ -76,6 +98,10 @@ func (c Config) ValidateServe() error {
 		}
 	}
 	return nil
+}
+
+func (c PasswordResetConfig) ResendConfigured() bool {
+	return c.ResendAPIKey != "" && c.ResendFrom != ""
 }
 
 func (c BillingConfig) StripeConfigured() bool {
