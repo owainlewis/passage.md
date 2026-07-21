@@ -83,6 +83,7 @@ func serve(cfg config.Config) error {
 	app := passagehttp.NewApp(staticFS, db, passagehttp.Options{
 		SessionSecret:       cfg.SessionSecret,
 		CookieSecure:        cfg.CookieSecure,
+		TrustProxy:          cfg.AppEnv == "production",
 		AppBaseURL:          cfg.PasswordReset.AppBaseURL,
 		PasswordResetSender: passwordResetSender,
 		Billing:             cfg.Billing,

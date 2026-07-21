@@ -96,6 +96,7 @@ type PasswordResetStore interface {
 type Options struct {
 	AppBaseURL          string
 	PasswordResetSender PasswordResetSender
+	TrustProxy          bool
 }
 
 type Service struct {
@@ -105,6 +106,7 @@ type Service struct {
 	cookieSecure        bool
 	appBaseURL          string
 	passwordResetSender PasswordResetSender
+	trustProxy          bool
 	now                 func() time.Time
 }
 
@@ -121,6 +123,7 @@ func NewServiceWithOptions(store Store, secret string, cookieSecure bool, option
 		cookieSecure:        cookieSecure,
 		appBaseURL:          strings.TrimRight(strings.TrimSpace(options.AppBaseURL), "/"),
 		passwordResetSender: options.PasswordResetSender,
+		trustProxy:          options.TrustProxy,
 		now:                 time.Now,
 	}
 }
@@ -210,7 +213,7 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "password reset is temporarily unavailable")
 		return
 	}
-	_, err := s.passwordResetStore.ConsumePasswordResetAttempt(r.Context(), hashToken(clientIP(r)), hashToken(email), s.now(), passwordResetWindow, passwordResetLimit)
+	_, err := s.passwordResetStore.ConsumePasswordResetAttempt(r.Context(), hashToken(clientIP(r, s.trustProxy)), hashToken(email), s.now(), passwordResetWindow, passwordResetLimit)
 	if err != nil {
 		if !errors.Is(err, ErrRateLimited) {
 			slog.Error("password reset rate limit failed", "error", err)
@@ -266,17 +269,14 @@ func (s *Service) processPasswordResetRequest(ctx context.Context) (bool, error)
 		slog.Error("password reset delivery failed", "error", processErr, "attempt", request.Attempts)
 		return true, nil
 	}
-	token, err := randomToken()
-	if err != nil {
-		return retry(err)
-	}
+	token := s.passwordResetToken(request.ID)
 	if err := s.passwordResetStore.CreatePasswordResetToken(ctx, request.Email, hashToken(token), now.Add(passwordResetDuration)); errors.Is(err, ErrInvalidAuth) {
 		return true, s.passwordResetStore.CompletePasswordResetRequest(ctx, request.ID, now)
 	} else if err != nil {
 		return retry(err)
 	}
 	resetURL := s.appBaseURL + "/reset-password#token=" + url.QueryEscape(token)
-	idempotencyKey := "password-reset-" + request.ID + "-" + strconv.Itoa(request.Attempts)
+	idempotencyKey := "password-reset-" + request.ID
 	if err := s.passwordResetSender.SendPasswordReset(ctx, request.Email, resetURL, idempotencyKey); err != nil {
 		return retry(err)
 	}
@@ -310,7 +310,7 @@ func (s *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters and no more than 72 bytes")
 		return
 	}
-	if retryAfter, err := s.passwordResetStore.ConsumePasswordResetConfirmationAttempt(r.Context(), hashToken(clientIP(r)), hashToken(input.Token), s.now(), passwordConfirmWindow, passwordConfirmLimit); errors.Is(err, ErrRateLimited) {
+	if retryAfter, err := s.passwordResetStore.ConsumePasswordResetConfirmationAttempt(r.Context(), hashToken(clientIP(r, s.trustProxy)), hashToken(input.Token), s.now(), passwordConfirmWindow, passwordConfirmLimit); errors.Is(err, ErrRateLimited) {
 		retrySeconds := (retryAfter + time.Second - 1) / time.Second
 		if retrySeconds < 1 {
 			retrySeconds = 1
@@ -574,18 +574,23 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func clientIP(r *http.Request) string {
+func (s *Service) passwordResetToken(requestID string) string {
+	mac := hmac.New(sha256.New, s.secret)
+	mac.Write([]byte("password-reset:" + requestID))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func clientIP(r *http.Request, trustProxy bool) string {
 	var forwarded []netip.Addr
-	for _, part := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
-		if addr, err := netip.ParseAddr(strings.TrimSpace(part)); err == nil {
-			forwarded = append(forwarded, addr.Unmap())
+	if trustProxy {
+		for _, part := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
+			if addr, err := netip.ParseAddr(strings.TrimSpace(part)); err == nil {
+				forwarded = append(forwarded, addr.Unmap())
+			}
 		}
-	}
-	if len(forwarded) >= 2 {
-		return forwarded[len(forwarded)-2].String()
-	}
-	if len(forwarded) == 1 {
-		return forwarded[0].String()
+		if len(forwarded) >= 2 {
+			return forwarded[len(forwarded)-2].String()
+		}
 	}
 	host := strings.TrimSpace(r.RemoteAddr)
 	if addrPort, err := netip.ParseAddrPort(host); err == nil {

@@ -281,10 +281,14 @@ func (s *PGStore) CreatePasswordResetToken(ctx context.Context, email string, to
 	} else if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`, userID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND token_hash <> $2 AND used_at IS NULL`, userID, tokenHash); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`, userID, tokenHash, expiresAt); err != nil {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (token_hash) DO NOTHING
+	`, userID, tokenHash, expiresAt); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

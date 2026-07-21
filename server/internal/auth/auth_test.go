@@ -120,6 +120,31 @@ func TestPasswordResetRequestQueuesGenericResponseAndWorkerSendsHashedToken(t *t
 	if store.tokenHash != hashToken(plainToken) || store.expiresAt != fixedNow.Add(time.Hour) || strings.Contains(rec.Body.String(), plainToken) {
 		t.Fatal("reset token was not stored and returned safely")
 	}
+	if sender.idempotencyKey != "password-reset-request-id" {
+		t.Fatalf("idempotency key = %q", sender.idempotencyKey)
+	}
+
+	firstURL := sender.resetURL
+	store.claim = PasswordResetRequest{ID: "request-id", Email: store.queuedEmail, Attempts: 2}
+	if _, err := service.processPasswordResetRequest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sender.resetURL != firstURL || sender.idempotencyKey != "password-reset-request-id" {
+		t.Fatalf("retry changed payload or key: URL = %q, key = %q", sender.resetURL, sender.idempotencyKey)
+	}
+}
+
+func TestClientIPOnlyUsesForwardedHeaderForTrustedProxy(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.RemoteAddr = "192.0.2.10:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.20, 203.0.113.30")
+
+	if got := clientIP(req, false); got != "192.0.2.10" {
+		t.Fatalf("untrusted client IP = %q", got)
+	}
+	if got := clientIP(req, true); got != "198.51.100.20" {
+		t.Fatalf("trusted client IP = %q", got)
+	}
 }
 
 func TestPasswordResetRequestDoesNotRevealQueueOrRateLimitState(t *testing.T) {

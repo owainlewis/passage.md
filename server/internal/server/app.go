@@ -22,6 +22,7 @@ import (
 type Options struct {
 	SessionSecret       string
 	CookieSecure        bool
+	TrustProxy          bool
 	AppBaseURL          string
 	PasswordResetSender auth.PasswordResetSender
 	Billing             config.BillingConfig
@@ -60,6 +61,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 		app.auth = auth.NewServiceWithOptions(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure, auth.Options{
 			AppBaseURL:          options.AppBaseURL,
 			PasswordResetSender: options.PasswordResetSender,
+			TrustProxy:          options.TrustProxy,
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db))
