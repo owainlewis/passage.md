@@ -133,10 +133,17 @@ describe("Landing", () => {
     render(<Landing />);
 
     expect(screen.getByText("Markdown writing for humans and agents")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "passage.md home" })).toHaveAttribute("href", "/");
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
-    expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
+    for (const writeLink of screen.getAllByRole("link", { name: /Start writing/ })) {
+      expect(writeLink).toHaveAttribute("href", "/write");
+    }
+    expect(screen.getByRole("link", { name: "Read the story" })).toHaveAttribute("href", "#story");
+    expect(screen.getByRole("link", { name: "Go Pro" })).toHaveAttribute("href", "#pricing");
+    expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "#pricing");
+    expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
   });
 });
 

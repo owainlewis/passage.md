@@ -67,7 +67,7 @@ export default function Landing() {
   return (
     <div className="landing">
       <header className="landingNav">
-        <Brand />
+        <Brand href="/" />
         <nav className="landingNavLinks">
           <Link href="/cli">CLI</Link>
           <a href="#pricing">Go Pro</a>
@@ -78,8 +78,8 @@ export default function Landing() {
       </header>
 
       <section className="heroSection">
-        <div className="heroArt" aria-hidden="true" />
         <div className="heroInner">
+          <p className="heroEyebrow">A small online home for Markdown</p>
           <h1 className="heroTitle">Markdown writing for humans and agents</h1>
           <p className="heroSub">
             Write in a calm browser workspace, share documents online, and give your agents clean Markdown they can read
@@ -87,15 +87,16 @@ export default function Landing() {
           </p>
           <div className="heroActions">
             <Link className="btnPrimary" href="/write">
-              Start writing
+              Start writing <span aria-hidden="true">&rarr;</span>
             </Link>
             <a className="btnGhost" href="#story">
               Read the story
             </a>
           </div>
-          <p className="heroNote">Closed beta for now.</p>
+          <p className="heroNote"><span aria-hidden="true" /> Closed beta for now.</p>
         </div>
         <div className="heroDocWrap" aria-hidden="true">
+          <div className="heroDocLabel">A passage, online</div>
           <div className="heroDoc">
             <div className="heroDocChrome">
               <span className="heroDocDots">
@@ -121,15 +122,24 @@ export default function Landing() {
               </blockquote>
             </div>
             <div className="heroTermChip">
+              <span>Agent-ready</span>
               <code>$ passage pull trail-notes.md</code>
             </div>
           </div>
+        </div>
+        <div className="heroSteps" aria-label="Write, share, and use your Markdown">
+          <div><span>01</span><strong>Write</strong><small>in any browser</small></div>
+          <div><span>02</span><strong>Share</strong><small>with one private URL</small></div>
+          <div><span>03</span><strong>Pull</strong><small>from your agent or CLI</small></div>
         </div>
       </section>
 
       <main className="landingMain">
         <section className="story" id="story">
-          <p className="landingKicker">Why passage exists</p>
+          <header className="storyHead">
+            <p className="landingKicker">Why passage exists</p>
+            <h2>Writing tools kept getting bigger.<br />This one got smaller.</h2>
+          </header>
           <div className="storyBody">
             <p>I tried every online document tool, and none of them fit.</p>
             <p>
@@ -150,19 +160,29 @@ export default function Landing() {
           </div>
         </section>
 
-        <section className="features">
-          {features.map((feature) => (
+        <section className="features" aria-label="What Passage does">
+          {features.map((feature, index) => (
             <div className="featureCard" key={feature.title}>
-              <span className="featureIcon">{feature.icon}</span>
-              <h3 className="featureTitle">{feature.title}</h3>
-              <p className="featureBody">{feature.body}</p>
+              <div className="featureCardHead">
+                <span className="featureIcon">{feature.icon}</span>
+                <span className="featureNumber">0{index + 1}</span>
+              </div>
+              <div>
+                <h3 className="featureTitle">{feature.title}</h3>
+                <p className="featureBody">{feature.body}</p>
+              </div>
             </div>
           ))}
         </section>
 
         <section className="pricing" id="pricing">
-          <p className="landingKicker">Pricing</p>
-          <h2 className="sectionTitle">Simple pricing</h2>
+          <div className="pricingHead">
+            <div>
+              <p className="landingKicker">Pricing</p>
+              <h2 className="sectionTitle">Simple pricing</h2>
+            </div>
+            <p>Write for free. Upgrade when you want saved documents, sharing, and agent access.</p>
+          </div>
           <div className="pricingGrid">
             <div className="planCard">
               <p className="planName">Free</p>
