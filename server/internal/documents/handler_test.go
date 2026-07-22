@@ -272,6 +272,24 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	assertPublicSecurityHeaders(t, raw)
 }
 
+func TestPublicConstrainsImagesToDocumentWidth(t *testing.T) {
+	page, err := renderPublicHTML(Document{
+		Title: "Image",
+		Body:  "![A wide landscape](https://example.com/wide.jpg)",
+	})
+	if err != nil {
+		t.Fatalf("render public HTML: %v", err)
+	}
+
+	body := string(page)
+	if !strings.Contains(body, `<img src="https://example.com/wide.jpg" alt="A wide landscape">`) {
+		t.Fatalf("html does not contain rendered image: %s", body)
+	}
+	if !regexp.MustCompile(`(?s)img\s*\{[^}]*max-width:\s*100%\s*;[^}]*height:\s*auto\s*;[^}]*\}`).MatchString(body) {
+		t.Fatalf("html does not constrain images while preserving their aspect ratio: %s", body)
+	}
+}
+
 func TestPublicRendersMermaidBlocks(t *testing.T) {
 	publicID := "abcdefghijklmnopqrstuv"
 	store := &fakeStore{
