@@ -90,6 +90,10 @@ var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!docty
     .mermaid {
       text-align: center;
     }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
     blockquote {
       border-left: 3px solid var(--hairline);
       padding-left: 18px;
