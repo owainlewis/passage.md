@@ -181,7 +181,7 @@ export default function Landing() {
               <p className="landingKicker">Pricing</p>
               <h2 className="sectionTitle">Simple pricing</h2>
             </div>
-            <p>Write for free. Upgrade when you want saved documents, sharing, and agent access.</p>
+            <p>Write for free. Upgrade when you want more saved documents, sharing, and agent access.</p>
           </div>
           <div className="pricingGrid">
             <div className="planCard">

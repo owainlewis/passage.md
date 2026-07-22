@@ -143,6 +143,7 @@ describe("Landing", () => {
     expect(screen.getByRole("link", { name: "Read the story" })).toHaveAttribute("href", "#story");
     expect(screen.getByRole("link", { name: "Go Pro" })).toHaveAttribute("href", "#pricing");
     expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "#pricing");
+    expect(screen.getByText(/Upgrade when you want more saved documents/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
   });
 });
