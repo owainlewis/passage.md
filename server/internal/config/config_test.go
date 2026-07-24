@@ -48,6 +48,11 @@ func TestValidateServeAllowsProductionWithoutStripeWhenBillingDisabled(t *testin
 		AppEnv:        "production",
 		DatabaseURL:   "postgres://example",
 		SessionSecret: "secret",
+		PasswordReset: PasswordResetConfig{
+			AppBaseURL:   "https://passage.md",
+			ResendAPIKey: "re_secret",
+			ResendFrom:   "passage.md <mail@passage.md>",
+		},
 		Billing: BillingConfig{
 			StripeBillingEnabled: false,
 			AppBaseURL:           "http://localhost:8080",
@@ -59,11 +64,28 @@ func TestValidateServeAllowsProductionWithoutStripeWhenBillingDisabled(t *testin
 	}
 }
 
+func TestValidateServeRequiresPasswordResetEmailInProduction(t *testing.T) {
+	cfg := Config{
+		AppEnv:        "production",
+		DatabaseURL:   "postgres://example",
+		SessionSecret: "secret",
+		PasswordReset: PasswordResetConfig{AppBaseURL: "https://passage.md"},
+	}
+	if err := cfg.ValidateServe(); err == nil || err.Error() != "RESEND_API_KEY and RESEND_FROM are required in production" {
+		t.Fatalf("ValidateServe error = %v", err)
+	}
+}
+
 func TestValidateServeRequiresStripeConfigWhenBillingEnabled(t *testing.T) {
 	cfg := Config{
 		AppEnv:        "production",
 		DatabaseURL:   "postgres://example",
 		SessionSecret: "secret",
+		PasswordReset: PasswordResetConfig{
+			AppBaseURL:   "https://passage.md",
+			ResendAPIKey: "re_secret",
+			ResendFrom:   "passage.md <mail@passage.md>",
+		},
 		Billing: BillingConfig{
 			StripeBillingEnabled: true,
 			StripeSecretKey:      "sk_live_test",
@@ -97,5 +119,37 @@ func TestFromEnvEnablesStripeBillingExplicitly(t *testing.T) {
 	cfg := FromEnv()
 	if !cfg.Billing.StripeBillingEnabled {
 		t.Fatal("StripeBillingEnabled = false, want true")
+	}
+}
+
+func TestFromEnvLoadsPasswordResetConfiguration(t *testing.T) {
+	t.Setenv("APP_BASE_URL", "https://passage.md")
+	t.Setenv("RESEND_API_KEY", " re_secret ")
+	t.Setenv("RESEND_FROM", " passage.md <mail@passage.md> ")
+
+	cfg := FromEnv()
+	if cfg.PasswordReset.AppBaseURL != "https://passage.md" || cfg.PasswordReset.ResendAPIKey != "re_secret" || cfg.PasswordReset.ResendFrom != "passage.md <mail@passage.md>" {
+		t.Fatalf("password reset config = %#v", cfg.PasswordReset)
+	}
+	if !cfg.PasswordReset.ResendConfigured() {
+		t.Fatal("ResendConfigured = false, want true")
+	}
+}
+
+func TestValidateServeRejectsPartialPasswordResetConfiguration(t *testing.T) {
+	cfg := Config{
+		DatabaseURL:   "postgres://example",
+		SessionSecret: "secret",
+		PasswordReset: PasswordResetConfig{ResendAPIKey: "re_secret", AppBaseURL: "https://passage.md"},
+	}
+	if err := cfg.ValidateServe(); err == nil || err.Error() != "RESEND_API_KEY and RESEND_FROM must be set together" {
+		t.Fatalf("ValidateServe error = %v", err)
+	}
+
+	cfg.PasswordReset.ResendFrom = "passage.md <mail@passage.md>"
+	cfg.AppEnv = "production"
+	cfg.PasswordReset.AppBaseURL = "http://localhost:8080"
+	if err := cfg.ValidateServe(); err == nil || err.Error() != "APP_BASE_URL must be set to the production URL when password reset email is enabled" {
+		t.Fatalf("ValidateServe production error = %v", err)
 	}
 }

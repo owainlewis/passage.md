@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
@@ -73,11 +74,21 @@ func serve(cfg config.Config) error {
 		return err
 	}
 
+	var passwordResetSender auth.PasswordResetSender
+	if cfg.PasswordReset.ResendConfigured() {
+		passwordResetSender = auth.NewResendSender(cfg.PasswordReset.ResendAPIKey, cfg.PasswordReset.ResendFrom, nil)
+	} else if cfg.AppEnv != "production" {
+		passwordResetSender = auth.LoggingPasswordResetSender{}
+	}
 	app := passagehttp.NewApp(staticFS, db, passagehttp.Options{
-		SessionSecret: cfg.SessionSecret,
-		CookieSecure:  cfg.CookieSecure,
-		Billing:       cfg.Billing,
+		SessionSecret:       cfg.SessionSecret,
+		CookieSecure:        cfg.CookieSecure,
+		TrustProxy:          cfg.AppEnv == "production",
+		AppBaseURL:          cfg.PasswordReset.AppBaseURL,
+		PasswordResetSender: passwordResetSender,
+		Billing:             cfg.Billing,
 	})
+	go app.RunPasswordResetWorker(ctx)
 	server := newHTTPServer(cfg.Port, app.Routes())
 
 	errs := make(chan error, 1)

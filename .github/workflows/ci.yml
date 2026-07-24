@@ -16,6 +16,7 @@ env:
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
   IMAGE_NAME: passage-md
   APP_BASE_URL: https://passage.md
+  RESEND_FROM: passage.md <mail@passage.md>
   WORKLOAD_IDENTITY_PROVIDER: projects/311711068171/locations/global/workloadIdentityPools/github/providers/passage-md
   DEPLOY_SERVICE_ACCOUNT: passage-md-build@passage-md-prod.iam.gserviceaccount.com
 
@@ -153,4 +154,8 @@ jobs:
           image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           env_vars: |
             APP_BASE_URL=${{ env.APP_BASE_URL }}
+            RESEND_FROM=${{ env.RESEND_FROM }}
+          secrets: |
+            RESEND_API_KEY=passage-resend-api-key:latest
+          flags: '--no-cpu-throttling --min=1'
           revision_traffic: LATEST=100

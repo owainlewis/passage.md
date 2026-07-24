@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -19,6 +22,111 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/migrations"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func TestPasswordResetWithPostgres(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := fmt.Sprintf("password-reset-%d@example.com", time.Now().UnixNano())
+	sender := &integrationResetSender{sent: make(chan integrationResetEmail, 8)}
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{
+		SessionSecret:       "test-secret",
+		AppBaseURL:          "https://passage.md",
+		PasswordResetSender: sender,
+		Billing:             config.BillingConfig{FreeMaxSavedDocs: 5, ProMaxSavedDocs: 1000},
+	})
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+	go app.RunPasswordResetWorker(ctx)
+	cookies := createIntegrationUserAndLogin(t, db, server.URL, email)
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, email)
+	var userID string
+	if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	expiredToken := fmt.Sprintf("expired-%d", time.Now().UnixNano())
+	expiredSum := sha256.Sum256([]byte(expiredToken))
+	if _, err := db.Exec(ctx, `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`, userID, hex.EncodeToString(expiredSum[:]), time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/auth/password-reset/confirm", `{"token":"`+expiredToken+`","password":"new-password-123"}`, nil, ""); got != http.StatusBadRequest {
+		t.Fatalf("expired token status = %d", got)
+	}
+
+	knownBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/auth/password-reset/request", `{"email":"`+email+`"}`, nil, "")
+	unknownBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/auth/password-reset/request", `{"email":"unknown-`+email+`"}`, nil, "")
+	if knownBody != unknownBody || !strings.Contains(knownBody, "If an account exists") {
+		t.Fatalf("known response = %q, unknown response = %q", knownBody, unknownBody)
+	}
+
+	var resetURL string
+	deadline := time.After(8 * time.Second)
+	for resetURL == "" {
+		select {
+		case delivered := <-sender.sent:
+			if delivered.email == email {
+				resetURL = delivered.resetURL
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for password reset email")
+		}
+	}
+	parsed, err := url.Parse(resetURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := parsed.Fragment
+	token = strings.TrimPrefix(token, "token=")
+	if token == "" {
+		t.Fatalf("reset URL = %q", resetURL)
+	}
+
+	if got := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/auth/password-reset/confirm", `{"token":"`+token+`","password":"new-password-123"}`, nil, ""); got != http.StatusOK {
+		t.Fatalf("confirm status = %d", got)
+	}
+	if got := doIntegrationStatus(t, http.MethodGet, server.URL+"/api/v1/me", "", cookies, ""); got != http.StatusOK {
+		t.Fatalf("me status = %d", got)
+	}
+	meBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/me", "", cookies, "")
+	if !strings.Contains(meBody, `"authenticated":false`) {
+		t.Fatalf("old session remained active: %s", meBody)
+	}
+	if got := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/auth/login", `{"email":"`+email+`","password":"password123"}`, nil, ""); got != http.StatusUnauthorized {
+		t.Fatalf("old password login status = %d", got)
+	}
+	if got := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/auth/login", `{"email":"`+email+`","password":"new-password-123"}`, nil, ""); got != http.StatusOK {
+		t.Fatalf("new password login status = %d", got)
+	}
+	if got := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/auth/password-reset/confirm", `{"token":"`+token+`","password":"another-password-123"}`, nil, ""); got != http.StatusBadRequest {
+		t.Fatalf("reused token status = %d", got)
+	}
+}
+
+type integrationResetEmail struct {
+	email    string
+	resetURL string
+}
+
+type integrationResetSender struct {
+	sent chan integrationResetEmail
+}
+
+func (s *integrationResetSender) SendPasswordReset(_ context.Context, email string, resetURL string, _ string) error {
+	s.sent <- integrationResetEmail{email: email, resetURL: resetURL}
+	return nil
+}
 
 func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")

@@ -3,8 +3,15 @@ set -eu
 
 DEFAULT_DATABASE_URL='postgres://localhost:5432/passage_dev?sslmode=disable'
 
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 export DATABASE_URL="${DATABASE_URL:-$DEFAULT_DATABASE_URL}"
 export PORT="${PORT:-3000}"
+export APP_BASE_URL="${APP_BASE_URL:-http://localhost:$PORT}"
 export SESSION_SECRET="${SESSION_SECRET:-dev-session-secret-change-me}"
 export STATIC_DIR="${STATIC_DIR:-apps/web/out}"
 
