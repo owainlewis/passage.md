@@ -45,6 +45,7 @@ type TestDoc = {
   pinned?: boolean;
   shareToken?: string | null;
   sharedAt?: string | null;
+  passwordProtected?: boolean;
   updatedAt?: string;
 };
 
@@ -80,6 +81,37 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       const updated = { ...doc, body };
       docs = docs.map((existing) => (existing.id === id ? updated : existing));
       return new Response(JSON.stringify(updated), { status: 200 });
+    }
+    if (url.startsWith("/api/v1/docs/") && url.endsWith("/share/password")) {
+      const id = url.split("/")[4];
+      const doc = docs.find((existing) => existing.id === id);
+      const publicId = doc?.publicId ?? "share-token";
+      if (method === "PUT") {
+        const password = JSON.parse(String(init?.body ?? "{}")).password ?? "";
+        if (String(password).length < 6) {
+          return new Response(JSON.stringify({ error: "password must be at least 6 characters" }), { status: 400 });
+        }
+        return new Response(
+          JSON.stringify({
+            token: publicId,
+            publicId,
+            htmlPath: `/d/${publicId}`,
+            markdownPath: `/d/${publicId}.md`,
+            passwordProtected: true
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          token: publicId,
+          publicId,
+          htmlPath: `/d/${publicId}`,
+          markdownPath: `/d/${publicId}.md`,
+          passwordProtected: false
+        }),
+        { status: 200 }
+      );
     }
     if (url.startsWith("/api/v1/docs/") && method === "DELETE") {
       const id = url.split("/")[4];
@@ -802,6 +834,102 @@ describe("Write (editor)", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
     expect(await screen.findByRole("button", { name: /Markdown for agents and humans/ })).toBeInTheDocument();
+  });
+
+  it("offers no password control until a document is shared", async () => {
+    await renderWrite();
+    await screen.findByRole("button", { name: /Markdown for agents and humans/ });
+
+    expect(screen.queryByRole("button", { name: "Protect" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Protected" })).not.toBeInTheDocument();
+  });
+
+  it("protects a shared document and copies a link carrying the password in the fragment", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+    stubSignedInFetch([{ id: "doc-shared", body: "# Shared note", sharedAt: "2026-07-09T08:00:00Z" }]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Shared note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Protect" }));
+    fireEvent.change(screen.getByLabelText("Share password"), { target: { value: "quiet harbour" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Protected" })).toBeInTheDocument());
+    const copied = String(writeText.mock.calls.at(-1)?.[0] ?? "");
+    expect(copied).toContain("/d/public-1#k=");
+    expect(copied).toContain(encodeURIComponent("quiet harbour"));
+    expect(copied.split("#")[0]).not.toContain("quiet");
+  });
+
+  it("removes a share password without unsharing the document", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+    stubSignedInFetch([
+      { id: "doc-shared", body: "# Shared note", sharedAt: "2026-07-09T08:00:00Z", passwordProtected: true }
+    ]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Shared note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Protected" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove password" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Protect" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Shared" })).toBeInTheDocument();
+  });
+
+  it("never carries a typed password onto another document", async () => {
+    stubSignedInFetch([
+      { id: "doc-a", body: "# Alpha note", sharedAt: "2026-07-09T08:00:00Z" },
+      { id: "doc-b", body: "# Beta note", sharedAt: "2026-07-09T09:00:00Z" }
+    ]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Alpha note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Protect" }));
+    fireEvent.change(screen.getByLabelText("Share password"), { target: { value: "secret-for-alpha" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Beta note/ }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Share password")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Protect" }));
+    expect(screen.getByLabelText("Share password")).toHaveValue("");
+  });
+
+  it("rejects a share password bcrypt cannot hash", async () => {
+    stubSignedInFetch([{ id: "doc-shared", body: "# Shared note", sharedAt: "2026-07-09T08:00:00Z" }]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Shared note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Protect" }));
+    fireEvent.change(screen.getByLabelText("Share password"), { target: { value: "a".repeat(73) } });
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+    expect(await screen.findByText("Use 72 bytes or fewer.")).toBeInTheDocument();
+  });
+
+  it("rejects a short share password before calling the API", async () => {
+    stubSignedInFetch([{ id: "doc-shared", body: "# Shared note", sharedAt: "2026-07-09T08:00:00Z" }]);
+
+    await renderWrite();
+    await screen.findByRole("button", { name: /Shared note/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Protect" }));
+    fireEvent.change(screen.getByLabelText("Share password"), { target: { value: "abc" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+    expect(await screen.findByText("Use at least 6 characters.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Protect" })).toBeInTheDocument();
   });
 
   it("orders a newly shared document as latest in Shared", async () => {

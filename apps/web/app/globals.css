@@ -1393,9 +1393,95 @@ button {
   color: #fff;
 }
 
+.protectToggle.on.dockButton {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.protectPanel {
+  width: min(30rem, calc(100vw - 32px));
+  margin: 0 auto 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+.protectSummary {
+  margin: 0 0 10px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.protectForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.protectInput {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 8px 11px;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.protectInput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.protectSave,
+.protectRemove {
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+}
+
+.protectSave {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.protectRemove {
+  color: var(--ink-soft);
+  background: var(--surface);
+}
+
+.protectSave:disabled,
+.protectRemove:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.protectNotice {
+  margin: 10px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
 :root[data-theme="dark"] .statusDock {
   background: color-mix(in srgb, var(--elevated) 86%, white 5%);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme="dark"] .protectPanel {
+  background: color-mix(in srgb, var(--elevated) 86%, white 5%);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
 }
 
 /* ------------------------------------------------------------ share view */

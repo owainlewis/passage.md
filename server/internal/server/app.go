@@ -64,7 +64,11 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 			TrustProxy:          options.TrustProxy,
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
-		app.docs = documents.NewHandler(documents.NewStore(db))
+		app.docs = documents.NewHandlerWithOptions(documents.NewStore(db), documents.Options{
+			SessionSecret: options.SessionSecret,
+			CookieSecure:  options.CookieSecure,
+			TrustProxy:    options.TrustProxy,
+		})
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)
 	}
 	return app
@@ -107,7 +111,10 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/docs/{id}", a.archiveDoc)
 	mux.HandleFunc("POST /api/v1/docs/{id}/share", a.shareDoc)
 	mux.HandleFunc("DELETE /api/v1/docs/{id}/share", a.unshareDoc)
+	mux.HandleFunc("PUT /api/v1/docs/{id}/share/password", a.setSharePassword)
+	mux.HandleFunc("DELETE /api/v1/docs/{id}/share/password", a.clearSharePassword)
 	mux.HandleFunc("GET /d/{token}", a.publicDoc)
+	mux.HandleFunc("POST /d/{token}/unlock", a.unlockDoc)
 	mux.HandleFunc("GET /write", a.write)
 	mux.HandleFunc("GET /write/{$}", a.write)
 	mux.HandleFunc("GET /write/{publicId}", a.write)
@@ -618,12 +625,39 @@ func (a *App) unshareDoc(w http.ResponseWriter, r *http.Request) {
 	a.requireUserForDocs(a.docs.Unshare)(w, r)
 }
 
+func (a *App) setSharePassword(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.requirePro(w, r, user) {
+			return
+		}
+		a.docs.SetSharePassword(w, r, user)
+	})(w, r)
+}
+
+func (a *App) clearSharePassword(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.requireUserForDocs(a.docs.ClearSharePassword)(w, r)
+}
+
 func (a *App) publicDoc(w http.ResponseWriter, r *http.Request) {
 	if a.docs == nil {
 		http.NotFound(w, r)
 		return
 	}
 	a.docs.Public(w, r)
+}
+
+func (a *App) unlockDoc(w http.ResponseWriter, r *http.Request) {
+	if a.docs == nil {
+		http.NotFound(w, r)
+		return
+	}
+	a.docs.Unlock(w, r)
 }
 
 func (a *App) write(w http.ResponseWriter, r *http.Request) {

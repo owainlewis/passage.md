@@ -109,6 +109,20 @@ export function ShareIcon() {
   );
 }
 
+export function LockIcon({ open = false }: { open?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <rect x="4.8" y="10.5" width="14.4" height="9.2" rx="2" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d={open ? "M8.4 10.5V7.6a3.6 3.6 0 0 1 6.9-1.4" : "M8.4 10.5V7.6a3.6 3.6 0 0 1 7.2 0v2.9"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function DownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">

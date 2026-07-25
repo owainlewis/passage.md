@@ -1225,6 +1225,30 @@ func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (docum
 	return documents.Document{}, documents.ErrNotFound
 }
 
+func (s *routeDocumentStore) SetSharePassword(ctx context.Context, ownerID string, id string, hash string) (documents.Document, error) {
+	s.ownerID = ownerID
+	if ownerID != "user-1" || id != "11111111-1111-1111-1111-111111111111" {
+		return documents.Document{}, documents.ErrNotFound
+	}
+	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body, SharePasswordHash: hash, PasswordProtected: true}, nil
+}
+
+func (s *routeDocumentStore) ClearSharePassword(ctx context.Context, ownerID string, id string) (documents.Document, error) {
+	s.ownerID = ownerID
+	if ownerID != "user-1" || id != "11111111-1111-1111-1111-111111111111" {
+		return documents.Document{}, documents.ErrNotFound
+	}
+	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body}, nil
+}
+
+func (s *routeDocumentStore) ConsumeUnlockAttempt(ctx context.Context, ipHash string, documentHash string, now time.Time, window time.Duration, limit int) (time.Duration, error) {
+	return 0, nil
+}
+
+func (s *routeDocumentStore) ResetUnlockAttempts(ctx context.Context, documentHash string) error {
+	return nil
+}
+
 type routeBillingStore struct {
 	users      map[string]auth.User
 	states     map[string]billing.State

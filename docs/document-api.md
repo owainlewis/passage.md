@@ -175,6 +175,7 @@ Document objects use this shape:
   "title": "Example",
   "body": "# Example\n\nMarkdown body.",
   "sharedAt": "2026-06-28T12:00:00Z",
+  "passwordProtected": false,
   "createdAt": "2026-06-28T12:00:00Z",
   "updatedAt": "2026-06-28T12:00:00Z"
 }
@@ -188,6 +189,7 @@ Fields:
 - `body`: full Markdown body.
 - `shareToken`: optional legacy public share token.
 - `sharedAt`: optional share creation timestamp.
+- `passwordProtected`: true when the share link requires a password.
 - `createdAt`: creation timestamp.
 - `updatedAt`: last update timestamp.
 - `archivedAt`: omitted on active document responses.
@@ -383,7 +385,8 @@ Content-Type: application/json
   "token": "abcdefghijklmnopqrstuv",
   "publicId": "abcdefghijklmnopqrstuv",
   "htmlPath": "/d/abcdefghijklmnopqrstuv",
-  "markdownPath": "/d/abcdefghijklmnopqrstuv.md"
+  "markdownPath": "/d/abcdefghijklmnopqrstuv.md",
+  "passwordProtected": false
 }
 ```
 
@@ -413,7 +416,112 @@ HTTP/1.1 204 No Content
 
 After unshare, the previous HTML and raw Markdown URLs return `404`.
 
+Unshare also clears any share password, so re-sharing never inherits stale protection.
+
 Malformed UUIDs, archived documents, missing documents, and documents owned by another user all return `404`.
+
+## Set Share Password
+
+```http
+PUT /api/v1/docs/{id}/share/password
+Content-Type: application/json
+```
+
+```json
+{ "password": "a good password" }
+```
+
+Requires a password of at least 6 characters on a document that is already shared.
+
+The password is stored as a bcrypt hash and is never returned by the API.
+
+Response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "token": "abcdefghijklmnopqrstuv",
+  "publicId": "abcdefghijklmnopqrstuv",
+  "htmlPath": "/d/abcdefghijklmnopqrstuv",
+  "markdownPath": "/d/abcdefghijklmnopqrstuv.md",
+  "passwordProtected": true
+}
+```
+
+A document that is not shared returns `409`.
+
+A password shorter than 6 characters returns `400`.
+
+## Remove Share Password
+
+```http
+DELETE /api/v1/docs/{id}/share/password
+```
+
+Removes protection and leaves the document shared.
+
+Response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+Changing or removing the password invalidates every unlock cookie already issued for that document.
+
+## Sharing a Protected Link
+
+A protected document has two useful links:
+
+```
+https://passage.md/d/abcdefghijklmnopqrstuv
+https://passage.md/d/abcdefghijklmnopqrstuv#k=a%20good%20password
+```
+
+The first is safe to leak.
+A crawler or a forwarded email reaches the unlock prompt, never the body.
+
+The second unlocks itself.
+The `#k=` fragment is read by the unlock page and posted to the unlock endpoint.
+Browsers never put a fragment in the request line, so the password stays out of server logs, proxy logs, and `Referer` headers.
+
+Treat the second link as a "share deliberately" link.
+Anyone holding it has access.
+
+## Unlock a Protected Document
+
+```http
+POST /d/{publicId}/unlock
+Content-Type: application/json
+```
+
+```json
+{ "password": "a good password" }
+```
+
+Response:
+
+```http
+HTTP/1.1 200 OK
+Set-Cookie: passage_unlock_abcdefghijklmnopqrstuv=...; Path=/d/; HttpOnly; SameSite=Lax
+```
+
+```json
+{ "unlocked": true }
+```
+
+The cookie is signed, scoped to that one document, and expires after 12 hours.
+
+A form post of `application/x-www-form-urlencoded` returns `303` to the document instead, so the unlock page works without JavaScript.
+
+A wrong password returns `401`.
+
+Unlock attempts are rate limited per document and per client IP.
+Exceeding the limit returns `429` with a `Retry-After` header.
 
 ## Public HTML
 
@@ -434,6 +542,9 @@ X-Content-Type-Options: nosniff
 ```
 
 Missing, malformed, revoked, or archived public IDs return `404`.
+
+A password-protected document returns `401` with the unlock page.
+The unlock page contains neither the document body nor its title.
 
 Legacy share token URLs are still accepted while older shares exist.
 
@@ -469,6 +580,8 @@ Markdown body.
 
 Missing, malformed, revoked, or archived public IDs return `404`.
 
+A password-protected document returns `401` until the client holds a valid unlock cookie.
+
 Legacy share token URLs are still accepted while older shares exist.
 
 ## Status Summary
@@ -477,10 +590,12 @@ Legacy share token URLs are still accepted while older shares exist.
 - `201`: document created.
 - `204`: document archived or unshared.
 - `400`: invalid JSON.
-- `401`: authentication required.
+- `401`: authentication required, or a protected share is still locked.
 - `403`: cross-origin mutation blocked.
 - `404`: document or public share not found.
+- `409`: share password set on a document that is not shared.
 - `415`: create or update request was not JSON.
+- `429`: too many unlock attempts.
 - `500`: unexpected server failure.
 - `503`: database-backed service is not configured.
 

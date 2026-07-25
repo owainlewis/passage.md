@@ -22,6 +22,7 @@ import {
   PlusIcon,
   SaveStatusIcon,
   SearchIcon,
+  LockIcon,
   ShareIcon,
   SidebarIcon,
   UserIcon
@@ -48,6 +49,7 @@ type Doc = {
   pinned?: boolean;
   shareToken?: string | null;
   sharedAt?: string | null;
+  passwordProtected?: boolean;
   updatedAt?: string;
 };
 
@@ -161,11 +163,18 @@ async function apiArchiveDoc(id: string): Promise<void> {
   }
 }
 
+type ProtectState = {
+  docId: string;
+  password: string;
+  notice: string;
+};
+
 type ShareResponse = {
   token: string;
   publicId?: string;
   htmlPath: string;
   markdownPath: string;
+  passwordProtected?: boolean;
 };
 
 async function apiShareDoc(id: string): Promise<ShareResponse> {
@@ -189,6 +198,38 @@ async function apiUnshareDoc(id: string): Promise<void> {
     const payload = await res.json().catch(() => ({}));
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be unshared");
   }
+}
+
+async function apiSetSharePassword(id: string, password: string): Promise<ShareResponse> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}/share/password`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Password could not be saved");
+  }
+  return payload as ShareResponse;
+}
+
+async function apiClearSharePassword(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}/share/password`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "Password could not be removed");
+  }
+}
+
+// A protected link carries the password in the URL fragment. Browsers never put
+// the fragment in the request line, so it stays out of server logs, proxy logs,
+// and Referer headers. The bare link stays safe to leak.
+export function protectedShareURL(origin: string, publicID: string, password: string) {
+  return `${origin}/d/${publicID}#k=${encodeURIComponent(password)}`;
 }
 
 function saveLabel(state: SaveState) {
@@ -222,6 +263,10 @@ export default function Editor() {
   const [mode, setMode] = useState<Mode>("preview");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [shareState, setShareState] = useState<ShareState>("idle");
+  // The panel state carries the document it belongs to, so a typed password can
+  // never be read back while a different document is active.
+  const [protect, setProtect] = useState<ProtectState | null>(null);
+  const [protectBusy, setProtectBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [selectedFolder, setSelectedFolder] = useState(PRIVATE_FOLDER);
@@ -326,6 +371,9 @@ export default function Editor() {
 
   const active = docs.find((d) => d.id === activeId) ?? docs[0] ?? null;
   const activeShared = active ? isShared(active) : false;
+  const activeProtected = activeShared && Boolean(active?.passwordProtected);
+  const protectPanel = protect && active && protect.docId === active.id ? protect : null;
+  const protectOpen = protectPanel !== null;
   const publicDocPath = activeShared && active?.publicId ? `/d/${active.publicId}` : "";
   const shareButtonLabel =
     shareState === "toolong"
@@ -539,6 +587,62 @@ export default function Editor() {
     }
   }
 
+  // Only ever writes back to the document the panel was opened for.
+  function setProtectNoticeFor(docId: string, notice: string) {
+    setProtect((prev) => (prev && prev.docId === docId ? { ...prev, notice } : prev));
+  }
+
+  async function saveSharePassword() {
+    if (!active || !protectPanel) return;
+    const docId = active.id;
+    const publicId = active.publicId ?? "";
+    const password = protectPanel.password.trim();
+    // Match the server exactly: characters for the floor, bytes for the ceiling.
+    // bcrypt rejects anything over 72 bytes.
+    if ([...password].length < 6) {
+      setProtectNoticeFor(docId, "Use at least 6 characters.");
+      return;
+    }
+    if (new TextEncoder().encode(password).length > 72) {
+      setProtectNoticeFor(docId, "Use 72 bytes or fewer.");
+      return;
+    }
+    setProtectBusy(true);
+    setProtectNoticeFor(docId, "");
+    try {
+      await apiSetSharePassword(docId, password);
+      setDocs((prev) => prev.map((doc) => (doc.id === docId ? { ...doc, passwordProtected: true } : doc)));
+      await copyURL(protectedShareURL(window.location.origin, publicId, password));
+      setProtect((prev) =>
+        prev && prev.docId === docId ? { ...prev, password: "", notice: "Protected. Link with the password copied." } : prev
+      );
+    } catch (error) {
+      setProtectNoticeFor(docId, error instanceof Error ? error.message : "Password could not be saved");
+    } finally {
+      setProtectBusy(false);
+    }
+  }
+
+  async function removeSharePassword() {
+    if (!active || !protectPanel) return;
+    const docId = active.id;
+    setProtectBusy(true);
+    setProtectNoticeFor(docId, "");
+    try {
+      await apiClearSharePassword(docId);
+      setDocs((prev) => prev.map((doc) => (doc.id === docId ? { ...doc, passwordProtected: false } : doc)));
+      setProtect((prev) =>
+        prev && prev.docId === docId
+          ? { ...prev, password: "", notice: "Password removed. Anyone with the link can read this again." }
+          : prev
+      );
+    } catch (error) {
+      setProtectNoticeFor(docId, error instanceof Error ? error.message : "Password could not be removed");
+    } finally {
+      setProtectBusy(false);
+    }
+  }
+
   async function unshareDoc() {
     if (!active || !activeShared) return;
     window.clearTimeout(copyTimer.current);
@@ -546,8 +650,11 @@ export default function Editor() {
       await apiUnshareDoc(active.id);
       const updatedAt = new Date().toISOString();
       setDocs((prev) =>
-        prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null, updatedAt } : doc))
+        prev.map((doc) =>
+          doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null, passwordProtected: false, updatedAt } : doc
+        )
       );
+      setProtect(null);
       setSelectedFolder(PRIVATE_FOLDER);
       setShareState("unshared");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
@@ -890,6 +997,50 @@ export default function Editor() {
         </section>
 
         {docsReady && active && <footer className="statusBar" aria-label="Editor status">
+          {protectPanel && activeShared && (
+            <div className="protectPanel" aria-label="Share password settings">
+              <p className="protectSummary">
+                {activeProtected
+                  ? "Readers must enter a password. Share the protected link and they skip the prompt."
+                  : "Anyone with this link can read it. Add a password to require one."}
+              </p>
+              <form
+                className="protectForm"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveSharePassword();
+                }}
+              >
+                <input
+                  type="password"
+                  className="protectInput"
+                  aria-label="Share password"
+                  placeholder={activeProtected ? "New password" : "Password"}
+                  autoComplete="new-password"
+                  value={protectPanel.password}
+                  onChange={(event) => {
+                    const password = event.target.value;
+                    setProtect((prev) => (prev && prev.docId === protectPanel.docId ? { ...prev, password } : prev));
+                  }}
+                  disabled={protectBusy}
+                />
+                <button type="submit" className="protectSave" disabled={protectBusy}>
+                  {activeProtected ? "Change password" : "Set password"}
+                </button>
+                {activeProtected && (
+                  <button
+                    type="button"
+                    className="protectRemove"
+                    onClick={() => void removeSharePassword()}
+                    disabled={protectBusy}
+                  >
+                    Remove password
+                  </button>
+                )}
+              </form>
+              {protectPanel.notice && <p className="protectNotice">{protectPanel.notice}</p>}
+            </div>
+          )}
           <div className="statusDock">
             <div className="dockGroup dockGroupMode">
               <div className="modeToggle" role="group" aria-label="View mode">
@@ -939,6 +1090,25 @@ export default function Editor() {
                 <ShareIcon />
                 <span>{shareButtonLabel}</span>
               </button>
+              {activeShared && (
+                <button
+                  type="button"
+                  className={`dockButton protectToggle${activeProtected ? " on" : ""}`}
+                  aria-pressed={protectOpen}
+                  aria-expanded={protectOpen}
+                  onClick={() =>
+                    setProtect(protectOpen ? null : { docId: active.id, password: "", notice: "" })
+                  }
+                  title={
+                    activeProtected
+                      ? "This link needs a password"
+                      : "Anyone with this link can read it"
+                  }
+                >
+                  <LockIcon open={!activeProtected} />
+                  <span>{activeProtected ? "Protected" : "Protect"}</span>
+                </button>
+              )}
               {publicDocPath && (
                 <Link
                   className="dockButton publicDocLink"

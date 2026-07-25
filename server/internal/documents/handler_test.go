@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 )
@@ -341,6 +342,12 @@ type fakeStore struct {
 	publicID     string
 	shareToken   *string
 	publicDoc    Document
+
+	sharePasswordHash string
+	sharePasswordErr  error
+	unlockAttempts    int
+	unlockErr         error
+	unlockResets      int
 }
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {
@@ -396,6 +403,37 @@ func (s *fakeStore) GetPublic(ctx context.Context, token string) (Document, erro
 		return Document{}, ErrNotFound
 	}
 	return s.publicDoc, nil
+}
+
+func (s *fakeStore) SetSharePassword(ctx context.Context, ownerID string, id string, hash string) (Document, error) {
+	s.ownerID = ownerID
+	if s.sharePasswordErr != nil {
+		return Document{}, s.sharePasswordErr
+	}
+	s.sharePasswordHash = hash
+	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: "# One", SharePasswordHash: hash, PasswordProtected: true}, nil
+}
+
+func (s *fakeStore) ClearSharePassword(ctx context.Context, ownerID string, id string) (Document, error) {
+	s.ownerID = ownerID
+	if s.sharePasswordErr != nil {
+		return Document{}, s.sharePasswordErr
+	}
+	s.sharePasswordHash = ""
+	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}, nil
+}
+
+func (s *fakeStore) ConsumeUnlockAttempt(ctx context.Context, ipHash string, documentHash string, now time.Time, window time.Duration, limit int) (time.Duration, error) {
+	s.unlockAttempts++
+	if s.unlockErr != nil {
+		return time.Minute, s.unlockErr
+	}
+	return 0, nil
+}
+
+func (s *fakeStore) ResetUnlockAttempts(ctx context.Context, documentHash string) error {
+	s.unlockResets++
+	return nil
 }
 
 func assertPublicSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
