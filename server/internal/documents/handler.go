@@ -242,6 +242,14 @@ func setPublicSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// A share URL is unguessable, but one paste somewhere public is enough for a
+	// crawler to fetch a document and index it forever.
+	//
+	// Deliberately not paired with a robots.txt rule for /d/. A blocked page is
+	// never fetched, so the crawler would never see this header, and the bare
+	// URL could still be listed with no snippet. Allow the fetch, refuse the
+	// index.
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 }
 
 func validateJSONMutation(w http.ResponseWriter, r *http.Request) bool {
