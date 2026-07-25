@@ -24,6 +24,8 @@ const (
 	// than letting a long passphrase fall through to a 500.
 	maxSharePassword = 72
 	minSharePassword = 6
+	// Generous next to a 72 byte password, small enough to be uninteresting.
+	maxUnlockRequestBytes = 4096
 )
 
 // unlockCookieName scopes the grant to one document. Public IDs are URL-safe
@@ -252,6 +254,10 @@ var unlockTemplate = htmltemplate.Must(htmltemplate.New("unlock").Parse(`<!docty
       function submitFragmentKey() {
         var key = new URLSearchParams(window.location.hash.slice(1)).get("k");
         if (!key) return;
+        // Strip the key from the URL before doing anything else. The unlocked
+        // document renders Mermaid from a third-party module, and anything
+        // running in that page can read window.location.hash.
+        history.replaceState(null, "", window.location.pathname + window.location.search);
         input.value = key;
         submit(key);
       }

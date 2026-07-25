@@ -323,6 +323,36 @@ func TestUnlockRejectsCrossOriginRequests(t *testing.T) {
 	}
 }
 
+func TestUnlockRejectsOversizedBodiesBeforeParsing(t *testing.T) {
+	store, _ := protectedStore(t, "correct horse")
+	huge := `{"password":"` + strings.Repeat("a", maxUnlockRequestBytes*2) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/d/"+testPublicID+"/unlock", strings.NewReader(huge))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("token", testPublicID)
+	rec := httptest.NewRecorder()
+
+	testHandler(store).Unlock(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if store.unlockAttempts != 0 {
+		t.Fatal("an oversized body reached the rate limiter")
+	}
+}
+
+// The unlocked page runs a third-party Mermaid module, which can read
+// location.hash. The key must be gone from the URL before that page loads.
+func TestUnlockPageStripsTheKeyFromTheURL(t *testing.T) {
+	page, err := renderUnlockPage(testPublicID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(page), "history.replaceState") {
+		t.Fatal("unlock page does not strip the fragment key before unlocking")
+	}
+}
+
 func TestSetSharePasswordRejectsPasswordsBcryptCannotHash(t *testing.T) {
 	store, _ := protectedStore(t, "correct horse")
 	// bcrypt refuses anything over 72 bytes; this must be a 400, never a 500.

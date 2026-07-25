@@ -276,6 +276,14 @@ func (h *Handler) Unlock(w http.ResponseWriter, r *http.Request) {
 	if !validateSameOrigin(w, r) {
 		return
 	}
+	// Unlock is unauthenticated, so cap the body before anything parses it.
+	// Otherwise a throttled caller could still make the server allocate.
+	if r.ContentLength > maxUnlockRequestBytes {
+		h.writeUnlockError(w, r, false, http.StatusRequestEntityTooLarge, "request body is too large")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUnlockRequestBytes)
+
 	token := r.PathValue("token")
 	wantsJSON := strings.HasPrefix(r.Header.Get("Content-Type"), "application/json")
 
