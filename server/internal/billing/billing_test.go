@@ -226,6 +226,14 @@ func (s *memoryStore) UpdateSubscription(ctx context.Context, userID string, upd
 	return nil
 }
 
+func (s *memoryStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	update, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	return s.UpdateSubscription(ctx, userID, update)
+}
+
 func (s *memoryStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {
 	return s.savedDocs[userID], nil
 }

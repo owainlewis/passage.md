@@ -67,13 +67,14 @@ type State struct {
 }
 
 type SubscriptionUpdate struct {
-	CustomerID        string
-	SubscriptionID    string
-	Status            string
-	PriceID           string
-	CurrentPeriodEnd  *time.Time
-	CancelAtPeriodEnd *bool
-	EventCreated      *time.Time
+	CustomerID            string
+	SubscriptionID        string
+	SubscriptionCreatedAt *time.Time
+	Status                string
+	PriceID               string
+	CurrentPeriodEnd      *time.Time
+	CancelAtPeriodEnd     *bool
+	EventCreated          *time.Time
 }
 
 type Store interface {
@@ -85,6 +86,7 @@ type Store interface {
 	UpdateOverride(ctx context.Context, userID string, plan *Plan, maxSavedDocs *int) error
 	SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error)
 	UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error
+	RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error
 	CountSavedDocs(ctx context.Context, userID string) (int, error)
 }
 
@@ -246,6 +248,10 @@ func (s *Service) UserByID(ctx context.Context, userID string) (auth.User, error
 
 func (s *Service) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
 	return s.store.UpdateSubscription(ctx, userID, update)
+}
+
+func (s *Service) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	return s.store.RefreshSubscription(ctx, userID, load)
 }
 
 func (s *Service) accountFromState(email string, state State, savedDocs int) Account {

@@ -441,13 +441,15 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 	}
 	customerID := first.id
 	subscriptionID := "sub_order_" + strings.ReplaceAll(userID, "-", "")
-	newer := time.Now().UTC().Truncate(time.Second)
-	older := newer.Add(-time.Minute)
+	subscriptionCreated := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	newer := time.Now().UTC()
+	older := newer.Add(-time.Nanosecond)
 	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
-		CustomerID:     customerID,
-		SubscriptionID: subscriptionID,
-		Status:         "active",
-		EventCreated:   &newer,
+		CustomerID:            customerID,
+		SubscriptionID:        subscriptionID,
+		SubscriptionCreatedAt: &subscriptionCreated,
+		Status:                "active",
+		EventCreated:          &newer,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -459,17 +461,82 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
+	oldSubscriptionCreated := subscriptionCreated.Add(-time.Hour)
+	latest := newer.Add(time.Nanosecond)
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:            customerID,
+		SubscriptionID:        "sub_old_" + strings.ReplaceAll(userID, "-", ""),
+		SubscriptionCreatedAt: &oldSubscriptionCreated,
+		Status:                "canceled",
+		EventCreated:          &latest,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if storedCustomerID, err := store.SetStripeCustomer(ctx, userID, "cus_different"); err != nil {
 		t.Fatal(err)
 	} else if storedCustomerID != customerID {
 		t.Fatalf("stored customer = %q, want %q", storedCustomerID, customerID)
 	}
 
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- store.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+			close(firstEntered)
+			<-releaseFirst
+			return billing.SubscriptionUpdate{
+				CustomerID:            customerID,
+				SubscriptionID:        subscriptionID,
+				SubscriptionCreatedAt: &subscriptionCreated,
+				Status:                "active",
+			}, nil
+		})
+	}()
+	<-firstEntered
+
+	secondStarted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	secondDone := make(chan error, 1)
+	secondStore := billing.NewPGStore(db)
+	go func() {
+		close(secondStarted)
+		secondDone <- secondStore.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+			close(secondEntered)
+			return billing.SubscriptionUpdate{
+				CustomerID:            customerID,
+				SubscriptionID:        subscriptionID,
+				SubscriptionCreatedAt: &subscriptionCreated,
+				Status:                "active",
+			}, nil
+		})
+	}()
+	<-secondStarted
+	select {
+	case <-secondEntered:
+		t.Fatal("second subscription refresh entered before the first released its lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-secondEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second subscription refresh did not acquire the lock")
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+
 	state, err := store.State(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.StripeCustomerID != customerID || state.StripeSubscriptionStatus != "active" {
+	if state.StripeCustomerID != customerID ||
+		state.StripeSubscriptionID != subscriptionID ||
+		state.StripeSubscriptionStatus != "active" {
 		t.Fatalf("stale or conflicting update changed state: %#v", state)
 	}
 }

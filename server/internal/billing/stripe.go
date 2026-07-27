@@ -8,15 +8,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 var ErrStripeConfig = errors.New("stripe is not configured")
 
 type StripeClient struct {
-	secretKey string
-	baseURL   string
-	client    *http.Client
+	secretKey       string
+	baseURL         string
+	client          *http.Client
+	lastRetrievedAt atomic.Int64
 }
 
 type CustomerParams struct {
@@ -40,11 +42,13 @@ type PortalParams struct {
 type SubscriptionSnapshot struct {
 	ID                string
 	CustomerID        string
+	CreatedAt         *time.Time
 	Status            string
 	PriceID           string
 	CurrentPeriodEnd  *time.Time
 	CancelAtPeriodEnd bool
 	Metadata          map[string]string
+	RetrievedAt       time.Time
 }
 
 func NewStripeClient(secretKey string, baseURL string, client *http.Client) *StripeClient {
@@ -103,7 +107,8 @@ func (c *StripeClient) CreatePortalSession(ctx context.Context, params PortalPar
 
 func (c *StripeClient) RetrieveSubscription(ctx context.Context, subscriptionID string) (SubscriptionSnapshot, error) {
 	var out stripeSubscription
-	if err := c.get(ctx, "/v1/subscriptions/"+url.PathEscape(subscriptionID), &out); err != nil {
+	retrievedAt, err := c.get(ctx, "/v1/subscriptions/"+url.PathEscape(subscriptionID), &out)
+	if err != nil {
 		return SubscriptionSnapshot{}, err
 	}
 	var periodEnd *time.Time
@@ -111,40 +116,63 @@ func (c *StripeClient) RetrieveSubscription(ctx context.Context, subscriptionID 
 		parsed := time.Unix(value, 0).UTC()
 		periodEnd = &parsed
 	}
+	var createdAt *time.Time
+	if out.Created > 0 {
+		parsed := time.Unix(out.Created, 0).UTC()
+		createdAt = &parsed
+	}
 	return SubscriptionSnapshot{
 		ID:                out.ID,
 		CustomerID:        out.Customer,
+		CreatedAt:         createdAt,
 		Status:            out.Status,
 		PriceID:           out.priceID(),
 		CurrentPeriodEnd:  periodEnd,
 		CancelAtPeriodEnd: out.scheduledForCancellation(),
 		Metadata:          out.Metadata,
+		RetrievedAt:       retrievedAt,
 	}, nil
 }
 
-func (c *StripeClient) get(ctx context.Context, path string, target any) error {
+func (c *StripeClient) get(ctx context.Context, path string, target any) (time.Time, error) {
 	if c == nil || c.secretKey == "" {
-		return ErrStripeConfig
+		return time.Time{}, ErrStripeConfig
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	req.SetBasicAuth(c.secretKey, "")
 	res, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		var out stripeObject
 		if err := json.NewDecoder(res.Body).Decode(&out); err == nil && out.Error != nil && out.Error.Message != "" {
-			return fmt.Errorf("stripe request failed: %s", out.Error.Message)
+			return time.Time{}, fmt.Errorf("stripe request failed: %s", out.Error.Message)
 		}
-		return fmt.Errorf("stripe request failed with status %d", res.StatusCode)
+		return time.Time{}, fmt.Errorf("stripe request failed with status %d", res.StatusCode)
 	}
-	return json.NewDecoder(res.Body).Decode(target)
+	if err := json.NewDecoder(res.Body).Decode(target); err != nil {
+		return time.Time{}, err
+	}
+	return c.nextRetrievedAt(), nil
+}
+
+func (c *StripeClient) nextRetrievedAt() time.Time {
+	candidate := time.Now().UTC().UnixNano()
+	for {
+		previous := c.lastRetrievedAt.Load()
+		if candidate <= previous {
+			candidate = previous + 1
+		}
+		if c.lastRetrievedAt.CompareAndSwap(previous, candidate) {
+			return time.Unix(0, candidate).UTC()
+		}
+	}
 }
 
 func (c *StripeClient) postForm(ctx context.Context, path string, values url.Values, target *stripeObject) error {
@@ -190,6 +218,7 @@ type stripeError struct {
 type stripeSubscription struct {
 	ID                string            `json:"id"`
 	Customer          string            `json:"customer"`
+	Created           int64             `json:"created"`
 	Status            string            `json:"status"`
 	CurrentPeriodEnd  int64             `json:"current_period_end"`
 	CancelAtPeriodEnd bool              `json:"cancel_at_period_end"`
