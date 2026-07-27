@@ -68,13 +68,33 @@ settings:
   deletionProtectionEnabled: true
 ```
 
-List recent backups and require a `SUCCESSFUL` automated backup:
+Require the newest `SUCCESSFUL` automated backup to be no more than 24 hours old:
 
 ```sh
-gcloud sql backups list \
-  --instance=passage-md-postgres \
-  --project=passage-md-prod \
-  --format='table(id,type,status,startTime,endTime,location,description)'
+latest_automated_backup="$(
+  gcloud sql backups list \
+    --instance=passage-md-postgres \
+    --project=passage-md-prod \
+    --filter='type=AUTOMATED AND status=SUCCESSFUL' \
+    --sort-by='~endTime' \
+    --limit=1 \
+    --format=json
+)"
+
+if ! printf '%s\n' "$latest_automated_backup" | jq -e '
+  if length != 1 then
+    false
+  else
+    (.[0].endTime | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $end
+    | now >= $end and (now - $end) <= 86400
+  end
+' >/dev/null; then
+  echo 'No successful automated backup completed within the last 24 hours.' >&2
+  exit 1
+fi
+
+printf '%s\n' "$latest_automated_backup" |
+  jq -r '.[0] | {id, type, status, startTime, endTime, location, description}'
 ```
 
 Check application and database health:
@@ -219,23 +239,65 @@ gcloud sql instances patch RECOVERY_INSTANCE \
   --storage-auto-increase
 ```
 
-Run the Cloud SQL safeguard and backup checks against `RECOVERY_INSTANCE`.
+Validate every required recovery-instance setting with a fail-closed check:
+
+```sh
+recovery_settings="$(
+  gcloud sql instances describe RECOVERY_INSTANCE \
+    --project=passage-md-prod \
+    --format=json
+)"
+
+if ! printf '%s\n' "$recovery_settings" | jq -e '
+  .state == "RUNNABLE"
+  and .settings.backupConfiguration.enabled == true
+  and .settings.backupConfiguration.startTime == "20:00"
+  and (.settings.backupConfiguration.backupRetentionSettings.retainedBackups | tonumber) >= 7
+  and .settings.backupConfiguration.pointInTimeRecoveryEnabled == true
+  and (.settings.backupConfiguration.transactionLogRetentionDays | tonumber) == 7
+  and .settings.deletionProtectionEnabled == true
+  and .settings.storageAutoResize == true
+' >/dev/null; then
+  echo 'The recovery instance does not have every required safeguard enabled.' >&2
+  exit 1
+fi
+```
+
+Do not run the automated-backup freshness check against the recovery instance before creating its immediate checkpoint.
 
 Create an immediate pre-cutover backup instead of waiting for the next daily backup window:
 
 ```sh
+checkpoint_description="pre-cutover recovery checkpoint $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 gcloud sql backups create \
   --instance=RECOVERY_INSTANCE \
   --project=passage-md-prod \
-  --description='pre-cutover recovery checkpoint UTC_TIMESTAMP'
+  --description="$checkpoint_description"
 
-gcloud sql backups list \
-  --instance=RECOVERY_INSTANCE \
-  --project=passage-md-prod \
-  --format='table(id,type,status,startTime,endTime,location,description)'
+checkpoint_backup="$(
+  gcloud sql backups list \
+    --instance=RECOVERY_INSTANCE \
+    --project=passage-md-prod \
+    --filter='type=ON_DEMAND' \
+    --sort-by='~endTime' \
+    --limit=1 \
+    --format=json
+)"
+
+if ! printf '%s\n' "$checkpoint_backup" | jq -e \
+  --arg description "$checkpoint_description" '
+    length == 1
+    and .[0].type == "ON_DEMAND"
+    and .[0].status == "SUCCESSFUL"
+    and .[0].description == $description
+  ' >/dev/null; then
+  echo 'The immediate pre-cutover backup did not complete successfully.' >&2
+  exit 1
+fi
 ```
 
-Do not shift traffic or reopen writes until every required setting is enabled and the pre-cutover backup is type `ON_DEMAND` with status `SUCCESSFUL`.
+Do not shift traffic or reopen writes until both fail-closed recovery settings and checkpoint checks pass.
 
 Passage applies its embedded database migrations every time the server starts.
 
