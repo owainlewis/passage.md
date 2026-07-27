@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -47,6 +48,8 @@ type App struct {
 type databasePinger interface {
 	Ping(context.Context) error
 }
+
+const stripeCustomerCleanupTimeout = 30 * time.Second
 
 func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	var options Options
@@ -469,17 +472,31 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		}
 		customerID := account.Subscription.StripeCustomerID
 		if customerID == "" {
-			customerID, err = a.stripe.CreateCustomer(r.Context(), billing.CustomerParams{
+			candidateCustomerID, createErr := a.stripe.CreateCustomer(r.Context(), billing.CustomerParams{
 				Email:  user.Email,
 				UserID: user.ID,
 			})
-			if err != nil {
-				httpx.WriteInternalError(w, r, "create Stripe customer", err, "Stripe customer could not be created")
+			if createErr != nil {
+				httpx.WriteInternalError(w, r, "create Stripe customer", createErr, "Stripe customer could not be created")
 				return
 			}
-			customerID, err = a.billing.SetStripeCustomer(r.Context(), user.ID, customerID)
+			customerID, err = a.billing.SetStripeCustomer(r.Context(), user.ID, candidateCustomerID)
 			if err != nil {
+				cleanupErr := a.cleanupStripeCustomer(r.Context(), candidateCustomerID)
+				if cleanupErr != nil {
+					err = errors.Join(err, fmt.Errorf("delete unlinked Stripe customer: %w", cleanupErr))
+				}
 				httpx.WriteInternalError(w, r, "save Stripe customer", err, "billing customer could not be saved")
+				return
+			}
+			if customerID != candidateCustomerID {
+				if err := a.cleanupStripeCustomer(r.Context(), candidateCustomerID); err != nil {
+					httpx.WriteInternalError(w, r, "delete duplicate Stripe customer", err, "Stripe customer could not be reconciled")
+					return
+				}
+			}
+			if customerID == "" {
+				httpx.WriteInternalError(w, r, "save Stripe customer", errors.New("stored Stripe customer is empty"), "billing customer could not be saved")
 				return
 			}
 		}
@@ -496,6 +513,12 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"url": sessionURL})
 	})(w, r)
+}
+
+func (a *App) cleanupStripeCustomer(ctx context.Context, customerID string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stripeCustomerCleanupTimeout)
+	defer cancel()
+	return a.stripe.NeutralizeUnsubscribedCustomer(cleanupCtx, customerID)
 }
 
 func (a *App) createPortalSession(w http.ResponseWriter, r *http.Request) {

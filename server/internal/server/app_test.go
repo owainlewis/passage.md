@@ -752,6 +752,112 @@ func TestBillingCheckoutCreatesMonthlyStripeSession(t *testing.T) {
 	}
 }
 
+func TestBillingCheckoutDeletesCustomerWhenPersistenceFails(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	billingStore := newRouteBillingStore()
+	billingStore.setStripeCustomerErr = errors.New("account was deleted")
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	billingStore.setStripeCustomerHook = cancelRequest
+	customerDeleted := false
+	checkoutCreated := false
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/customers":
+			_, _ = w.Write([]byte(`{"id":"cus_candidate"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/checkout/sessions":
+			_, _ = w.Write([]byte(`{"data":[],"has_more":false}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/customers/cus_candidate":
+			customerDeleted = true
+			_, _ = w.Write([]byte(`{"id":"cus_candidate","deleted":true}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/checkout/sessions":
+			checkoutCreated = true
+			_, _ = w.Write([]byte(`{"id":"cs_test","url":"https://checkout.stripe.test/session"}`))
+		default:
+			t.Errorf("unexpected Stripe request: %s %s", r.Method, r.URL.String())
+			http.Error(w, `{"error":{"message":"unexpected request"}}`, http.StatusBadRequest)
+		}
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(authStore, "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/checkout", nil)
+	req = req.WithContext(requestContext)
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !customerDeleted {
+		t.Fatal("unlinked Stripe customer was not deleted")
+	}
+	if checkoutCreated {
+		t.Fatal("Checkout session was created after customer persistence failed")
+	}
+}
+
+func TestBillingCheckoutDeletesSupersededCustomerAndUsesCanonicalCustomer(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	billingStore := newRouteBillingStore()
+	billingStore.setStripeCustomerResult = "cus_canonical"
+	customerDeleted := false
+	checkoutCustomer := ""
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/customers":
+			_, _ = w.Write([]byte(`{"id":"cus_candidate"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/checkout/sessions":
+			_, _ = w.Write([]byte(`{"data":[],"has_more":false}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/customers/cus_candidate":
+			customerDeleted = true
+			_, _ = w.Write([]byte(`{"id":"cus_candidate","deleted":true}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/checkout/sessions":
+			if err := r.ParseForm(); err != nil {
+				t.Error(err)
+			}
+			checkoutCustomer = r.Form.Get("customer")
+			_, _ = w.Write([]byte(`{"id":"cs_test","url":"https://checkout.stripe.test/session"}`))
+		default:
+			t.Errorf("unexpected Stripe request: %s %s", r.Method, r.URL.String())
+			http.Error(w, `{"error":{"message":"unexpected request"}}`, http.StatusBadRequest)
+		}
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(authStore, "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/checkout", nil)
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !customerDeleted {
+		t.Fatal("superseded Stripe customer was not deleted")
+	}
+	if checkoutCustomer != "cus_canonical" {
+		t.Fatalf("Checkout customer = %q, want cus_canonical", checkoutCustomer)
+	}
+}
+
 func TestBillingPortalCreatesStripePortalSession(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
@@ -1779,13 +1885,16 @@ func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (docum
 }
 
 type routeBillingStore struct {
-	users                 map[string]auth.User
-	states                map[string]billing.State
-	eventCreated          map[string]time.Time
-	subscriptionCreated   map[string]time.Time
-	savedDocs             map[string]int
-	adminUsers            []billing.AdminUserRecord
-	updateSubscriptionErr error
+	users                   map[string]auth.User
+	states                  map[string]billing.State
+	eventCreated            map[string]time.Time
+	subscriptionCreated     map[string]time.Time
+	savedDocs               map[string]int
+	adminUsers              []billing.AdminUserRecord
+	updateSubscriptionErr   error
+	setStripeCustomerErr    error
+	setStripeCustomerResult string
+	setStripeCustomerHook   func()
 }
 
 func newRouteBillingStore() *routeBillingStore {
@@ -1866,7 +1975,18 @@ func (s *routeBillingStore) UpdateOverride(ctx context.Context, userID string, p
 }
 
 func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
+	if s.setStripeCustomerHook != nil {
+		s.setStripeCustomerHook()
+	}
+	if s.setStripeCustomerErr != nil {
+		return "", s.setStripeCustomerErr
+	}
 	state := s.states[userID]
+	if s.setStripeCustomerResult != "" {
+		state.StripeCustomerID = s.setStripeCustomerResult
+		s.states[userID] = state
+		return s.setStripeCustomerResult, nil
+	}
 	if state.StripeCustomerID != "" {
 		return state.StripeCustomerID, nil
 	}
