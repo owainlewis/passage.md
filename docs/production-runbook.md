@@ -206,7 +206,30 @@ For an incident cutover, keep the original production instance unchanged and del
 
 Keep application writes stopped while reconciling any legitimate writes after the selected recovery point.
 
-Create a separately reviewed plan to update the application database secret to the verified recovery instance, deploy a new Cloud Run revision, and test before shifting normal traffic.
+Enable the production safeguards on the recovery instance before it receives application traffic:
+
+```sh
+gcloud sql instances patch RECOVERY_INSTANCE \
+  --project=passage-md-prod \
+  --backup-start-time=20:00 \
+  --retained-backups-count=7 \
+  --enable-point-in-time-recovery \
+  --retained-transaction-log-days=7 \
+  --deletion-protection \
+  --storage-auto-increase
+```
+
+Run the Cloud SQL safeguard and backup checks against `RECOVERY_INSTANCE`.
+
+Do not shift traffic or reopen writes until every required setting is enabled and a `SUCCESSFUL` automated backup exists.
+
+Passage applies its embedded database migrations every time the server starts.
+
+For recovery from a bad migration, resolve a known-good image digest built before that migration and verify that its embedded migration set does not contain the bad migration.
+
+Do not start the recovered database with the bad image or an unverified `latest` image.
+
+Create a separately reviewed plan to update the application database secret to the verified recovery instance, deploy a compatible Cloud Run revision from the resolved image digest, and test before shifting normal traffic.
 
 Record the database boundary and recovery instance used by each Cloud Run revision.
 
