@@ -172,8 +172,16 @@ func TestDeleteRequiresTerminalStripeSubscription(t *testing.T) {
 	if _, err := db.Exec(ctx, `UPDATE billing_accounts SET stripe_subscription_status = 'canceled' WHERE user_id = $1`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if err := Delete(ctx, db, email, DeleteOptions{}); err != nil {
+	if err := Delete(ctx, db, email, DeleteOptions{}); !errors.Is(err, ErrStripeNeutralizerRequired) {
+		t.Fatalf("delete terminal subscription without Stripe neutralizer error = %v", err)
+	}
+	customerID := fmt.Sprintf("cus_%d", stamp)
+	stripe := &fakeStripeNeutralizer{}
+	if err := Delete(ctx, db, email, DeleteOptions{Stripe: stripe}); err != nil {
 		t.Fatal(err)
+	}
+	if len(stripe.customerIDs) != 1 || stripe.customerIDs[0] != customerID {
+		t.Fatalf("neutralized customers = %v, want [%s]", stripe.customerIDs, customerID)
 	}
 }
 
@@ -192,10 +200,11 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 		t.Fatal(err)
 	}
 	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	customerID := fmt.Sprintf("cus_checkout_%d", stamp)
 	_, err = db.Exec(ctx, `
 		INSERT INTO billing_accounts (user_id, stripe_customer_id)
 		VALUES ($1, $2)
-	`, userID, fmt.Sprintf("cus_checkout_%d", stamp))
+	`, userID, customerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +212,88 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 	if err := Delete(ctx, db, email, DeleteOptions{}); !errors.Is(err, ErrActiveSubscription) {
 		t.Fatalf("delete unverified Stripe customer error = %v", err)
 	}
-	if err := Delete(ctx, db, email, DeleteOptions{StripeVerifiedNoActiveSubscription: true}); err != nil {
+	if err := Delete(ctx, db, email, DeleteOptions{StripeVerifiedNoActiveSubscription: true}); !errors.Is(err, ErrStripeNeutralizerRequired) {
+		t.Fatalf("delete without Stripe neutralizer error = %v", err)
+	}
+	stripeFailure := errors.New("Stripe unavailable")
+	failingStripe := &fakeStripeNeutralizer{err: stripeFailure}
+	if err := Delete(ctx, db, email, DeleteOptions{
+		StripeVerifiedNoActiveSubscription: true,
+		Stripe:                             failingStripe,
+	}); !errors.Is(err, stripeFailure) {
+		t.Fatalf("delete after Stripe failure error = %v", err)
+	}
+	var remaining int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM users WHERE id = $1`, userID).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 1 {
+		t.Fatalf("users after Stripe failure = %d, want 1", remaining)
+	}
+
+	stripe := &fakeStripeNeutralizer{}
+	if err := Delete(ctx, db, email, DeleteOptions{
+		StripeVerifiedNoActiveSubscription: true,
+		Stripe:                             stripe,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(stripe.customerIDs) != 1 || stripe.customerIDs[0] != customerID {
+		t.Fatalf("neutralized customers = %v, want [%s]", stripe.customerIDs, customerID)
+	}
+}
+
+func TestExportTransactionKeepsConsistentSnapshotDuringDeletion(t *testing.T) {
+	db := testDatabase(t)
+	ctx := context.Background()
+	stamp := time.Now().UnixNano()
+	email := fmt.Sprintf("account-export-snapshot-%d@example.com", stamp)
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'test-hash')
+		RETURNING id::text
+	`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if _, err := db.Exec(ctx, `
+		INSERT INTO documents (owner_user_id, public_id, title, body)
+		VALUES ($1, $2, 'Snapshot document', '# Snapshot')
+	`, userID, fmt.Sprintf("snapshot%d", stamp)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO api_tokens (user_id, name, token_hash)
+		VALUES ($1, 'Snapshot token', $2)
+	`, userID, fmt.Sprintf("snapshot-token-%d", stamp)); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := beginExportTransaction(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	account, err := loadAccount(ctx, tx, email, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	documents, err := loadDocuments(ctx, tx, account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := loadTokens(ctx, tx, account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 1 || len(tokens) != 1 {
+		t.Fatalf("snapshot has %d documents and %d tokens, want 1 and 1", len(documents), len(tokens))
+	}
+	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -253,6 +343,16 @@ func TestDeletionCheckLocksBillingState(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("concurrent billing update error = %v, want context deadline exceeded", err)
 	}
+}
+
+type fakeStripeNeutralizer struct {
+	customerIDs []string
+	err         error
+}
+
+func (f *fakeStripeNeutralizer) NeutralizeUnsubscribedCustomer(_ context.Context, customerID string) error {
+	f.customerIDs = append(f.customerIDs, customerID)
+	return f.err
 }
 
 func testDatabase(t *testing.T) *database.Pool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -135,28 +136,7 @@ func (c *StripeClient) RetrieveSubscription(ctx context.Context, subscriptionID 
 }
 
 func (c *StripeClient) get(ctx context.Context, path string, target any) (time.Time, error) {
-	if c == nil || c.secretKey == "" {
-		return time.Time{}, ErrStripeConfig
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return time.Time{}, err
-	}
-	req.SetBasicAuth(c.secretKey, "")
-	res, err := c.client.Do(req)
-	if err != nil {
-		return time.Time{}, err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		var out stripeObject
-		if err := json.NewDecoder(res.Body).Decode(&out); err == nil && out.Error != nil && out.Error.Message != "" {
-			return time.Time{}, fmt.Errorf("stripe request failed: %s", out.Error.Message)
-		}
-		return time.Time{}, fmt.Errorf("stripe request failed with status %d", res.StatusCode)
-	}
-	if err := json.NewDecoder(res.Body).Decode(target); err != nil {
+	if err := c.request(ctx, http.MethodGet, path, nil, target); err != nil {
 		return time.Time{}, err
 	}
 	return c.nextRetrievedAt(), nil
@@ -175,40 +155,97 @@ func (c *StripeClient) nextRetrievedAt() time.Time {
 	}
 }
 
+func (c *StripeClient) NeutralizeUnsubscribedCustomer(ctx context.Context, customerID string) error {
+	if strings.TrimSpace(customerID) == "" {
+		return errors.New("Stripe customer ID is required")
+	}
+	for attempt := 0; attempt < 10; attempt++ {
+		sessions, err := c.listOpenCheckoutSessions(ctx, customerID)
+		if err != nil {
+			return err
+		}
+		if len(sessions) == 0 {
+			var deleted stripeObject
+			return c.request(ctx, http.MethodDelete, "/v1/customers/"+url.PathEscape(customerID), nil, &deleted)
+		}
+		for _, session := range sessions {
+			var expired stripeObject
+			if err := c.postForm(ctx, "/v1/checkout/sessions/"+url.PathEscape(session.ID)+"/expire", url.Values{}, &expired); err != nil {
+				return err
+			}
+		}
+	}
+	return errors.New("Stripe Checkout sessions remained open after repeated expiry")
+}
+
+func (c *StripeClient) listOpenCheckoutSessions(ctx context.Context, customerID string) ([]stripeObject, error) {
+	values := url.Values{}
+	values.Set("customer", customerID)
+	values.Set("status", "open")
+	values.Set("limit", "100")
+	var sessions []stripeObject
+	for {
+		var out stripeList
+		path := "/v1/checkout/sessions?" + values.Encode()
+		if err := c.request(ctx, http.MethodGet, path, nil, &out); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, out.Data...)
+		if !out.HasMore {
+			return sessions, nil
+		}
+		if len(out.Data) == 0 {
+			return nil, errors.New("Stripe returned an empty Checkout session page with has_more set")
+		}
+		values.Set("starting_after", out.Data[len(out.Data)-1].ID)
+	}
+}
+
 func (c *StripeClient) postForm(ctx context.Context, path string, values url.Values, target *stripeObject) error {
+	return c.request(ctx, http.MethodPost, path, values, target)
+}
+
+func (c *StripeClient) request(ctx context.Context, method string, path string, values url.Values, target any) error {
 	if c == nil || c.secretKey == "" {
 		return ErrStripeConfig
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(values.Encode()))
+	var body io.Reader
+	if values != nil {
+		body = strings.NewReader(values.Encode())
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return err
 	}
 	req.SetBasicAuth(c.secretKey, "")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
 	res, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 
-	var out stripeObject
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return err
-	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		if out.Error != nil && out.Error.Message != "" {
-			return fmt.Errorf("stripe request failed: %s", out.Error.Message)
+		var failure stripeObject
+		if err := json.NewDecoder(res.Body).Decode(&failure); err == nil && failure.Error != nil && failure.Error.Message != "" {
+			return fmt.Errorf("stripe request failed: %s", failure.Error.Message)
 		}
 		return fmt.Errorf("stripe request failed with status %d", res.StatusCode)
 	}
-	*target = out
-	return nil
+	return json.NewDecoder(res.Body).Decode(target)
 }
 
 type stripeObject struct {
 	ID    string       `json:"id"`
 	URL   string       `json:"url"`
 	Error *stripeError `json:"error"`
+}
+
+type stripeList struct {
+	Data    []stripeObject `json:"data"`
+	HasMore bool           `json:"has_more"`
 }
 
 type stripeError struct {

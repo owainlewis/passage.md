@@ -16,6 +16,7 @@ import (
 
 	"github.com/owainlewis/passage.md/server/internal/accountdata"
 	"github.com/owainlewis/passage.md/server/internal/auth"
+	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
@@ -241,7 +242,10 @@ func account(cfg config.Config, args []string) error {
 			(len(args) == 5 && args[4] != "--stripe-verified-no-active-subscription") {
 			return errors.New("usage: passage account delete <email> --confirm <same-email> [--stripe-verified-no-active-subscription]")
 		}
-		options := accountdata.DeleteOptions{StripeVerifiedNoActiveSubscription: len(args) == 5}
+		options := accountdata.DeleteOptions{
+			StripeVerifiedNoActiveSubscription: len(args) == 5,
+			Stripe:                             billing.NewStripeClient(cfg.Billing.StripeSecretKey, "", nil),
+		}
 		if err := accountdata.Delete(ctx, db, args[1], options); err != nil {
 			return fmt.Errorf("delete account: %w", err)
 		}

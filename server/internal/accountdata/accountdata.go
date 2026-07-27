@@ -19,9 +19,15 @@ import (
 
 var ErrAccountNotFound = errors.New("account not found")
 var ErrActiveSubscription = errors.New("Stripe state must be terminal or explicitly verified as having no active subscription before deletion")
+var ErrStripeNeutralizerRequired = errors.New("Stripe checkout neutralization is required before deleting an account with a Stripe customer")
+
+type StripeCustomerNeutralizer interface {
+	NeutralizeUnsubscribedCustomer(context.Context, string) error
+}
 
 type DeleteOptions struct {
 	StripeVerifiedNoActiveSubscription bool
+	Stripe                             StripeCustomerNeutralizer
 }
 
 type Account struct {
@@ -71,7 +77,7 @@ func Export(ctx context.Context, db *database.Pool, email string, outputPath str
 	if email == "" {
 		return ErrAccountNotFound
 	}
-	tx, err := db.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := beginExportTransaction(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -137,6 +143,13 @@ func Export(ctx context.Context, db *database.Pool, email string, outputPath str
 	return nil
 }
 
+func beginExportTransaction(ctx context.Context, db *database.Pool) (pgx.Tx, error) {
+	return db.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	})
+}
+
 func Delete(ctx context.Context, db *database.Pool, email string, options DeleteOptions) error {
 	email = normalizeEmail(email)
 	if email == "" {
@@ -166,6 +179,14 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 		!terminalStripeStatus(account.StripeSubscriptionStatus) &&
 		!verifiedCustomerWithoutSubscription {
 		return ErrActiveSubscription
+	}
+	if account.StripeCustomerID != "" {
+		if options.Stripe == nil {
+			return ErrStripeNeutralizerRequired
+		}
+		if err := options.Stripe.NeutralizeUnsubscribedCustomer(ctx, account.StripeCustomerID); err != nil {
+			return fmt.Errorf("neutralize Stripe customer: %w", err)
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM password_reset_requests WHERE lower(email) = $1`, email); err != nil {
 		return err

@@ -73,6 +73,14 @@ The flag works only when the local subscription ID and status are both empty.
 
 It cannot override an active or unknown local subscription state.
 
+Deleting any account with a Stripe customer requires `STRIPE_SECRET_KEY`.
+
+The command expires every open Checkout session for the exact Stripe customer, confirms none remain, then permanently deletes the Stripe customer before deleting the Passage account.
+
+Deleting the Stripe customer prevents an abandoned Checkout session from creating a subscription after the local account is gone.
+
+If any Stripe request fails, the command leaves the Passage account intact.
+
 Stripe may keep invoices, payments, disputes, and required accounting or fraud-prevention records after cancellation.
 
 Remove or minimise other Stripe customer details when the Stripe dashboard and applicable record-keeping rules allow it.
@@ -82,6 +90,8 @@ For an account with no Stripe customer, or a Stripe subscription already in a te
 ```sh
 go run ./server/cmd/passage account delete customer@example.com --confirm customer@example.com
 ```
+
+For a terminal Stripe subscription, the command performs the same Checkout-session expiry, recheck, and Stripe-customer deletion before deleting the Passage account.
 
 The transaction immediately removes the Passage user row and database records linked by cascading foreign keys:
 
