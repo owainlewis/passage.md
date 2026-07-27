@@ -27,6 +27,7 @@ type Options struct {
 	Billing             config.BillingConfig
 	RateLimits          config.AbuseRateLimitConfig
 	Proxy               config.ProxyConfig
+	GCPProjectID        string
 }
 
 type App struct {
@@ -40,6 +41,7 @@ type App struct {
 	billingConfig  config.BillingConfig
 	rateLimiters   appRateLimiters
 	clientIP       httpx.ClientIPResolver
+	gcpProjectID   string
 }
 
 type databasePinger interface {
@@ -58,6 +60,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	app := &App{
 		static:        static,
 		billingConfig: options.Billing,
+		gcpProjectID:  options.GCPProjectID,
 		stripe:        billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
 		rateLimiters:  newAppRateLimiters(options.RateLimits),
 		clientIP:      clientIP,
@@ -118,7 +121,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /write/{$}", a.write)
 	mux.HandleFunc("GET /write/{publicId}", a.write)
 	mux.Handle("/", StaticHandler(a.static))
-	return mux
+	return httpx.WithRequestContext(mux, a.gcpProjectID)
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +136,7 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if err := a.databaseHealth.Ping(ctx); err != nil {
+		httpx.LogError(r, "check database health", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status":   "unavailable",
 			"database": "unavailable",
@@ -159,7 +163,7 @@ func (a *App) me(w http.ResponseWriter, r *http.Request) {
 	if a.billing != nil {
 		account, err := a.billing.Account(r.Context(), user)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
+			httpx.WriteInternalError(w, r, "load current account", err, "account could not be loaded")
 			return
 		}
 		response["account"] = account
@@ -189,7 +193,7 @@ func (a *App) validateReferral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "referral could not be validated"})
+		httpx.WriteInternalError(w, r, "validate community referral", err, "referral could not be validated")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"name": referral.Name})
@@ -222,7 +226,7 @@ func (a *App) referralSignup(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": message})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be created"})
+		httpx.WriteInternalError(w, r, "redeem community referral", err, "account could not be created")
 		return
 	}
 	a.auth.WriteSessionCookie(w, session)
@@ -278,7 +282,7 @@ func (a *App) adminDashboard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "admin dashboard could not be loaded"})
+			httpx.WriteInternalError(w, r, "load admin dashboard", err, "admin dashboard could not be loaded")
 			return
 		}
 		writeJSON(w, http.StatusOK, dashboard)
@@ -291,7 +295,7 @@ func (a *App) adminGetAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, admin auth.User) {
 		user, account, err := a.billing.AdminAccountByEmail(r.Context(), admin, r.PathValue("email"))
-		a.writeAdminAccountResponse(w, user, account, err)
+		a.writeAdminAccountResponse(w, r, user, account, err)
 	})(w, r)
 }
 
@@ -312,7 +316,7 @@ func (a *App) adminUpdateAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		user, account, err := a.billing.UpdateAdminOverride(r.Context(), admin, r.PathValue("email"), plan, maxSavedDocs)
-		a.writeAdminAccountResponse(w, user, account, err)
+		a.writeAdminAccountResponse(w, r, user, account, err)
 	})(w, r)
 }
 
@@ -336,7 +340,7 @@ func (a *App) adminCreateCommunityReferral(w http.ResponseWriter, r *http.Reques
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": message})
 				return
 			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community referral could not be created"})
+			httpx.WriteInternalError(w, r, "create community referral", err, "community referral could not be created")
 			return
 		}
 		writeJSON(w, http.StatusCreated, referral)
@@ -356,7 +360,7 @@ func (a *App) adminRotateCommunityReferral(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community referral could not be rotated"})
+			httpx.WriteInternalError(w, r, "rotate community referral", err, "community referral could not be rotated")
 			return
 		}
 		writeJSON(w, http.StatusOK, referral)
@@ -376,7 +380,7 @@ func (a *App) adminDisableCommunityReferral(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community referral could not be disabled"})
+			httpx.WriteInternalError(w, r, "disable community referral", err, "community referral could not be disabled")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -404,7 +408,7 @@ func (a *App) adminRevokeCommunityGrant(w http.ResponseWriter, r *http.Request) 
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 				return
 			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "community grant could not be revoked"})
+			httpx.WriteInternalError(w, r, "revoke community grant", err, "community grant could not be revoked")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -428,7 +432,7 @@ func (a *App) requireCommunityAdmin(w http.ResponseWriter, r *http.Request, next
 	return true
 }
 
-func (a *App) writeAdminAccountResponse(w http.ResponseWriter, user auth.User, account billing.Account, err error) {
+func (a *App) writeAdminAccountResponse(w http.ResponseWriter, r *http.Request, user auth.User, account billing.Account, err error) {
 	if errors.Is(err, billing.ErrNotAdmin) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin access required"})
 		return
@@ -438,7 +442,7 @@ func (a *App) writeAdminAccountResponse(w http.ResponseWriter, user auth.User, a
 		return
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
+		httpx.WriteInternalError(w, r, "load admin account", err, "account could not be loaded")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -455,12 +459,12 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if !a.requireStripeBilling(w) {
+		if !a.requireStripeBilling(w, r) {
 			return
 		}
 		account, err := a.billing.Account(r.Context(), user)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
+			httpx.WriteInternalError(w, r, "load checkout account", err, "account could not be loaded")
 			return
 		}
 		customerID := account.Subscription.StripeCustomerID
@@ -470,12 +474,12 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 				UserID: user.ID,
 			})
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe customer could not be created"})
+				httpx.WriteInternalError(w, r, "create Stripe customer", err, "Stripe customer could not be created")
 				return
 			}
 			customerID, err = a.billing.SetStripeCustomer(r.Context(), user.ID, customerID)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "billing customer could not be saved"})
+				httpx.WriteInternalError(w, r, "save Stripe customer", err, "billing customer could not be saved")
 				return
 			}
 		}
@@ -487,7 +491,7 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			CancelURL:      absoluteAppURL(a.billingConfig.AppBaseURL, "/account?billing=cancel"),
 		})
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe Checkout could not be created"})
+			httpx.WriteInternalError(w, r, "create Stripe Checkout session", err, "Stripe Checkout could not be created")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"url": sessionURL})
@@ -502,12 +506,12 @@ func (a *App) createPortalSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if !a.requireStripeBilling(w) {
+		if !a.requireStripeBilling(w, r) {
 			return
 		}
 		account, err := a.billing.Account(r.Context(), user)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
+			httpx.WriteInternalError(w, r, "load billing portal account", err, "account could not be loaded")
 			return
 		}
 		if account.Subscription.StripeCustomerID == "" {
@@ -519,7 +523,7 @@ func (a *App) createPortalSession(w http.ResponseWriter, r *http.Request) {
 			ReturnURL:  absoluteAppURL(a.billingConfig.AppBaseURL, "/account"),
 		})
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe customer portal could not be created"})
+			httpx.WriteInternalError(w, r, "create Stripe customer portal", err, "Stripe customer portal could not be created")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"url": sessionURL})
@@ -589,7 +593,7 @@ func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
 		if a.billing != nil {
 			account, err := a.billing.Account(r.Context(), user)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
+				httpx.WriteInternalError(w, r, "load document account", err, "account could not be loaded")
 				return
 			}
 			maxSavedDocs = account.Limits.MaxSavedDocs
@@ -682,13 +686,13 @@ func (a *App) requireBillingService(w http.ResponseWriter) bool {
 	return true
 }
 
-func (a *App) requireStripeBilling(w http.ResponseWriter) bool {
+func (a *App) requireStripeBilling(w http.ResponseWriter, r *http.Request) bool {
 	if !a.billingConfig.StripeBillingEnabled {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Stripe billing is disabled"})
 		return false
 	}
 	if !a.billingConfig.StripeConfigured() {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe billing is not configured"})
+		httpx.WriteInternalError(w, r, "validate Stripe configuration", errors.New("Stripe billing configuration is incomplete"), "Stripe billing is not configured")
 		return false
 	}
 	return true
@@ -729,7 +733,7 @@ func (a *App) requirePro(w http.ResponseWriter, r *http.Request, user auth.User)
 			writePaymentRequired(w, "Passage Pro is required")
 			return false
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account could not be loaded"})
+		httpx.WriteInternalError(w, r, "check Pro entitlement", err, "account could not be loaded")
 		return false
 	}
 	return true

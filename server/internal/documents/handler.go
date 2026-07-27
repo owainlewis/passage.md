@@ -38,7 +38,7 @@ type documentStore interface {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request, user auth.User) {
 	docs, err := h.store.List(r.Context(), user.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "documents could not be loaded")
+		httpx.WriteInternalError(w, r, "list documents", err, "documents could not be loaded")
 		return
 	}
 	if docs == nil {
@@ -64,7 +64,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User,
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "document could not be created")
+		httpx.WriteInternalError(w, r, "create document", err, "document could not be created")
 		return
 	}
 	writeJSON(w, http.StatusCreated, doc)
@@ -82,7 +82,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "document could not be loaded")
+		httpx.WriteInternalError(w, r, "get document", err, "document could not be loaded")
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
@@ -110,7 +110,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "document could not be saved")
+		httpx.WriteInternalError(w, r, "update document", err, "document could not be saved")
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
@@ -135,7 +135,7 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request, user auth.User
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "document could not be archived")
+		httpx.WriteInternalError(w, r, "archive document", err, "document could not be archived")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -156,11 +156,11 @@ func (h *Handler) Share(w http.ResponseWriter, r *http.Request, user auth.User) 
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "document could not be shared")
+		httpx.WriteInternalError(w, r, "share document", err, "document could not be shared")
 		return
 	}
 	if doc.PublicID == "" {
-		writeError(w, http.StatusInternalServerError, "public id is missing")
+		httpx.WriteInternalError(w, r, "share document", errors.New("store returned an empty public id"), "public id is missing")
 		return
 	}
 	writeJSON(w, http.StatusOK, shareResponse{
@@ -186,7 +186,7 @@ func (h *Handler) Unshare(w http.ResponseWriter, r *http.Request, user auth.User
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "document could not be unshared")
+		httpx.WriteInternalError(w, r, "unshare document", err, "document could not be unshared")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -205,7 +205,7 @@ func (h *Handler) Public(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, "document could not be loaded", http.StatusInternalServerError)
+		httpx.WriteInternalError(w, r, "get public document", err, "document could not be loaded")
 		return
 	}
 	if raw {
@@ -217,7 +217,7 @@ func (h *Handler) Public(w http.ResponseWriter, r *http.Request) {
 	}
 	html, err := renderPublicHTML(doc)
 	if err != nil {
-		http.Error(w, "document could not be rendered", http.StatusInternalServerError)
+		httpx.WriteInternalError(w, r, "render public document", err, "document could not be rendered")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

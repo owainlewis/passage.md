@@ -1,0 +1,56 @@
+name: Deployment failure notification
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify:
+    if: >-
+      contains(fromJSON('["failure", "timed_out"]'), github.event.workflow_run.conclusion) &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify the repository owner
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = "Production deployment failed";
+            const run = context.payload.workflow_run;
+            const body = [
+              `The production CI and deployment workflow failed for \`${run.head_sha}\`.`,
+              "",
+              `Run: ${run.html_url}`,
+              "",
+              "Follow `docs/incident-runbook.md` before retrying or rolling back."
+            ].join("\n");
+            const {data: issues} = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              assignees: [context.repo.owner]
+            });
