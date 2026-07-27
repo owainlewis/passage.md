@@ -124,7 +124,18 @@ gcloud run services update passage-md \
 
 Confirm checkout and webhook endpoints return service unavailable, while `/api/health` stays healthy.
 
-Re-enable billing through the normal deployment configuration after Stripe delivery and stored entitlements are reconciled.
+If billing was enabled before the incident and its Stripe secrets remain configured, explicitly restore it after Stripe delivery and stored entitlements are reconciled:
+
+```sh
+gcloud run services update passage-md \
+  --project passage-md-prod \
+  --region us-central1 \
+  --update-env-vars STRIPE_BILLING_ENABLED=true
+```
+
+Confirm `/api/health` stays healthy and the billing endpoints no longer return the disabled response.
+
+Normal deployments preserve Cloud Run environment variables they do not manage, so deploying alone does not undo the emergency toggle.
 
 In Stripe Workbench, check webhook delivery status by event ID, confirm the endpoint URL, and retry only events whose database effect is understood.
 

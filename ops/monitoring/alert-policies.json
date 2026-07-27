@@ -24,12 +24,12 @@
   {
     "displayName": "Passage Cloud Run elevated 5xx",
     "documentation": {
-      "content": "Cloud Run has served at least five 5xx responses in a five-minute window. Check structured application errors and request logs in the Passage production dashboard.",
+      "content": "Cloud Run has sustained at least five 5xx responses per five-minute window for five minutes. Check structured application errors and request logs in the Passage production dashboard.",
       "mimeType": "text/markdown"
     },
     "userLabels": {"environment": "production", "service": "passage-md", "severity": "critical"},
     "conditions": [{
-      "displayName": "5xx rate exceeds 1 per minute for 5 minutes",
+      "displayName": "At least 5 5xx responses per 5 minutes for 5 minutes",
       "conditionThreshold": {
         "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND resource.label.location = \"us-central1\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\"",
         "aggregations": [{
@@ -38,7 +38,7 @@
           "crossSeriesReducer": "REDUCE_SUM"
         }],
         "comparison": "COMPARISON_GT",
-        "thresholdValue": 0.0166666667,
+        "thresholdValue": 0.016,
         "duration": "300s",
         "trigger": {"count": 1}
       }
