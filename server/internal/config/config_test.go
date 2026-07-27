@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestFromEnvDefaultsPort(t *testing.T) {
 	t.Setenv("PORT", "")
@@ -133,6 +136,39 @@ func TestFromEnvLoadsPasswordResetConfiguration(t *testing.T) {
 	}
 	if !cfg.PasswordReset.ResendConfigured() {
 		t.Fatal("ResendConfigured = false, want true")
+	}
+}
+
+func TestFromEnvLoadsRateLimitAndProductionProxyDefaults(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("PASSAGE_RATE_LIMIT_AUTH_REQUESTS", "7")
+	t.Setenv("PASSAGE_RATE_LIMIT_AUTH_WINDOW", "30s")
+
+	cfg := FromEnv()
+	if cfg.RateLimits.AuthMutation.Requests != 7 || cfg.RateLimits.AuthMutation.Window != 30*time.Second {
+		t.Fatalf("auth rate limit = %#v", cfg.RateLimits.AuthMutation)
+	}
+	if cfg.RateLimits.DocumentMutation.Requests != 120 || cfg.RateLimits.DocumentMutation.Window != time.Minute {
+		t.Fatalf("document mutation rate limit = %#v", cfg.RateLimits.DocumentMutation)
+	}
+	if cfg.Proxy.ForwardedHops != 2 || len(cfg.Proxy.TrustedCIDRs) == 0 {
+		t.Fatalf("proxy config = %#v", cfg.Proxy)
+	}
+}
+
+func TestValidateServeRejectsUnsafeProxyConfiguration(t *testing.T) {
+	cfg := Config{
+		DatabaseURL:   "postgres://example",
+		SessionSecret: "secret",
+		Proxy:         ProxyConfig{ForwardedHops: 2},
+	}
+	if err := cfg.ValidateServe(); err == nil || err.Error() != "PASSAGE_TRUSTED_PROXY_CIDRS is required when PASSAGE_FORWARDED_HOPS is greater than zero" {
+		t.Fatalf("ValidateServe error = %v", err)
+	}
+
+	cfg.Proxy.TrustedCIDRs = []string{"not-a-cidr"}
+	if err := cfg.ValidateServe(); err == nil || err.Error() != "PASSAGE_TRUSTED_PROXY_CIDRS contains an invalid CIDR" {
+		t.Fatalf("ValidateServe CIDR error = %v", err)
 	}
 }
 

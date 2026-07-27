@@ -100,6 +100,26 @@ To send real local email, set both `RESEND_API_KEY` and `RESEND_FROM` in `.env`.
 Stripe billing is off by default.
 Set `STRIPE_BILLING_ENABLED=true` only after `STRIPE_SECRET_KEY`, `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and `APP_BASE_URL` are configured.
 
+### Abuse rate limits
+
+The Go server applies fixed-window limits before handling auth mutations, authenticated document mutations, API-token requests, shared HTML, and raw Markdown.
+Defaults are 20 auth mutations, 120 document mutations, 30 API-token requests, 120 shared HTML requests, and 240 raw Markdown requests per minute.
+Authenticated limits are keyed by user ID.
+Public and auth limits are keyed by client IP.
+Each class can be changed with the matching `PASSAGE_RATE_LIMIT_<CLASS>_REQUESTS` and `PASSAGE_RATE_LIMIT_<CLASS>_WINDOW` environment values shown in `.env.example`.
+Set a request count to `0` to disable that class.
+
+Production trusts `X-Forwarded-For` only when the immediate peer is in the configured `PASSAGE_TRUSTED_PROXY_CIDRS`.
+It selects the client using `PASSAGE_FORWARDED_HOPS`, which defaults to the two proxy hops in the Cloud Run ingress path.
+Local development trusts no forwarding headers.
+Override both values together if the production proxy path changes.
+
+Counters live in process memory.
+They are safe for concurrent requests but apply per Cloud Run instance, reset when an instance restarts, and are not a strict global quota when Cloud Run scales out.
+This is suitable for basic launch protection.
+Use a distributed store if strict cross-instance enforcement becomes necessary.
+The existing Postgres-backed password-reset request and confirmation limits remain separate and unchanged.
+
 ### Production password reset email
 
 Passage sends password reset email through Resend from `passage.md <mail@passage.md>`.

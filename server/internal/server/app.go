@@ -22,10 +22,11 @@ import (
 type Options struct {
 	SessionSecret       string
 	CookieSecure        bool
-	TrustProxy          bool
 	AppBaseURL          string
 	PasswordResetSender auth.PasswordResetSender
 	Billing             config.BillingConfig
+	RateLimits          config.AbuseRateLimitConfig
+	Proxy               config.ProxyConfig
 }
 
 type App struct {
@@ -37,6 +38,8 @@ type App struct {
 	community      *community.Service
 	stripe         *billing.StripeClient
 	billingConfig  config.BillingConfig
+	rateLimiters   appRateLimiters
+	clientIP       httpx.ClientIPResolver
 }
 
 type databasePinger interface {
@@ -51,17 +54,20 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	if options.SessionSecret == "" {
 		options.SessionSecret = "dev-session-secret-change-me"
 	}
+	clientIP := httpx.NewClientIPResolver(options.Proxy.TrustedCIDRs, options.Proxy.ForwardedHops)
 	app := &App{
 		static:        static,
 		billingConfig: options.Billing,
 		stripe:        billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
+		rateLimiters:  newAppRateLimiters(options.RateLimits),
+		clientIP:      clientIP,
 	}
 	if db != nil {
 		app.databaseHealth = db
 		app.auth = auth.NewServiceWithOptions(auth.NewPGStore(db), options.SessionSecret, options.CookieSecure, auth.Options{
 			AppBaseURL:          options.AppBaseURL,
 			PasswordResetSender: options.PasswordResetSender,
-			TrustProxy:          options.TrustProxy,
+			ClientIP:            clientIP.Resolve,
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db))
@@ -80,11 +86,11 @@ func (a *App) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", a.health)
 	mux.HandleFunc("GET /api/v1/me", a.me)
-	mux.HandleFunc("POST /api/v1/auth/register", a.register)
-	mux.HandleFunc("POST /api/v1/auth/referral/validate", a.validateReferral)
-	mux.HandleFunc("POST /api/v1/auth/referral-signup", a.referralSignup)
-	mux.HandleFunc("POST /api/v1/auth/login", a.login)
-	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
+	mux.HandleFunc("POST /api/v1/auth/register", a.limitAuthMutation(a.register))
+	mux.HandleFunc("POST /api/v1/auth/referral/validate", a.limitAuthMutation(a.validateReferral))
+	mux.HandleFunc("POST /api/v1/auth/referral-signup", a.limitAuthMutation(a.referralSignup))
+	mux.HandleFunc("POST /api/v1/auth/login", a.limitAuthMutation(a.login))
+	mux.HandleFunc("POST /api/v1/auth/logout", a.limitAuthMutation(a.logout))
 	mux.HandleFunc("POST /api/v1/auth/password-reset/request", a.requestPasswordReset)
 	mux.HandleFunc("POST /api/v1/auth/password-reset/confirm", a.resetPassword)
 	mux.HandleFunc("GET /api/v1/admin/dashboard", a.adminDashboard)
@@ -107,7 +113,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/docs/{id}", a.archiveDoc)
 	mux.HandleFunc("POST /api/v1/docs/{id}/share", a.shareDoc)
 	mux.HandleFunc("DELETE /api/v1/docs/{id}/share", a.unshareDoc)
-	mux.HandleFunc("GET /d/{token}", a.publicDoc)
+	mux.HandleFunc("GET /d/{token}", a.limitPublicDocument(a.publicDoc))
 	mux.HandleFunc("GET /write", a.write)
 	mux.HandleFunc("GET /write/{$}", a.write)
 	mux.HandleFunc("GET /write/{publicId}", a.write)
@@ -531,7 +537,12 @@ func (a *App) listAPITokens(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuthService(w) {
 		return
 	}
-	a.auth.RequireSessionUser(a.auth.ListAPITokens)(w, r)
+	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.allowUserRequest(w, a.rateLimiters.apiToken, user.ID) {
+			return
+		}
+		a.auth.ListAPITokens(w, r, user)
+	})(w, r)
 }
 
 func (a *App) createAPIToken(w http.ResponseWriter, r *http.Request) {
@@ -539,6 +550,9 @@ func (a *App) createAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.allowUserRequest(w, a.rateLimiters.apiToken, user.ID) {
+			return
+		}
 		if !a.requirePro(w, r, user) {
 			return
 		}
@@ -550,7 +564,12 @@ func (a *App) revokeAPIToken(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuthService(w) {
 		return
 	}
-	a.auth.RequireSessionUser(a.auth.RevokeAPIToken)(w, r)
+	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.allowUserRequest(w, a.rateLimiters.apiToken, user.ID) {
+			return
+		}
+		a.auth.RevokeAPIToken(w, r, user)
+	})(w, r)
 }
 
 func (a *App) listDocs(w http.ResponseWriter, r *http.Request) {
@@ -564,7 +583,7 @@ func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+	a.requireUserForDocumentMutation(func(w http.ResponseWriter, r *http.Request, user auth.User) {
 		maxSavedDocs := documents.NoSavedDocumentLimit
 		if a.billing != nil {
 			account, err := a.billing.Account(r.Context(), user)
@@ -589,21 +608,21 @@ func (a *App) updateDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(a.docs.Update)(w, r)
+	a.requireUserForDocumentMutation(a.docs.Update)(w, r)
 }
 
 func (a *App) archiveDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(a.docs.Archive)(w, r)
+	a.requireUserForDocumentMutation(a.docs.Archive)(w, r)
 }
 
 func (a *App) shareDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+	a.requireUserForDocumentMutation(func(w http.ResponseWriter, r *http.Request, user auth.User) {
 		if !a.requirePro(w, r, user) {
 			return
 		}
@@ -615,7 +634,7 @@ func (a *App) unshareDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(a.docs.Unshare)(w, r)
+	a.requireUserForDocumentMutation(a.docs.Unshare)(w, r)
 }
 
 func (a *App) publicDoc(w http.ResponseWriter, r *http.Request) {
@@ -689,6 +708,15 @@ func (a *App) requireUserForDocs(next func(http.ResponseWriter, *http.Request, a
 		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 	}
+}
+
+func (a *App) requireUserForDocumentMutation(next func(http.ResponseWriter, *http.Request, auth.User)) http.HandlerFunc {
+	return a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.allowUserRequest(w, a.rateLimiters.documentMutation, user.ID) {
+			return
+		}
+		next(w, r, user)
+	})
 }
 
 func (a *App) requirePro(w http.ResponseWriter, r *http.Request, user auth.User) bool {
