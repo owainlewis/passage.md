@@ -208,6 +208,53 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 	}
 }
 
+func TestDeletionCheckLocksBillingState(t *testing.T) {
+	db := testDatabase(t)
+	ctx := context.Background()
+	stamp := time.Now().UnixNano()
+	email := fmt.Sprintf("account-data-lock-%d@example.com", stamp)
+	var userID string
+	err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'test-hash')
+		RETURNING id::text
+	`, email).Scan(&userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if _, err := db.Exec(ctx, `
+		INSERT INTO billing_accounts (user_id, stripe_customer_id, stripe_subscription_status)
+		VALUES ($1, $2, 'canceled')
+	`, userID, fmt.Sprintf("cus_lock_%d", stamp)); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	account, err := loadAccount(ctx, tx, email, "FOR UPDATE OF users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lockBillingState(ctx, tx, &account); err != nil {
+		t.Fatal(err)
+	}
+
+	updateCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	_, err = db.Exec(updateCtx, `
+		UPDATE billing_accounts
+		SET stripe_subscription_status = 'active'
+		WHERE user_id = $1
+	`, userID)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("concurrent billing update error = %v, want context deadline exceeded", err)
+	}
+}
+
 func testDatabase(t *testing.T) *database.Pool {
 	t.Helper()
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")

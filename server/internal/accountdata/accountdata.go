@@ -152,6 +152,9 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 	if err != nil {
 		return err
 	}
+	if err := lockBillingState(ctx, tx, &account); err != nil {
+		return err
+	}
 	hasStripeSubscription := account.StripeCustomerID != "" ||
 		account.StripeSubscriptionID != "" ||
 		account.StripeSubscriptionStatus != ""
@@ -191,6 +194,43 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 		return ErrAccountNotFound
 	}
 	return tx.Commit(ctx)
+}
+
+func lockBillingState(ctx context.Context, tx pgx.Tx, account *Account) error {
+	err := tx.QueryRow(ctx, `
+		SELECT manual_plan,
+		       max_saved_docs,
+		       COALESCE(stripe_customer_id, ''),
+		       COALESCE(stripe_subscription_id, ''),
+		       COALESCE(stripe_subscription_status, ''),
+		       COALESCE(stripe_price_id, ''),
+		       stripe_current_period_end,
+		       COALESCE(stripe_cancel_at_period_end, false)
+		FROM billing_accounts
+		WHERE user_id = $1
+		FOR UPDATE
+	`, account.ID).Scan(
+		&account.ManualPlan,
+		&account.MaxSavedDocs,
+		&account.StripeCustomerID,
+		&account.StripeSubscriptionID,
+		&account.StripeSubscriptionStatus,
+		&account.StripePriceID,
+		&account.StripeCurrentPeriodEnd,
+		&account.StripeCancelAtPeriodEnd,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		account.ManualPlan = nil
+		account.MaxSavedDocs = nil
+		account.StripeCustomerID = ""
+		account.StripeSubscriptionID = ""
+		account.StripeSubscriptionStatus = ""
+		account.StripePriceID = ""
+		account.StripeCurrentPeriodEnd = nil
+		account.StripeCancelAtPeriodEnd = false
+		return nil
+	}
+	return err
 }
 
 func loadAccount(ctx context.Context, tx pgx.Tx, email string, lock string) (Account, error) {
