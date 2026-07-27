@@ -59,6 +59,15 @@ gcloud sql instances describe passage-md-postgres \
   )'
 ```
 
+Cloud SQL v1beta4 and `gcloud sql instances describe` expose deletion protection as `settings.deletionProtectionEnabled`.
+
+Do not continue unless the output includes this exact enabled value:
+
+```yaml
+settings:
+  deletionProtectionEnabled: true
+```
+
 List recent backups and require a `SUCCESSFUL` automated backup:
 
 ```sh
