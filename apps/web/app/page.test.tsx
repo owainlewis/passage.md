@@ -6,6 +6,10 @@ import CLIPage from "./cli/page";
 import Login from "./login/page";
 import Signup from "./signup/page";
 import Landing from "./page";
+import Cancellation from "./cancellation/page";
+import Privacy from "./privacy/page";
+import Refunds from "./refunds/page";
+import Terms from "./terms/page";
 import Write from "./write/page";
 
 const defaultDocBody = "# Markdown for agents and humans\n\nWelcome to passage.";
@@ -137,6 +141,36 @@ describe("Landing", () => {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
     expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("$6.99")).toHaveTextContent("$6.99 USD / month");
+    expect(screen.getByText(/Renews monthly until cancelled/)).toBeInTheDocument();
+    expect(screen.getByText("Operated by Owain Lewis.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "owain@owainlewis.com" })).toHaveAttribute(
+      "href",
+      "mailto:owain@owainlewis.com"
+    );
+    for (const [name, href] of [
+      ["Terms", "/terms"],
+      ["Privacy", "/privacy"],
+      ["Refunds", "/refunds"],
+      ["Cancellation", "/cancellation"]
+    ]) {
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
+    }
+  });
+});
+
+describe("Policy pages", () => {
+  it.each([
+    ["Terms of Service", Terms],
+    ["Privacy Policy", Privacy],
+    ["Refund Policy", Refunds],
+    ["Cancellation Policy", Cancellation]
+  ])("publishes %s with support and policy navigation", (heading, Page) => {
+    render(<Page />);
+
+    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "owain@owainlewis.com" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("navigation", { name: "Policy links" })).toBeInTheDocument();
   });
 });
 
@@ -189,6 +223,10 @@ describe("Account", () => {
     expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
     expect(screen.getByText("Saved documents")).toBeInTheDocument();
     expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Data and policies" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Account policy links" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
+    expect(screen.getByRole("link", { name: "Cancellation" })).toHaveAttribute("href", "/cancellation");
     fireEvent.click(screen.getByRole("button", { name: "Upgrade" }));
 
     await waitFor(() =>
@@ -224,6 +262,41 @@ describe("Account", () => {
       "/api/v1/billing/portal",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("shows when a cancelled Stripe subscription's access ends", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({
+            authenticated: true,
+            user: { id: "user-1", email: "writer@example.com" },
+            account: {
+              ...proAccount,
+              subscription: {
+                ...proAccount.subscription,
+                currentPeriodEnd: "2026-08-27T12:00:00Z",
+                cancelAtPeriodEnd: true
+              }
+            }
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/api-tokens" && !init?.method) {
+        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Account />);
+
+    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByText("Access ends")).toBeInTheDocument();
+    expect(screen.queryByText("Renews")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage billing" })).toBeInTheDocument();
   });
 
   it("shows no-cost community access without Stripe actions", async () => {
