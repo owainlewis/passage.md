@@ -193,6 +193,15 @@ func (s *memoryStore) FindUserByEmail(ctx context.Context, email string) (auth.U
 	return user, nil
 }
 
+func (s *memoryStore) FindUserByID(ctx context.Context, userID string) (auth.User, error) {
+	for _, user := range s.users {
+		if user.ID == userID {
+			return user, nil
+		}
+	}
+	return auth.User{}, ErrUserNotFound
+}
+
 func (s *memoryStore) FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
 	return auth.User{}, ErrUserNotFound
 }
@@ -209,12 +218,20 @@ func (s *memoryStore) UpdateOverride(ctx context.Context, userID string, plan *P
 	return nil
 }
 
-func (s *memoryStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
-	return nil
+func (s *memoryStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
+	return customerID, nil
 }
 
 func (s *memoryStore) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
 	return nil
+}
+
+func (s *memoryStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	update, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	return s.UpdateSubscription(ctx, userID, update)
 }
 
 func (s *memoryStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {

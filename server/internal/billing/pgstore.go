@@ -3,8 +3,10 @@ package billing
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/database"
 )
@@ -24,6 +26,19 @@ func (s *PGStore) FindUserByEmail(ctx context.Context, email string) (auth.User,
 		FROM users
 		WHERE email = $1
 	`, email).Scan(&user.ID, &user.Email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return auth.User{}, ErrUserNotFound
+	}
+	return user, err
+}
+
+func (s *PGStore) FindUserByID(ctx context.Context, userID string) (auth.User, error) {
+	var user auth.User
+	err := s.db.QueryRow(ctx, `
+		SELECT id::text, email
+		FROM users
+		WHERE id::text = $1
+	`, userID).Scan(&user.ID, &user.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.User{}, ErrUserNotFound
 	}
@@ -170,43 +185,112 @@ func (s *PGStore) UpdateOverride(ctx context.Context, userID string, plan *Plan,
 	return err
 }
 
-func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
-	_, err := s.db.Exec(ctx, `
+func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
+	var storedCustomerID string
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO billing_accounts (user_id, stripe_customer_id)
 		VALUES ($1, $2)
 		ON CONFLICT (user_id) DO UPDATE
-		SET stripe_customer_id = EXCLUDED.stripe_customer_id,
-		    updated_at = now()
-	`, userID, customerID)
-	return err
+		SET stripe_customer_id = COALESCE(billing_accounts.stripe_customer_id, EXCLUDED.stripe_customer_id),
+		    updated_at = CASE
+		      WHEN billing_accounts.stripe_customer_id IS NULL THEN now()
+		      ELSE billing_accounts.updated_at
+		    END
+		RETURNING stripe_customer_id
+	`, userID, customerID).Scan(&storedCustomerID)
+	return storedCustomerID, err
 }
 
 func (s *PGStore) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
-	_, err := s.db.Exec(ctx, `
+	return updateSubscription(ctx, s.db, userID, update)
+}
+
+func (s *PGStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "passage:billing:"+userID); err != nil {
+		return err
+	}
+	update, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	var refreshedAt time.Time
+	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&refreshedAt); err != nil {
+		return err
+	}
+	update.EventCreated = &refreshedAt
+	if err := updateSubscription(ctx, tx, userID, update); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+type subscriptionExecutor interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func updateSubscription(ctx context.Context, executor subscriptionExecutor, userID string, update SubscriptionUpdate) error {
+	_, err := executor.Exec(ctx, `
 		INSERT INTO billing_accounts (
 			user_id,
 			stripe_customer_id,
 			stripe_subscription_id,
+			stripe_subscription_created,
 			stripe_subscription_status,
 			stripe_price_id,
 			stripe_current_period_end,
 			stripe_cancel_at_period_end,
 			stripe_event_created
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (user_id) DO UPDATE
 		SET stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, billing_accounts.stripe_customer_id),
 		    stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+		    stripe_subscription_created = CASE
+		      WHEN billing_accounts.stripe_subscription_id = EXCLUDED.stripe_subscription_id
+		        THEN COALESCE(EXCLUDED.stripe_subscription_created, billing_accounts.stripe_subscription_created)
+		      ELSE EXCLUDED.stripe_subscription_created
+		    END,
 		    stripe_subscription_status = EXCLUDED.stripe_subscription_status,
 		    stripe_price_id = COALESCE(EXCLUDED.stripe_price_id, billing_accounts.stripe_price_id),
 		    stripe_current_period_end = COALESCE(EXCLUDED.stripe_current_period_end, billing_accounts.stripe_current_period_end),
 		    stripe_cancel_at_period_end = COALESCE(EXCLUDED.stripe_cancel_at_period_end, billing_accounts.stripe_cancel_at_period_end),
 		    stripe_event_created = EXCLUDED.stripe_event_created,
 		    updated_at = now()
-		WHERE billing_accounts.stripe_event_created IS NULL
-		   OR EXCLUDED.stripe_event_created IS NULL
-		   OR EXCLUDED.stripe_event_created >= billing_accounts.stripe_event_created
-	`, userID, emptyToNil(update.CustomerID), update.SubscriptionID, update.Status, emptyToNil(update.PriceID), update.CurrentPeriodEnd, update.CancelAtPeriodEnd, update.EventCreated)
+		WHERE (
+		    billing_accounts.stripe_event_created IS NULL
+		    OR EXCLUDED.stripe_event_created IS NULL
+		    OR EXCLUDED.stripe_event_created >= billing_accounts.stripe_event_created
+		  )
+		  AND (
+		    billing_accounts.stripe_customer_id IS NULL
+		    OR billing_accounts.stripe_customer_id = EXCLUDED.stripe_customer_id
+		  )
+		  AND (
+		    billing_accounts.stripe_subscription_id IS NULL
+		    OR billing_accounts.stripe_subscription_id = EXCLUDED.stripe_subscription_id
+		    OR (
+		      COALESCE(EXCLUDED.stripe_subscription_status IN ('active', 'trialing'), false)
+		      AND NOT COALESCE(billing_accounts.stripe_subscription_status IN ('active', 'trialing'), false)
+		    )
+		    OR (
+		      COALESCE(EXCLUDED.stripe_subscription_status IN ('active', 'trialing'), false)
+		        = COALESCE(billing_accounts.stripe_subscription_status IN ('active', 'trialing'), false)
+		      AND (
+		        billing_accounts.stripe_subscription_created IS NULL
+		        OR (
+		          EXCLUDED.stripe_subscription_created IS NOT NULL
+		          AND EXCLUDED.stripe_subscription_created > billing_accounts.stripe_subscription_created
+		        )
+		      )
+		    )
+		  )
+	`, userID, emptyToNil(update.CustomerID), update.SubscriptionID, update.SubscriptionCreatedAt, update.Status, emptyToNil(update.PriceID), update.CurrentPeriodEnd, update.CancelAtPeriodEnd, update.EventCreated)
 	return err
 }
 

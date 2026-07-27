@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -378,6 +379,165 @@ func TestBillingPGStorePreservesSubscriptionMetadataOnPartialUpdate(t *testing.T
 	}
 	if state.StripePriceID != "price_test" || state.StripeCurrentPeriodEnd == nil || !state.StripeCurrentPeriodEnd.Equal(periodEnd) || !state.StripeCancelAtPeriodEnd {
 		t.Fatalf("subscription metadata was not preserved: %#v", state)
+	}
+}
+
+func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := "billing-order-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.com"
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, $2)
+		RETURNING id::text
+	`, email, "hash").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+
+	store := billing.NewPGStore(db)
+	if _, err := store.FindUserByID(ctx, "not-a-uuid"); !errors.Is(err, billing.ErrUserNotFound) {
+		t.Fatalf("malformed user lookup error = %v, want user not found", err)
+	}
+	customerSuffix := strings.ReplaceAll(userID, "-", "")
+	type customerResult struct {
+		id  string
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan customerResult, 2)
+	for _, candidate := range []string{"cus_order_a" + customerSuffix, "cus_order_b" + customerSuffix} {
+		go func() {
+			<-start
+			id, err := store.SetStripeCustomer(ctx, userID, candidate)
+			results <- customerResult{id: id, err: err}
+		}()
+	}
+	close(start)
+	first := <-results
+	second := <-results
+	if first.err != nil {
+		t.Fatal(first.err)
+	}
+	if second.err != nil {
+		t.Fatal(second.err)
+	}
+	if first.id != second.id {
+		t.Fatalf("concurrent customer links returned %q and %q", first.id, second.id)
+	}
+	customerID := first.id
+	subscriptionID := "sub_order_" + strings.ReplaceAll(userID, "-", "")
+	subscriptionCreated := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	newer := time.Now().UTC()
+	older := newer.Add(-time.Nanosecond)
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:            customerID,
+		SubscriptionID:        subscriptionID,
+		SubscriptionCreatedAt: &subscriptionCreated,
+		Status:                "active",
+		EventCreated:          &newer,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:     customerID,
+		SubscriptionID: subscriptionID,
+		Status:         "canceled",
+		EventCreated:   &older,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	oldSubscriptionCreated := subscriptionCreated.Add(-time.Hour)
+	latest := newer.Add(time.Nanosecond)
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:            customerID,
+		SubscriptionID:        "sub_old_" + strings.ReplaceAll(userID, "-", ""),
+		SubscriptionCreatedAt: &oldSubscriptionCreated,
+		Status:                "canceled",
+		EventCreated:          &latest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if storedCustomerID, err := store.SetStripeCustomer(ctx, userID, "cus_different"); err != nil {
+		t.Fatal(err)
+	} else if storedCustomerID != customerID {
+		t.Fatalf("stored customer = %q, want %q", storedCustomerID, customerID)
+	}
+
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- store.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+			close(firstEntered)
+			<-releaseFirst
+			return billing.SubscriptionUpdate{
+				CustomerID:            customerID,
+				SubscriptionID:        subscriptionID,
+				SubscriptionCreatedAt: &subscriptionCreated,
+				Status:                "active",
+			}, nil
+		})
+	}()
+	<-firstEntered
+
+	secondStarted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	secondDone := make(chan error, 1)
+	secondStore := billing.NewPGStore(db)
+	go func() {
+		close(secondStarted)
+		secondDone <- secondStore.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+			close(secondEntered)
+			return billing.SubscriptionUpdate{
+				CustomerID:            customerID,
+				SubscriptionID:        subscriptionID,
+				SubscriptionCreatedAt: &subscriptionCreated,
+				Status:                "active",
+			}, nil
+		})
+	}()
+	<-secondStarted
+	select {
+	case <-secondEntered:
+		t.Fatal("second subscription refresh entered before the first released its lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-secondEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second subscription refresh did not acquire the lock")
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := store.State(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StripeCustomerID != customerID ||
+		state.StripeSubscriptionID != subscriptionID ||
+		state.StripeSubscriptionStatus != "active" {
+		t.Fatalf("stale or conflicting update changed state: %#v", state)
 	}
 }
 

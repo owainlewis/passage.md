@@ -473,7 +473,8 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe customer could not be created"})
 				return
 			}
-			if err := a.billing.SetStripeCustomer(r.Context(), user.ID, customerID); err != nil {
+			customerID, err = a.billing.SetStripeCustomer(r.Context(), user.ID, customerID)
+			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "billing customer could not be saved"})
 				return
 			}

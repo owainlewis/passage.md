@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
 )
 
@@ -58,80 +60,117 @@ func (a *App) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) applyStripeEvent(r *http.Request, event stripeEvent) error {
-	eventCreated := time.Unix(event.Created, 0).UTC()
 	switch event.Type {
 	case "checkout.session.completed":
 		var session stripeCheckoutSession
 		if err := json.Unmarshal(event.Data.Object, &session); err != nil {
 			return err
 		}
-		userID := session.ClientReferenceID
-		if userID == "" {
-			userID = session.Metadata["passage_user_id"]
-		}
-		if userID == "" || session.Customer == "" {
+		if session.PaymentStatus != "paid" ||
+			!validStripeIdentifier(session.Customer, "cus_") ||
+			!validStripeIdentifier(session.Subscription, "sub_") {
 			return nil
 		}
-		if err := a.billing.SetStripeCustomer(r.Context(), userID, session.Customer); err != nil {
-			return err
-		}
+		return a.applyCurrentSubscription(r, session.Customer, session.Subscription)
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var subscription stripeSubscription
 		if err := json.Unmarshal(event.Data.Object, &subscription); err != nil {
 			return err
 		}
-		return a.applySubscriptionEvent(r, subscription, eventCreated)
+		if !validStripeIdentifier(subscription.Customer, "cus_") ||
+			!validStripeIdentifier(subscription.ID, "sub_") {
+			return nil
+		}
+		return a.applyCurrentSubscription(r, subscription.Customer, subscription.ID)
 	case "invoice.payment_failed":
 		var invoice stripeInvoice
 		if err := json.Unmarshal(event.Data.Object, &invoice); err != nil {
 			return err
 		}
-		if invoice.Customer == "" || invoice.Subscription == "" {
+		if !validStripeIdentifier(invoice.Customer, "cus_") ||
+			!validStripeIdentifier(invoice.Subscription, "sub_") {
 			return nil
 		}
-		user, err := a.billing.UserByStripeCustomer(r.Context(), invoice.Customer)
-		if errors.Is(err, billing.ErrUserNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return a.billing.UpdateSubscription(r.Context(), user.ID, billing.SubscriptionUpdate{
-			CustomerID:     invoice.Customer,
-			SubscriptionID: invoice.Subscription,
-			Status:         "past_due",
-			EventCreated:   &eventCreated,
-		})
+		return a.applyCurrentSubscription(r, invoice.Customer, invoice.Subscription)
 	}
 	return nil
 }
 
-func (a *App) applySubscriptionEvent(r *http.Request, subscription stripeSubscription, eventCreated time.Time) error {
-	if subscription.Customer == "" || subscription.ID == "" {
-		return nil
+func (a *App) applyCurrentSubscription(r *http.Request, customerID string, subscriptionID string) error {
+	user, err := a.billing.UserByStripeCustomer(r.Context(), customerID)
+	if errors.Is(err, billing.ErrUserNotFound) {
+		current, retrieveErr := a.stripe.RetrieveSubscription(r.Context(), subscriptionID)
+		if retrieveErr != nil {
+			return retrieveErr
+		}
+		if current.ID != subscriptionID || current.CustomerID != customerID {
+			return nil
+		}
+		user, err = a.resolveStripeUser(r, current.CustomerID, current.Metadata["passage_user_id"])
 	}
-	user, err := a.billing.UserByStripeCustomer(r.Context(), subscription.Customer)
 	if errors.Is(err, billing.ErrUserNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	var periodEnd *time.Time
-	if currentPeriodEnd := subscription.CurrentPeriodEndValue(); currentPeriodEnd > 0 {
-		value := time.Unix(currentPeriodEnd, 0).UTC()
-		periodEnd = &value
-	}
-	cancelAtPeriodEnd := subscription.ScheduledForCancellation()
-	return a.billing.UpdateSubscription(r.Context(), user.ID, billing.SubscriptionUpdate{
-		CustomerID:        subscription.Customer,
-		SubscriptionID:    subscription.ID,
-		Status:            subscription.Status,
-		PriceID:           subscription.PriceID(),
-		CurrentPeriodEnd:  periodEnd,
-		CancelAtPeriodEnd: &cancelAtPeriodEnd,
-		EventCreated:      &eventCreated,
+
+	err = a.billing.RefreshSubscription(r.Context(), user.ID, func(ctx context.Context) (billing.SubscriptionUpdate, error) {
+		current, err := a.stripe.RetrieveSubscription(ctx, subscriptionID)
+		if err != nil {
+			return billing.SubscriptionUpdate{}, err
+		}
+		if current.ID != subscriptionID ||
+			current.CustomerID != customerID ||
+			(current.Metadata["passage_user_id"] != "" && current.Metadata["passage_user_id"] != user.ID) {
+			return billing.SubscriptionUpdate{}, billing.ErrUserNotFound
+		}
+		return billing.SubscriptionUpdate{
+			CustomerID:            current.CustomerID,
+			SubscriptionID:        current.ID,
+			SubscriptionCreatedAt: current.CreatedAt,
+			Status:                current.Status,
+			PriceID:               current.PriceID,
+			CurrentPeriodEnd:      current.CurrentPeriodEnd,
+			CancelAtPeriodEnd:     &current.CancelAtPeriodEnd,
+			EventCreated:          &current.RetrievedAt,
+		}, nil
 	})
+	if errors.Is(err, billing.ErrUserNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (a *App) resolveStripeUser(r *http.Request, customerID string, metadataUserID string) (auth.User, error) {
+	user, err := a.billing.UserByStripeCustomer(r.Context(), customerID)
+	if err == nil {
+		if metadataUserID != "" && metadataUserID != user.ID {
+			return auth.User{}, billing.ErrUserNotFound
+		}
+		return user, nil
+	}
+	if !errors.Is(err, billing.ErrUserNotFound) {
+		return auth.User{}, err
+	}
+	if metadataUserID == "" {
+		return auth.User{}, billing.ErrUserNotFound
+	}
+	return a.billing.UserByID(r.Context(), metadataUserID)
+}
+
+func validStripeIdentifier(value string, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
+		return false
+	}
+	for _, char := range value[len(prefix):] {
+		if (char < 'a' || char > 'z') &&
+			(char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func verifyStripeSignature(payload []byte, header string, secret string, now time.Time) error {
@@ -191,45 +230,8 @@ type stripeCheckoutSession struct {
 }
 
 type stripeSubscription struct {
-	ID                string `json:"id"`
-	Customer          string `json:"customer"`
-	Status            string `json:"status"`
-	CurrentPeriodEnd  int64  `json:"current_period_end"`
-	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
-	CancelAt          int64  `json:"cancel_at"`
-	EndedAt           int64  `json:"ended_at"`
-	Items             struct {
-		Data []struct {
-			CurrentPeriodEnd int64 `json:"current_period_end"`
-			Price            struct {
-				ID string `json:"id"`
-			} `json:"price"`
-		} `json:"data"`
-	} `json:"items"`
-}
-
-func (s stripeSubscription) PriceID() string {
-	if len(s.Items.Data) == 0 {
-		return ""
-	}
-	return s.Items.Data[0].Price.ID
-}
-
-func (s stripeSubscription) CurrentPeriodEndValue() int64 {
-	if s.CurrentPeriodEnd > 0 {
-		return s.CurrentPeriodEnd
-	}
-	if len(s.Items.Data) > 0 && s.Items.Data[0].CurrentPeriodEnd > 0 {
-		return s.Items.Data[0].CurrentPeriodEnd
-	}
-	if s.CancelAt > 0 {
-		return s.CancelAt
-	}
-	return 0
-}
-
-func (s stripeSubscription) ScheduledForCancellation() bool {
-	return s.CancelAtPeriodEnd || (s.CancelAt > 0 && s.EndedAt == 0 && s.Status != "canceled")
+	ID       string `json:"id"`
+	Customer string `json:"customer"`
 }
 
 type stripeInvoice struct {

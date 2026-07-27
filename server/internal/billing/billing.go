@@ -67,23 +67,26 @@ type State struct {
 }
 
 type SubscriptionUpdate struct {
-	CustomerID        string
-	SubscriptionID    string
-	Status            string
-	PriceID           string
-	CurrentPeriodEnd  *time.Time
-	CancelAtPeriodEnd *bool
-	EventCreated      *time.Time
+	CustomerID            string
+	SubscriptionID        string
+	SubscriptionCreatedAt *time.Time
+	Status                string
+	PriceID               string
+	CurrentPeriodEnd      *time.Time
+	CancelAtPeriodEnd     *bool
+	EventCreated          *time.Time
 }
 
 type Store interface {
 	FindUserByEmail(ctx context.Context, email string) (auth.User, error)
+	FindUserByID(ctx context.Context, userID string) (auth.User, error)
 	FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error)
 	ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 	State(ctx context.Context, userID string) (State, error)
 	UpdateOverride(ctx context.Context, userID string, plan *Plan, maxSavedDocs *int) error
-	SetStripeCustomer(ctx context.Context, userID string, customerID string) error
+	SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error)
 	UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error
+	RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error
 	CountSavedDocs(ctx context.Context, userID string) (int, error)
 }
 
@@ -231,7 +234,7 @@ func (s *Service) IsAdmin(email string) bool {
 	return ok
 }
 
-func (s *Service) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
+func (s *Service) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
 	return s.store.SetStripeCustomer(ctx, userID, customerID)
 }
 
@@ -239,8 +242,16 @@ func (s *Service) UserByStripeCustomer(ctx context.Context, customerID string) (
 	return s.store.FindUserByStripeCustomer(ctx, customerID)
 }
 
+func (s *Service) UserByID(ctx context.Context, userID string) (auth.User, error) {
+	return s.store.FindUserByID(ctx, userID)
+}
+
 func (s *Service) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
 	return s.store.UpdateSubscription(ctx, userID, update)
+}
+
+func (s *Service) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	return s.store.RefreshSubscription(ctx, userID, load)
 }
 
 func (s *Service) accountFromState(email string, state State, savedDocs int) Account {

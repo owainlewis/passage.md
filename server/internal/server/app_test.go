@@ -844,13 +844,24 @@ func TestStripeWebhookUpdatesSubscriptionEntitlement(t *testing.T) {
 	authStore := newRouteAuthStore()
 	billingStore := newRouteBillingStore()
 	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
+	now := time.Now().UTC()
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":` + strconv.FormatInt(now.Add(time.Hour).Unix(), 10) + `,
+			"items":{"data":[{"price":{"id":"price_1TpAeQRiiEo9jrWNlLdI9HwB"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
 	app := &App{
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(authStore, "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
 		billingConfig: routeStripeBillingConfig(),
 	}
-	now := time.Now().UTC()
 	body := []byte(`{
 		"id":"evt_test",
 		"type":"customer.subscription.updated",
@@ -884,6 +895,328 @@ func TestStripeWebhookUpdatesSubscriptionEntitlement(t *testing.T) {
 	}
 }
 
+func TestStripeWebhookOrderGrantsPro(t *testing.T) {
+	now := time.Now().UTC()
+	periodEnd := now.Add(30 * 24 * time.Hour).Unix()
+	subscriptionBody := []byte(`{
+		"id":"evt_subscription_first",
+		"type":"customer.subscription.created",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":` + strconv.FormatInt(periodEnd, 10) + `,
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}}
+	}`)
+	checkoutBody := []byte(`{
+		"id":"evt_checkout_second",
+		"type":"checkout.session.completed",
+		"created":` + strconv.FormatInt(now.Add(time.Second).Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"subscription":"sub_test",
+			"client_reference_id":"user-2",
+			"payment_status":"paid",
+			"metadata":{"passage_user_id":"user-2"}
+		}}
+	}`)
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/subscriptions/sub_test" {
+			t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":` + strconv.FormatInt(periodEnd, 10) + `,
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
+
+	tests := []struct {
+		name   string
+		events [][]byte
+	}{
+		{name: "subscription then Checkout", events: [][]byte{subscriptionBody, checkoutBody}},
+		{name: "Checkout then subscription", events: [][]byte{checkoutBody, subscriptionBody}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			billingStore := newRouteBillingStore()
+			app := &App{
+				static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+				auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+				billing:       billing.NewService(billingStore, routeBillingConfig()),
+				stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+				billingConfig: routeStripeBillingConfig(),
+			}
+			for _, body := range test.events {
+				rec := postStripeWebhook(t, app, body, now)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+				}
+			}
+			account, err := app.billing.Account(context.Background(), auth.User{ID: "user-1", Email: "one@example.com"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if account.Plan != billing.PlanPro || account.Source != billing.SourceStripe {
+				t.Fatalf("account = %#v", account)
+			}
+			otherAccount, err := app.billing.Account(context.Background(), auth.User{ID: "user-2", Email: "two@example.com"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if otherAccount.Plan != billing.PlanFree {
+				t.Fatalf("client-controlled Checkout identity granted access: %#v", otherAccount)
+			}
+		})
+	}
+}
+
+func TestDelayedCheckoutSnapshotRejectsIntermediateSubscriptionEvents(t *testing.T) {
+	now := time.Now().UTC()
+	checkoutCreated := now.Add(-10 * time.Minute)
+	retrievedAt := now.Truncate(time.Second)
+	intermediateCreated := retrievedAt
+	tests := []struct {
+		name               string
+		snapshotStatus     string
+		refreshedStatus    string
+		intermediateType   string
+		intermediateStatus string
+		wantStatus         string
+		wantPlan           billing.Plan
+	}{
+		{
+			name:               "updated event cannot reactivate canceled snapshot",
+			snapshotStatus:     "canceled",
+			refreshedStatus:    "canceled",
+			intermediateType:   "customer.subscription.updated",
+			intermediateStatus: "active",
+			wantStatus:         "canceled",
+			wantPlan:           billing.PlanFree,
+		},
+		{
+			name:               "deleted event cannot cancel reactivated snapshot",
+			snapshotStatus:     "active",
+			refreshedStatus:    "active",
+			intermediateType:   "customer.subscription.deleted",
+			intermediateStatus: "canceled",
+			wantStatus:         "active",
+			wantPlan:           billing.PlanPro,
+		},
+		{
+			name:               "genuinely later deleted state is refreshed",
+			snapshotStatus:     "active",
+			refreshedStatus:    "canceled",
+			intermediateType:   "customer.subscription.deleted",
+			intermediateStatus: "canceled",
+			wantStatus:         "canceled",
+			wantPlan:           billing.PlanFree,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			retrievals := 0
+			stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				retrievals++
+				status := test.snapshotStatus
+				if retrievals > 1 {
+					status = test.refreshedStatus
+				}
+				w.Header().Set("Date", retrievedAt.Format(http.TimeFormat))
+				_, _ = w.Write([]byte(`{
+					"id":"sub_test",
+					"customer":"cus_test",
+					"status":` + strconv.Quote(status) + `,
+					"metadata":{"passage_user_id":"user-1"},
+					"items":{"data":[{"price":{"id":"price_test"}}]}
+				}`))
+			}))
+			defer stripeServer.Close()
+
+			billingStore := newRouteBillingStore()
+			app := &App{
+				static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+				auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+				billing:       billing.NewService(billingStore, routeBillingConfig()),
+				stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+				billingConfig: routeStripeBillingConfig(),
+			}
+			checkoutBody := []byte(`{
+				"id":"evt_delayed_checkout",
+				"type":"checkout.session.completed",
+				"created":` + strconv.FormatInt(checkoutCreated.Unix(), 10) + `,
+				"data":{"object":{
+					"customer":"cus_test",
+					"subscription":"sub_test",
+					"payment_status":"paid"
+				}}
+			}`)
+			rec := postStripeWebhook(t, app, checkoutBody, now)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("Checkout status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+
+			intermediateBody := []byte(`{
+				"id":"evt_intermediate",
+				"type":` + strconv.Quote(test.intermediateType) + `,
+				"created":` + strconv.FormatInt(intermediateCreated.Unix(), 10) + `,
+				"data":{"object":{
+					"id":"sub_test",
+					"customer":"cus_test",
+					"status":` + strconv.Quote(test.intermediateStatus) + `,
+					"metadata":{"passage_user_id":"user-1"},
+					"items":{"data":[{"price":{"id":"price_test"}}]}
+				}}
+			}`)
+			rec = postStripeWebhook(t, app, intermediateBody, now)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("subscription status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+
+			account, err := app.billing.Account(context.Background(), auth.User{ID: "user-1", Email: "one@example.com"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if account.Plan != test.wantPlan || account.Subscription.Status != test.wantStatus {
+				t.Fatalf("account = %#v, want plan %q and refreshed status %q", account, test.wantPlan, test.wantStatus)
+			}
+		})
+	}
+}
+
+func TestStripeWebhookReplayAndStaleEventsAreIdempotent(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+	now := time.Now().UTC()
+	activeBody := []byte(`{
+		"id":"evt_active",
+		"type":"customer.subscription.updated",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}}
+	}`)
+	staleBody := []byte(`{
+		"id":"evt_stale",
+		"type":"customer.subscription.deleted",
+		"created":` + strconv.FormatInt(now.Add(-time.Minute).Unix(), 10) + `,
+		"data":{"object":{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"canceled",
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}}
+	}`)
+
+	for _, body := range [][]byte{activeBody, activeBody, staleBody} {
+		rec := postStripeWebhook(t, app, body, now)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	}
+	account, err := app.billing.Account(context.Background(), auth.User{ID: "user-1", Email: "one@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Plan != billing.PlanPro || account.Subscription.Status != "active" {
+		t.Fatalf("account after replay and stale event = %#v", account)
+	}
+}
+
+func TestStripeWebhookRejectsUnknownAndMalformedIdentifiers(t *testing.T) {
+	now := time.Now().UTC()
+	tests := []struct {
+		name             string
+		customerID       string
+		subscriptionID   string
+		metadataUserID   string
+		existingCustomer string
+	}{
+		{name: "malformed customer", customerID: "cus_bad/value", subscriptionID: "sub_test", metadataUserID: "user-1"},
+		{name: "malformed subscription", customerID: "cus_test", subscriptionID: "not-a-subscription", metadataUserID: "user-1"},
+		{name: "unknown user", customerID: "cus_test", subscriptionID: "sub_test", metadataUserID: "missing-user"},
+		{name: "missing metadata", customerID: "cus_test", subscriptionID: "sub_test"},
+		{name: "metadata conflicts with customer", customerID: "cus_test", subscriptionID: "sub_test", metadataUserID: "user-2", existingCustomer: "cus_test"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			billingStore := newRouteBillingStore()
+			if test.existingCustomer != "" {
+				billingStore.states["user-1"] = billing.State{StripeCustomerID: test.existingCustomer}
+			}
+			stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{
+					"id":` + strconv.Quote(test.subscriptionID) + `,
+					"customer":` + strconv.Quote(test.customerID) + `,
+					"status":"active",
+					"metadata":{"passage_user_id":` + strconv.Quote(test.metadataUserID) + `}
+				}`))
+			}))
+			defer stripeServer.Close()
+			app := &App{
+				static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+				auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+				billing:       billing.NewService(billingStore, routeBillingConfig()),
+				stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+				billingConfig: routeStripeBillingConfig(),
+			}
+			body := []byte(`{
+				"id":"evt_invalid",
+				"type":"customer.subscription.created",
+				"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+				"data":{"object":{
+					"id":` + strconv.Quote(test.subscriptionID) + `,
+					"customer":` + strconv.Quote(test.customerID) + `,
+					"status":"active",
+					"metadata":{"passage_user_id":` + strconv.Quote(test.metadataUserID) + `}
+				}}
+			}`)
+			rec := postStripeWebhook(t, app, body, now)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			for _, user := range billingStore.users {
+				account, err := app.billing.Account(context.Background(), user)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if account.Plan != billing.PlanFree {
+					t.Fatalf("unsafe entitlement for %s: %#v", user.ID, account)
+				}
+			}
+		})
+	}
+}
+
 func TestStripeCheckoutWebhookDoesNotOverwriteSubscriptionState(t *testing.T) {
 	billingStore := newRouteBillingStore()
 	periodEnd := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Second)
@@ -894,10 +1227,22 @@ func TestStripeCheckoutWebhookDoesNotOverwriteSubscriptionState(t *testing.T) {
 		StripePriceID:            "price_test",
 		StripeCurrentPeriodEnd:   &periodEnd,
 	}
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":` + strconv.FormatInt(periodEnd.Unix(), 10) + `,
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
 	app := &App{
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
 		billingConfig: routeStripeBillingConfig(),
 	}
 	now := time.Now().UTC()
@@ -938,10 +1283,23 @@ func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
 		StripeCurrentPeriodEnd:   &periodEnd,
 		StripeCancelAtPeriodEnd:  true,
 	}
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"past_due",
+			"current_period_end":` + strconv.FormatInt(periodEnd.Unix(), 10) + `,
+			"cancel_at_period_end":true,
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
 	app := &App{
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
 		billingConfig: routeStripeBillingConfig(),
 	}
 	now := time.Now().UTC()
@@ -972,17 +1330,158 @@ func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
 	}
 }
 
-func TestStripeWebhookReadsCurrentStripeSubscriptionShape(t *testing.T) {
+func TestStaleInvoicePaymentFailedRefreshesCurrentSubscription(t *testing.T) {
+	now := time.Now().UTC()
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
 	billingStore := newRouteBillingStore()
-	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
 	app := &App{
 		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
 		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
 		billingConfig: routeStripeBillingConfig(),
 	}
+	checkoutBody := []byte(`{
+		"id":"evt_checkout",
+		"type":"checkout.session.completed",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"subscription":"sub_test",
+			"payment_status":"paid"
+		}}
+	}`)
+	invoiceBody := []byte(`{
+		"id":"evt_stale_invoice",
+		"type":"invoice.payment_failed",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"subscription":"sub_test"
+		}}
+	}`)
+	for _, body := range [][]byte{checkoutBody, invoiceBody} {
+		rec := postStripeWebhook(t, app, body, now)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	}
+	account, err := app.billing.Account(context.Background(), auth.User{ID: "user-1", Email: "one@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Plan != billing.PlanPro || account.Subscription.Status != "active" {
+		t.Fatalf("account after stale invoice = %#v", account)
+	}
+}
+
+func TestObsoleteSubscriptionReplayCannotReplaceActiveSubscription(t *testing.T) {
+	now := time.Now().UTC()
+	newCreated := now.Add(-time.Hour).Unix()
+	oldCreated := now.Add(-2 * time.Hour).Unix()
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/subscriptions/sub_new":
+			_, _ = w.Write([]byte(`{
+				"id":"sub_new",
+				"customer":"cus_test",
+				"created":` + strconv.FormatInt(newCreated, 10) + `,
+				"status":"active",
+				"metadata":{"passage_user_id":"user-1"},
+				"items":{"data":[{"price":{"id":"price_test"}}]}
+			}`))
+		case "/v1/subscriptions/sub_old":
+			_, _ = w.Write([]byte(`{
+				"id":"sub_old",
+				"customer":"cus_test",
+				"created":` + strconv.FormatInt(oldCreated, 10) + `,
+				"status":"canceled",
+				"metadata":{"passage_user_id":"user-1"},
+				"items":{"data":[{"price":{"id":"price_test"}}]}
+			}`))
+		default:
+			t.Fatalf("unexpected Stripe path %s", r.URL.Path)
+		}
+	}))
+	defer stripeServer.Close()
+	billingStore := newRouteBillingStore()
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+	checkoutBody := []byte(`{
+		"id":"evt_checkout_new",
+		"type":"checkout.session.completed",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"subscription":"sub_new",
+			"payment_status":"paid"
+		}}
+	}`)
+	oldReplayBody := []byte(`{
+		"id":"evt_old_replay",
+		"type":"customer.subscription.deleted",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"id":"sub_old",
+			"customer":"cus_test"
+		}}
+	}`)
+	for _, body := range [][]byte{checkoutBody, oldReplayBody} {
+		rec := postStripeWebhook(t, app, body, now)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	}
+	account, err := app.billing.Account(context.Background(), auth.User{ID: "user-1", Email: "one@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Plan != billing.PlanPro || account.Subscription.StripeSubscriptionID != "sub_new" {
+		t.Fatalf("account after obsolete replay = %#v", account)
+	}
+}
+
+func TestStripeWebhookRetrievesCurrentStripeSubscriptionShape(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
 	now := time.Now().UTC()
 	periodEnd := now.Add(30 * 24 * time.Hour).Unix()
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"active",
+			"current_period_end":null,
+			"cancel_at_period_end":false,
+			"cancel_at":` + strconv.FormatInt(periodEnd, 10) + `,
+			"items":{"data":[{
+				"current_period_end":` + strconv.FormatInt(periodEnd, 10) + `,
+				"price":{"id":"price_1TpAeQRiiEo9jrWNlLdI9HwB"}
+			}]}
+		}`))
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
 	body := []byte(`{
 		"id":"evt_current_shape",
 		"type":"customer.subscription.updated",
@@ -1159,6 +1658,15 @@ func signedStripePayload(payload []byte, secret string, at time.Time) string {
 	return "t=" + timestamp + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
+func postStripeWebhook(t *testing.T, app *App, body []byte, signedAt time.Time) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", signedStripePayload(body, "whsec_test", signedAt))
+	app.Routes().ServeHTTP(rec, req)
+	return rec
+}
+
 type routeDocumentStore struct {
 	ownerID string
 	body    string
@@ -1226,10 +1734,12 @@ func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (docum
 }
 
 type routeBillingStore struct {
-	users      map[string]auth.User
-	states     map[string]billing.State
-	savedDocs  map[string]int
-	adminUsers []billing.AdminUserRecord
+	users               map[string]auth.User
+	states              map[string]billing.State
+	eventCreated        map[string]time.Time
+	subscriptionCreated map[string]time.Time
+	savedDocs           map[string]int
+	adminUsers          []billing.AdminUserRecord
 }
 
 func newRouteBillingStore() *routeBillingStore {
@@ -1238,8 +1748,10 @@ func newRouteBillingStore() *routeBillingStore {
 			"one@example.com": {ID: "user-1", Email: "one@example.com"},
 			"two@example.com": {ID: "user-2", Email: "two@example.com"},
 		},
-		states:    map[string]billing.State{},
-		savedDocs: map[string]int{},
+		states:              map[string]billing.State{},
+		eventCreated:        map[string]time.Time{},
+		subscriptionCreated: map[string]time.Time{},
+		savedDocs:           map[string]int{},
 	}
 }
 
@@ -1267,6 +1779,15 @@ func (s *routeBillingStore) FindUserByEmail(ctx context.Context, email string) (
 		return auth.User{}, billing.ErrUserNotFound
 	}
 	return user, nil
+}
+
+func (s *routeBillingStore) FindUserByID(ctx context.Context, userID string) (auth.User, error) {
+	for _, user := range s.users {
+		if user.ID == userID {
+			return user, nil
+		}
+	}
+	return auth.User{}, billing.ErrUserNotFound
 }
 
 func (s *routeBillingStore) FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
@@ -1298,20 +1819,48 @@ func (s *routeBillingStore) UpdateOverride(ctx context.Context, userID string, p
 	return nil
 }
 
-func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
+func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
 	state := s.states[userID]
+	if state.StripeCustomerID != "" {
+		return state.StripeCustomerID, nil
+	}
 	state.StripeCustomerID = customerID
 	s.states[userID] = state
-	return nil
+	return customerID, nil
 }
 
 func (s *routeBillingStore) UpdateSubscription(ctx context.Context, userID string, update billing.SubscriptionUpdate) error {
 	state := s.states[userID]
+	if state.StripeCustomerID != "" && update.CustomerID != "" && state.StripeCustomerID != update.CustomerID {
+		return nil
+	}
+	if state.StripeSubscriptionID != "" && state.StripeSubscriptionID != update.SubscriptionID {
+		currentPaid := state.StripeSubscriptionStatus == "active" || state.StripeSubscriptionStatus == "trialing"
+		incomingPaid := update.Status == "active" || update.Status == "trialing"
+		if currentPaid && !incomingPaid {
+			return nil
+		}
+		if currentPaid == incomingPaid {
+			created, ok := s.subscriptionCreated[userID]
+			if ok && (update.SubscriptionCreatedAt == nil || !update.SubscriptionCreatedAt.After(created)) {
+				return nil
+			}
+		}
+	}
+	if update.EventCreated != nil {
+		if previous, ok := s.eventCreated[userID]; ok && update.EventCreated.Before(previous) {
+			return nil
+		}
+		s.eventCreated[userID] = *update.EventCreated
+	}
 	if update.CustomerID != "" {
 		state.StripeCustomerID = update.CustomerID
 	}
 	state.StripeSubscriptionID = update.SubscriptionID
 	state.StripeSubscriptionStatus = update.Status
+	if update.SubscriptionCreatedAt != nil {
+		s.subscriptionCreated[userID] = *update.SubscriptionCreatedAt
+	}
 	if update.PriceID != "" {
 		state.StripePriceID = update.PriceID
 	}
@@ -1323,6 +1872,14 @@ func (s *routeBillingStore) UpdateSubscription(ctx context.Context, userID strin
 	}
 	s.states[userID] = state
 	return nil
+}
+
+func (s *routeBillingStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (billing.SubscriptionUpdate, error)) error {
+	update, err := load(ctx)
+	if err != nil {
+		return err
+	}
+	return s.UpdateSubscription(ctx, userID, update)
 }
 
 func (s *routeBillingStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {
