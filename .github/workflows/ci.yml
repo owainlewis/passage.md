@@ -153,6 +153,7 @@ jobs:
           service: ${{ env.CLOUD_RUN_SERVICE }}
           image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           env_vars: |
+            APP_ENV=production
             APP_BASE_URL=${{ env.APP_BASE_URL }}
             RESEND_FROM=${{ env.RESEND_FROM }}
           secrets: |

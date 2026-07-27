@@ -96,7 +96,7 @@ type PasswordResetStore interface {
 type Options struct {
 	AppBaseURL          string
 	PasswordResetSender PasswordResetSender
-	TrustProxy          bool
+	ClientIP            func(*http.Request) string
 }
 
 type Service struct {
@@ -106,7 +106,7 @@ type Service struct {
 	cookieSecure        bool
 	appBaseURL          string
 	passwordResetSender PasswordResetSender
-	trustProxy          bool
+	clientIP            func(*http.Request) string
 	now                 func() time.Time
 }
 
@@ -116,6 +116,10 @@ func NewService(store Store, secret string, cookieSecure bool) *Service {
 
 func NewServiceWithOptions(store Store, secret string, cookieSecure bool, options Options) *Service {
 	resetStore, _ := store.(PasswordResetStore)
+	clientIP := options.ClientIP
+	if clientIP == nil {
+		clientIP = directClientIP
+	}
 	return &Service{
 		store:               store,
 		passwordResetStore:  resetStore,
@@ -123,7 +127,7 @@ func NewServiceWithOptions(store Store, secret string, cookieSecure bool, option
 		cookieSecure:        cookieSecure,
 		appBaseURL:          strings.TrimRight(strings.TrimSpace(options.AppBaseURL), "/"),
 		passwordResetSender: options.PasswordResetSender,
-		trustProxy:          options.TrustProxy,
+		clientIP:            clientIP,
 		now:                 time.Now,
 	}
 }
@@ -213,7 +217,7 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "password reset is temporarily unavailable")
 		return
 	}
-	_, err := s.passwordResetStore.ConsumePasswordResetAttempt(r.Context(), hashToken(clientIP(r, s.trustProxy)), hashToken(email), s.now(), passwordResetWindow, passwordResetLimit)
+	_, err := s.passwordResetStore.ConsumePasswordResetAttempt(r.Context(), hashToken(s.clientIP(r)), hashToken(email), s.now(), passwordResetWindow, passwordResetLimit)
 	if err != nil {
 		if !errors.Is(err, ErrRateLimited) {
 			slog.Error("password reset rate limit failed", "error", err)
@@ -310,7 +314,7 @@ func (s *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters and no more than 72 bytes")
 		return
 	}
-	if retryAfter, err := s.passwordResetStore.ConsumePasswordResetConfirmationAttempt(r.Context(), hashToken(clientIP(r, s.trustProxy)), hashToken(input.Token), s.now(), passwordConfirmWindow, passwordConfirmLimit); errors.Is(err, ErrRateLimited) {
+	if retryAfter, err := s.passwordResetStore.ConsumePasswordResetConfirmationAttempt(r.Context(), hashToken(s.clientIP(r)), hashToken(input.Token), s.now(), passwordConfirmWindow, passwordConfirmLimit); errors.Is(err, ErrRateLimited) {
 		retrySeconds := (retryAfter + time.Second - 1) / time.Second
 		if retrySeconds < 1 {
 			retrySeconds = 1
@@ -580,18 +584,7 @@ func (s *Service) passwordResetToken(requestID string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func clientIP(r *http.Request, trustProxy bool) string {
-	var forwarded []netip.Addr
-	if trustProxy {
-		for _, part := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
-			if addr, err := netip.ParseAddr(strings.TrimSpace(part)); err == nil {
-				forwarded = append(forwarded, addr.Unmap())
-			}
-		}
-		if len(forwarded) >= 2 {
-			return forwarded[len(forwarded)-2].String()
-		}
-	}
+func directClientIP(r *http.Request) string {
 	host := strings.TrimSpace(r.RemoteAddr)
 	if addrPort, err := netip.ParseAddrPort(host); err == nil {
 		return addrPort.Addr().Unmap().String()

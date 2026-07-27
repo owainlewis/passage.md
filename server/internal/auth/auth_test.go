@@ -134,16 +134,13 @@ func TestPasswordResetRequestQueuesGenericResponseAndWorkerSendsHashedToken(t *t
 	}
 }
 
-func TestClientIPOnlyUsesForwardedHeaderForTrustedProxy(t *testing.T) {
+func TestDirectClientIPIgnoresForwardedHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.RemoteAddr = "192.0.2.10:1234"
 	req.Header.Set("X-Forwarded-For", "198.51.100.20, 203.0.113.30")
 
-	if got := clientIP(req, false); got != "192.0.2.10" {
-		t.Fatalf("untrusted client IP = %q", got)
-	}
-	if got := clientIP(req, true); got != "198.51.100.20" {
-		t.Fatalf("trusted client IP = %q", got)
+	if got := directClientIP(req); got != "192.0.2.10" {
+		t.Fatalf("client IP = %q", got)
 	}
 }
 
