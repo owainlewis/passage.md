@@ -183,17 +183,20 @@ func (s *PGStore) UpdateOverride(ctx context.Context, userID string, plan *Plan,
 	return err
 }
 
-func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
-	_, err := s.db.Exec(ctx, `
+func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
+	var storedCustomerID string
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO billing_accounts (user_id, stripe_customer_id)
 		VALUES ($1, $2)
 		ON CONFLICT (user_id) DO UPDATE
-		SET stripe_customer_id = EXCLUDED.stripe_customer_id,
-		    updated_at = now()
-		WHERE billing_accounts.stripe_customer_id IS NULL
-		   OR billing_accounts.stripe_customer_id = EXCLUDED.stripe_customer_id
-	`, userID, customerID)
-	return err
+		SET stripe_customer_id = COALESCE(billing_accounts.stripe_customer_id, EXCLUDED.stripe_customer_id),
+		    updated_at = CASE
+		      WHEN billing_accounts.stripe_customer_id IS NULL THEN now()
+		      ELSE billing_accounts.updated_at
+		    END
+		RETURNING stripe_customer_id
+	`, userID, customerID).Scan(&storedCustomerID)
+	return storedCustomerID, err
 }
 
 func (s *PGStore) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {

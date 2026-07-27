@@ -413,7 +413,33 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 	if _, err := store.FindUserByID(ctx, "not-a-uuid"); !errors.Is(err, billing.ErrUserNotFound) {
 		t.Fatalf("malformed user lookup error = %v, want user not found", err)
 	}
-	customerID := "cus_order_" + strings.ReplaceAll(userID, "-", "")
+	customerSuffix := strings.ReplaceAll(userID, "-", "")
+	type customerResult struct {
+		id  string
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan customerResult, 2)
+	for _, candidate := range []string{"cus_order_a" + customerSuffix, "cus_order_b" + customerSuffix} {
+		go func() {
+			<-start
+			id, err := store.SetStripeCustomer(ctx, userID, candidate)
+			results <- customerResult{id: id, err: err}
+		}()
+	}
+	close(start)
+	first := <-results
+	second := <-results
+	if first.err != nil {
+		t.Fatal(first.err)
+	}
+	if second.err != nil {
+		t.Fatal(second.err)
+	}
+	if first.id != second.id {
+		t.Fatalf("concurrent customer links returned %q and %q", first.id, second.id)
+	}
+	customerID := first.id
 	subscriptionID := "sub_order_" + strings.ReplaceAll(userID, "-", "")
 	newer := time.Now().UTC().Truncate(time.Second)
 	older := newer.Add(-time.Minute)
@@ -433,8 +459,10 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetStripeCustomer(ctx, userID, "cus_different"); err != nil {
+	if storedCustomerID, err := store.SetStripeCustomer(ctx, userID, "cus_different"); err != nil {
 		t.Fatal(err)
+	} else if storedCustomerID != customerID {
+		t.Fatalf("stored customer = %q, want %q", storedCustomerID, customerID)
 	}
 
 	state, err := store.State(ctx, userID)

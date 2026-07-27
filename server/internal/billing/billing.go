@@ -83,7 +83,7 @@ type Store interface {
 	ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 	State(ctx context.Context, userID string) (State, error)
 	UpdateOverride(ctx context.Context, userID string, plan *Plan, maxSavedDocs *int) error
-	SetStripeCustomer(ctx context.Context, userID string, customerID string) error
+	SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error)
 	UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error
 	CountSavedDocs(ctx context.Context, userID string) (int, error)
 }
@@ -232,7 +232,7 @@ func (s *Service) IsAdmin(email string) bool {
 	return ok
 }
 
-func (s *Service) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
+func (s *Service) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
 	return s.store.SetStripeCustomer(ctx, userID, customerID)
 }
 

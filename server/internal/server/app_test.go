@@ -1518,14 +1518,14 @@ func (s *routeBillingStore) UpdateOverride(ctx context.Context, userID string, p
 	return nil
 }
 
-func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
+func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
 	state := s.states[userID]
-	if state.StripeCustomerID != "" && state.StripeCustomerID != customerID {
-		return nil
+	if state.StripeCustomerID != "" {
+		return state.StripeCustomerID, nil
 	}
 	state.StripeCustomerID = customerID
 	s.states[userID] = state
-	return nil
+	return customerID, nil
 }
 
 func (s *routeBillingStore) UpdateSubscription(ctx context.Context, userID string, update billing.SubscriptionUpdate) error {

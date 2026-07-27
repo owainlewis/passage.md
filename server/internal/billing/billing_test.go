@@ -218,8 +218,8 @@ func (s *memoryStore) UpdateOverride(ctx context.Context, userID string, plan *P
 	return nil
 }
 
-func (s *memoryStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) error {
-	return nil
+func (s *memoryStore) SetStripeCustomer(ctx context.Context, userID string, customerID string) (string, error) {
+	return customerID, nil
 }
 
 func (s *memoryStore) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
