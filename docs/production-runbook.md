@@ -221,7 +221,21 @@ gcloud sql instances patch RECOVERY_INSTANCE \
 
 Run the Cloud SQL safeguard and backup checks against `RECOVERY_INSTANCE`.
 
-Do not shift traffic or reopen writes until every required setting is enabled and a `SUCCESSFUL` automated backup exists.
+Create an immediate pre-cutover backup instead of waiting for the next daily backup window:
+
+```sh
+gcloud sql backups create \
+  --instance=RECOVERY_INSTANCE \
+  --project=passage-md-prod \
+  --description='pre-cutover recovery checkpoint UTC_TIMESTAMP'
+
+gcloud sql backups list \
+  --instance=RECOVERY_INSTANCE \
+  --project=passage-md-prod \
+  --format='table(id,type,status,startTime,endTime,location,description)'
+```
+
+Do not shift traffic or reopen writes until every required setting is enabled and the pre-cutover backup is type `ON_DEMAND` with status `SUCCESSFUL`.
 
 Passage applies its embedded database migrations every time the server starts.
 
