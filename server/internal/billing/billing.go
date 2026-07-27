@@ -78,6 +78,7 @@ type SubscriptionUpdate struct {
 
 type Store interface {
 	FindUserByEmail(ctx context.Context, email string) (auth.User, error)
+	FindUserByID(ctx context.Context, userID string) (auth.User, error)
 	FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error)
 	ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 	State(ctx context.Context, userID string) (State, error)
@@ -237,6 +238,10 @@ func (s *Service) SetStripeCustomer(ctx context.Context, userID string, customer
 
 func (s *Service) UserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
 	return s.store.FindUserByStripeCustomer(ctx, customerID)
+}
+
+func (s *Service) UserByID(ctx context.Context, userID string) (auth.User, error) {
+	return s.store.FindUserByID(ctx, userID)
 }
 
 func (s *Service) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {

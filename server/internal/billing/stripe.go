@@ -37,6 +37,16 @@ type PortalParams struct {
 	ReturnURL  string
 }
 
+type SubscriptionSnapshot struct {
+	ID                string
+	CustomerID        string
+	Status            string
+	PriceID           string
+	CurrentPeriodEnd  *time.Time
+	CancelAtPeriodEnd bool
+	Metadata          map[string]string
+}
+
 func NewStripeClient(secretKey string, baseURL string, client *http.Client) *StripeClient {
 	if baseURL == "" {
 		baseURL = "https://api.stripe.com"
@@ -91,6 +101,52 @@ func (c *StripeClient) CreatePortalSession(ctx context.Context, params PortalPar
 	return out.URL, nil
 }
 
+func (c *StripeClient) RetrieveSubscription(ctx context.Context, subscriptionID string) (SubscriptionSnapshot, error) {
+	var out stripeSubscription
+	if err := c.get(ctx, "/v1/subscriptions/"+url.PathEscape(subscriptionID), &out); err != nil {
+		return SubscriptionSnapshot{}, err
+	}
+	var periodEnd *time.Time
+	if value := out.currentPeriodEnd(); value > 0 {
+		parsed := time.Unix(value, 0).UTC()
+		periodEnd = &parsed
+	}
+	return SubscriptionSnapshot{
+		ID:                out.ID,
+		CustomerID:        out.Customer,
+		Status:            out.Status,
+		PriceID:           out.priceID(),
+		CurrentPeriodEnd:  periodEnd,
+		CancelAtPeriodEnd: out.scheduledForCancellation(),
+		Metadata:          out.Metadata,
+	}, nil
+}
+
+func (c *StripeClient) get(ctx context.Context, path string, target any) error {
+	if c == nil || c.secretKey == "" {
+		return ErrStripeConfig
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.secretKey, "")
+	res, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		var out stripeObject
+		if err := json.NewDecoder(res.Body).Decode(&out); err == nil && out.Error != nil && out.Error.Message != "" {
+			return fmt.Errorf("stripe request failed: %s", out.Error.Message)
+		}
+		return fmt.Errorf("stripe request failed with status %d", res.StatusCode)
+	}
+	return json.NewDecoder(res.Body).Decode(target)
+}
+
 func (c *StripeClient) postForm(ctx context.Context, path string, values url.Values, target *stripeObject) error {
 	if c == nil || c.secretKey == "" {
 		return ErrStripeConfig
@@ -129,4 +185,47 @@ type stripeObject struct {
 
 type stripeError struct {
 	Message string `json:"message"`
+}
+
+type stripeSubscription struct {
+	ID                string            `json:"id"`
+	Customer          string            `json:"customer"`
+	Status            string            `json:"status"`
+	CurrentPeriodEnd  int64             `json:"current_period_end"`
+	CancelAtPeriodEnd bool              `json:"cancel_at_period_end"`
+	CancelAt          int64             `json:"cancel_at"`
+	EndedAt           int64             `json:"ended_at"`
+	Metadata          map[string]string `json:"metadata"`
+	Items             struct {
+		Data []struct {
+			CurrentPeriodEnd int64 `json:"current_period_end"`
+			Price            struct {
+				ID string `json:"id"`
+			} `json:"price"`
+		} `json:"data"`
+	} `json:"items"`
+}
+
+func (s stripeSubscription) priceID() string {
+	if len(s.Items.Data) == 0 {
+		return ""
+	}
+	return s.Items.Data[0].Price.ID
+}
+
+func (s stripeSubscription) currentPeriodEnd() int64 {
+	if s.CurrentPeriodEnd > 0 {
+		return s.CurrentPeriodEnd
+	}
+	if len(s.Items.Data) > 0 && s.Items.Data[0].CurrentPeriodEnd > 0 {
+		return s.Items.Data[0].CurrentPeriodEnd
+	}
+	if s.CancelAt > 0 {
+		return s.CancelAt
+	}
+	return 0
+}
+
+func (s stripeSubscription) scheduledForCancellation() bool {
+	return s.CancelAtPeriodEnd || (s.CancelAt > 0 && s.EndedAt == 0 && s.Status != "canceled")
 }

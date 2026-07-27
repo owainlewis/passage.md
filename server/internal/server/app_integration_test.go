@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -378,6 +379,70 @@ func TestBillingPGStorePreservesSubscriptionMetadataOnPartialUpdate(t *testing.T
 	}
 	if state.StripePriceID != "price_test" || state.StripeCurrentPeriodEnd == nil || !state.StripeCurrentPeriodEnd.Equal(periodEnd) || !state.StripeCancelAtPeriodEnd {
 		t.Fatalf("subscription metadata was not preserved: %#v", state)
+	}
+}
+
+func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := "billing-order-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.com"
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, $2)
+		RETURNING id::text
+	`, email, "hash").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+
+	store := billing.NewPGStore(db)
+	if _, err := store.FindUserByID(ctx, "not-a-uuid"); !errors.Is(err, billing.ErrUserNotFound) {
+		t.Fatalf("malformed user lookup error = %v, want user not found", err)
+	}
+	customerID := "cus_order_" + strings.ReplaceAll(userID, "-", "")
+	subscriptionID := "sub_order_" + strings.ReplaceAll(userID, "-", "")
+	newer := time.Now().UTC().Truncate(time.Second)
+	older := newer.Add(-time.Minute)
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:     customerID,
+		SubscriptionID: subscriptionID,
+		Status:         "active",
+		EventCreated:   &newer,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:     customerID,
+		SubscriptionID: subscriptionID,
+		Status:         "canceled",
+		EventCreated:   &older,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetStripeCustomer(ctx, userID, "cus_different"); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := store.State(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StripeCustomerID != customerID || state.StripeSubscriptionStatus != "active" {
+		t.Fatalf("stale or conflicting update changed state: %#v", state)
 	}
 }
 

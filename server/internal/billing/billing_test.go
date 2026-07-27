@@ -193,6 +193,15 @@ func (s *memoryStore) FindUserByEmail(ctx context.Context, email string) (auth.U
 	return user, nil
 }
 
+func (s *memoryStore) FindUserByID(ctx context.Context, userID string) (auth.User, error) {
+	for _, user := range s.users {
+		if user.ID == userID {
+			return user, nil
+		}
+	}
+	return auth.User{}, ErrUserNotFound
+}
+
 func (s *memoryStore) FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
 	return auth.User{}, ErrUserNotFound
 }

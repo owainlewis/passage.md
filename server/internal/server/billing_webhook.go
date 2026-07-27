@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
 )
 
@@ -65,16 +66,34 @@ func (a *App) applyStripeEvent(r *http.Request, event stripeEvent) error {
 		if err := json.Unmarshal(event.Data.Object, &session); err != nil {
 			return err
 		}
-		userID := session.ClientReferenceID
-		if userID == "" {
-			userID = session.Metadata["passage_user_id"]
-		}
-		if userID == "" || session.Customer == "" {
+		if session.PaymentStatus != "paid" ||
+			!validStripeIdentifier(session.Customer, "cus_") ||
+			!validStripeIdentifier(session.Subscription, "sub_") {
 			return nil
 		}
-		if err := a.billing.SetStripeCustomer(r.Context(), userID, session.Customer); err != nil {
+		subscription, err := a.stripe.RetrieveSubscription(r.Context(), session.Subscription)
+		if err != nil {
 			return err
 		}
+		if subscription.ID != session.Subscription || subscription.CustomerID != session.Customer {
+			return nil
+		}
+		user, err := a.resolveStripeUser(r, subscription.CustomerID, subscription.Metadata["passage_user_id"])
+		if errors.Is(err, billing.ErrUserNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return a.billing.UpdateSubscription(r.Context(), user.ID, billing.SubscriptionUpdate{
+			CustomerID:        subscription.CustomerID,
+			SubscriptionID:    subscription.ID,
+			Status:            subscription.Status,
+			PriceID:           subscription.PriceID,
+			CurrentPeriodEnd:  subscription.CurrentPeriodEnd,
+			CancelAtPeriodEnd: &subscription.CancelAtPeriodEnd,
+			EventCreated:      &eventCreated,
+		})
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var subscription stripeSubscription
 		if err := json.Unmarshal(event.Data.Object, &subscription); err != nil {
@@ -107,10 +126,11 @@ func (a *App) applyStripeEvent(r *http.Request, event stripeEvent) error {
 }
 
 func (a *App) applySubscriptionEvent(r *http.Request, subscription stripeSubscription, eventCreated time.Time) error {
-	if subscription.Customer == "" || subscription.ID == "" {
+	if !validStripeIdentifier(subscription.Customer, "cus_") ||
+		!validStripeIdentifier(subscription.ID, "sub_") {
 		return nil
 	}
-	user, err := a.billing.UserByStripeCustomer(r.Context(), subscription.Customer)
+	user, err := a.resolveStripeUser(r, subscription.Customer, subscription.Metadata["passage_user_id"])
 	if errors.Is(err, billing.ErrUserNotFound) {
 		return nil
 	}
@@ -132,6 +152,37 @@ func (a *App) applySubscriptionEvent(r *http.Request, subscription stripeSubscri
 		CancelAtPeriodEnd: &cancelAtPeriodEnd,
 		EventCreated:      &eventCreated,
 	})
+}
+
+func (a *App) resolveStripeUser(r *http.Request, customerID string, metadataUserID string) (auth.User, error) {
+	user, err := a.billing.UserByStripeCustomer(r.Context(), customerID)
+	if err == nil {
+		if metadataUserID != "" && metadataUserID != user.ID {
+			return auth.User{}, billing.ErrUserNotFound
+		}
+		return user, nil
+	}
+	if !errors.Is(err, billing.ErrUserNotFound) {
+		return auth.User{}, err
+	}
+	if metadataUserID == "" {
+		return auth.User{}, billing.ErrUserNotFound
+	}
+	return a.billing.UserByID(r.Context(), metadataUserID)
+}
+
+func validStripeIdentifier(value string, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
+		return false
+	}
+	for _, char := range value[len(prefix):] {
+		if (char < 'a' || char > 'z') &&
+			(char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func verifyStripeSignature(payload []byte, header string, secret string, now time.Time) error {
@@ -191,13 +242,14 @@ type stripeCheckoutSession struct {
 }
 
 type stripeSubscription struct {
-	ID                string `json:"id"`
-	Customer          string `json:"customer"`
-	Status            string `json:"status"`
-	CurrentPeriodEnd  int64  `json:"current_period_end"`
-	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
-	CancelAt          int64  `json:"cancel_at"`
-	EndedAt           int64  `json:"ended_at"`
+	ID                string            `json:"id"`
+	Customer          string            `json:"customer"`
+	Status            string            `json:"status"`
+	CurrentPeriodEnd  int64             `json:"current_period_end"`
+	CancelAtPeriodEnd bool              `json:"cancel_at_period_end"`
+	CancelAt          int64             `json:"cancel_at"`
+	EndedAt           int64             `json:"ended_at"`
+	Metadata          map[string]string `json:"metadata"`
 	Items             struct {
 		Data []struct {
 			CurrentPeriodEnd int64 `json:"current_period_end"`

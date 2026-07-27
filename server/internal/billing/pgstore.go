@@ -30,6 +30,19 @@ func (s *PGStore) FindUserByEmail(ctx context.Context, email string) (auth.User,
 	return user, err
 }
 
+func (s *PGStore) FindUserByID(ctx context.Context, userID string) (auth.User, error) {
+	var user auth.User
+	err := s.db.QueryRow(ctx, `
+		SELECT id::text, email
+		FROM users
+		WHERE id::text = $1
+	`, userID).Scan(&user.ID, &user.Email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return auth.User{}, ErrUserNotFound
+	}
+	return user, err
+}
+
 func (s *PGStore) FindUserByStripeCustomer(ctx context.Context, customerID string) (auth.User, error) {
 	var user auth.User
 	err := s.db.QueryRow(ctx, `
@@ -177,6 +190,8 @@ func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customer
 		ON CONFLICT (user_id) DO UPDATE
 		SET stripe_customer_id = EXCLUDED.stripe_customer_id,
 		    updated_at = now()
+		WHERE billing_accounts.stripe_customer_id IS NULL
+		   OR billing_accounts.stripe_customer_id = EXCLUDED.stripe_customer_id
 	`, userID, customerID)
 	return err
 }
@@ -203,9 +218,15 @@ func (s *PGStore) UpdateSubscription(ctx context.Context, userID string, update 
 		    stripe_cancel_at_period_end = COALESCE(EXCLUDED.stripe_cancel_at_period_end, billing_accounts.stripe_cancel_at_period_end),
 		    stripe_event_created = EXCLUDED.stripe_event_created,
 		    updated_at = now()
-		WHERE billing_accounts.stripe_event_created IS NULL
-		   OR EXCLUDED.stripe_event_created IS NULL
-		   OR EXCLUDED.stripe_event_created >= billing_accounts.stripe_event_created
+		WHERE (
+		    billing_accounts.stripe_event_created IS NULL
+		    OR EXCLUDED.stripe_event_created IS NULL
+		    OR EXCLUDED.stripe_event_created >= billing_accounts.stripe_event_created
+		  )
+		  AND (
+		    billing_accounts.stripe_customer_id IS NULL
+		    OR billing_accounts.stripe_customer_id = EXCLUDED.stripe_customer_id
+		  )
 	`, userID, emptyToNil(update.CustomerID), update.SubscriptionID, update.Status, emptyToNil(update.PriceID), update.CurrentPeriodEnd, update.CancelAtPeriodEnd, update.EventCreated)
 	return err
 }
