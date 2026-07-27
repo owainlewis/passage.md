@@ -15,6 +15,7 @@ import (
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
+	"github.com/owainlewis/passage.md/server/internal/httpx"
 )
 
 const webhookTolerance = 5 * time.Minute
@@ -29,31 +30,43 @@ func (a *App) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.billingConfig.StripeConfigured() {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe billing is not configured"})
+		httpx.WriteInternalError(w, r, "validate Stripe webhook configuration", errors.New("Stripe billing configuration is incomplete"), "Stripe billing is not configured")
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			httpx.LogWarning(r, "read Stripe webhook", err)
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body is too large"})
 			return
 		}
+		httpx.LogWarning(r, "read Stripe webhook", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "webhook body could not be read"})
 		return
 	}
 	if err := verifyStripeSignature(body, r.Header.Get("Stripe-Signature"), a.billingConfig.StripeWebhookSecret, time.Now()); err != nil {
+		httpx.LogWarning(r, "verify Stripe webhook signature", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid Stripe signature"})
 		return
 	}
 
 	var event stripeEvent
 	if err := json.Unmarshal(body, &event); err != nil {
+		httpx.LogWarning(r, "decode Stripe webhook", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid Stripe event"})
 		return
 	}
 	if err := a.applyStripeEvent(r, event); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Stripe event could not be applied"})
+		httpx.WriteInternalError(
+			w,
+			r,
+			"apply Stripe webhook",
+			err,
+			"Stripe event could not be applied",
+			"stripe_event_id", event.ID,
+			"stripe_event_type", event.Type,
+		)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"received": true})

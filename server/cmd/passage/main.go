@@ -24,6 +24,17 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == slog.LevelKey {
+				attr.Key = "severity"
+			}
+			if attr.Key == slog.TimeKey {
+				attr.Key = "timestamp"
+			}
+			return attr
+		},
+	})))
 	if err := run(os.Args); err != nil {
 		slog.Error("command failed", "error", err)
 		os.Exit(1)
@@ -88,6 +99,7 @@ func serve(cfg config.Config) error {
 		Billing:             cfg.Billing,
 		RateLimits:          cfg.RateLimits,
 		Proxy:               cfg.Proxy,
+		GCPProjectID:        os.Getenv("GCP_PROJECT_ID"),
 	})
 	go app.RunPasswordResetWorker(ctx)
 	server := newHTTPServer(cfg.Port, app.Routes())

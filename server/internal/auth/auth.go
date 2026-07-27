@@ -147,7 +147,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "password hash failed")
+		httpx.WriteInternalError(w, r, "hash registration password", err, "password hash failed")
 		return
 	}
 
@@ -157,7 +157,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "email already registered")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "account could not be created")
+		httpx.WriteInternalError(w, r, "create account", err, "account could not be created")
 		return
 	}
 	if !s.createSession(w, r, user) {
@@ -185,7 +185,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "login failed")
+		httpx.WriteInternalError(w, r, "find login account", err, "login failed")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(password)) != nil {
@@ -220,13 +220,13 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	_, err := s.passwordResetStore.ConsumePasswordResetAttempt(r.Context(), hashToken(s.clientIP(r)), hashToken(email), s.now(), passwordResetWindow, passwordResetLimit)
 	if err != nil {
 		if !errors.Is(err, ErrRateLimited) {
-			slog.Error("password reset rate limit failed", "error", err)
+			httpx.LogError(r, "check password reset rate limit", err)
 		}
 		writePasswordResetAccepted(w)
 		return
 	}
 	if err := s.passwordResetStore.QueuePasswordResetRequest(r.Context(), email, s.now()); err != nil {
-		slog.Error("password reset request queue failed", "error", err)
+		httpx.LogError(r, "queue password reset request", err)
 	}
 	writePasswordResetAccepted(w)
 }
@@ -240,7 +240,7 @@ func (s *Service) RunPasswordResetWorker(ctx context.Context) {
 	for {
 		processed, err := s.processPasswordResetRequest(ctx)
 		if err != nil {
-			slog.Error("password reset worker failed", "error", err)
+			slog.Error("password reset worker failed", "operation", "process password reset queue", "error", err)
 		}
 		if processed && err == nil {
 			continue
@@ -267,10 +267,23 @@ func (s *Service) processPasswordResetRequest(ctx context.Context) (bool, error)
 		if delay > time.Hour {
 			delay = time.Hour
 		}
+		slog.Error(
+			"password reset processing failed",
+			"operation", "process password reset delivery",
+			"reset_request_id", request.ID,
+			"attempt", request.Attempts,
+			"error", processErr,
+		)
 		if err := s.passwordResetStore.RetryPasswordResetRequest(ctx, request.ID, now.Add(delay)); err != nil {
+			slog.Error(
+				"password reset retry scheduling failed",
+				"operation", "schedule password reset retry",
+				"reset_request_id", request.ID,
+				"attempt", request.Attempts,
+				"error", err,
+			)
 			return true, err
 		}
-		slog.Error("password reset delivery failed", "error", processErr, "attempt", request.Attempts)
 		return true, nil
 	}
 	token := s.passwordResetToken(request.ID)
@@ -328,7 +341,7 @@ func (s *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	valid, err := s.passwordResetStore.PasswordResetTokenValid(r.Context(), hashToken(input.Token), s.now())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "password could not be reset")
+		httpx.WriteInternalError(w, r, "validate password reset token", err, "password could not be reset")
 		return
 	}
 	if !valid {
@@ -337,14 +350,14 @@ func (s *Service) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "password could not be reset")
+		httpx.WriteInternalError(w, r, "hash reset password", err, "password could not be reset")
 		return
 	}
 	if err := s.passwordResetStore.ResetPassword(r.Context(), hashToken(input.Token), string(passwordHash), s.now()); errors.Is(err, ErrInvalidResetToken) {
 		writeError(w, http.StatusBadRequest, "reset link is invalid or has expired")
 		return
 	} else if err != nil {
-		writeError(w, http.StatusInternalServerError, "password could not be reset")
+		httpx.WriteInternalError(w, r, "reset password", err, "password could not be reset")
 		return
 	}
 	clearSessionCookie(w, s.cookieSecure)
@@ -358,7 +371,7 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
 	if token, ok := s.readSessionToken(r); ok {
 		if err := s.store.DeleteSession(r.Context(), hashToken(token)); err != nil {
 			clearSessionCookie(w, s.cookieSecure)
-			writeError(w, http.StatusInternalServerError, "logout failed")
+			httpx.WriteInternalError(w, r, "delete session", err, "logout failed")
 			return
 		}
 	}
@@ -388,6 +401,9 @@ func (s *Service) UserFromBearerRequest(r *http.Request) (User, bool) {
 		return User{}, false
 	}
 	user, err := s.store.FindUserByAPITokenHash(r.Context(), hashToken(token), s.now())
+	if err != nil && !errors.Is(err, ErrUnauthorized) {
+		httpx.LogError(r, "authenticate API token", err)
+	}
 	return user, err == nil
 }
 
@@ -397,6 +413,9 @@ func (s *Service) UserFromSessionRequest(r *http.Request) (User, bool) {
 		return User{}, false
 	}
 	user, err := s.store.FindUserBySessionHash(r.Context(), hashToken(token), s.now())
+	if err != nil && !errors.Is(err, ErrUnauthorized) {
+		httpx.LogError(r, "authenticate session", err)
+	}
 	return user, err == nil
 }
 
@@ -425,7 +444,7 @@ func (s *Service) RequireSessionUser(next func(http.ResponseWriter, *http.Reques
 func (s *Service) ListAPITokens(w http.ResponseWriter, r *http.Request, user User) {
 	tokens, err := s.store.ListAPITokens(r.Context(), user.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "API tokens could not be loaded")
+		httpx.WriteInternalError(w, r, "list API tokens", err, "API tokens could not be loaded")
 		return
 	}
 	if tokens == nil {
@@ -454,12 +473,12 @@ func (s *Service) CreateAPIToken(w http.ResponseWriter, r *http.Request, user Us
 
 	plain, err := randomAPIToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "API token could not be created")
+		httpx.WriteInternalError(w, r, "generate API token", err, "API token could not be created")
 		return
 	}
 	token, err := s.store.CreateAPIToken(r.Context(), user.ID, name, hashToken(plain))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "API token could not be created")
+		httpx.WriteInternalError(w, r, "store API token", err, "API token could not be created")
 		return
 	}
 	writeJSON(w, http.StatusCreated, createAPITokenResponse{Token: plain, APIToken: token})
@@ -480,7 +499,7 @@ func (s *Service) RevokeAPIToken(w http.ResponseWriter, r *http.Request, user Us
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "API token could not be revoked")
+		httpx.WriteInternalError(w, r, "revoke API token", err, "API token could not be revoked")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -489,11 +508,11 @@ func (s *Service) RevokeAPIToken(w http.ResponseWriter, r *http.Request, user Us
 func (s *Service) createSession(w http.ResponseWriter, r *http.Request, user User) bool {
 	session, err := s.PrepareSession()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "session could not be created")
+		httpx.WriteInternalError(w, r, "generate session", err, "session could not be created")
 		return false
 	}
 	if err := s.store.CreateSession(r.Context(), user.ID, session.TokenHash, session.ExpiresAt); err != nil {
-		writeError(w, http.StatusInternalServerError, "session could not be created")
+		httpx.WriteInternalError(w, r, "store session", err, "session could not be created")
 		return false
 	}
 	s.WriteSessionCookie(w, session)

@@ -155,6 +155,7 @@ jobs:
           env_vars: |
             APP_ENV=production
             APP_BASE_URL=${{ env.APP_BASE_URL }}
+            GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }}
             RESEND_FROM=${{ env.RESEND_FROM }}
           secrets: |
             RESEND_API_KEY=passage-resend-api-key:latest

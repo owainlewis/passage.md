@@ -1,0 +1,31 @@
+{
+  "displayName": "Passage production health",
+  "period": "60s",
+  "timeout": "10s",
+  "selectedRegions": ["USA", "EUROPE", "ASIA_PACIFIC"],
+  "monitoredResource": {
+    "type": "uptime_url",
+    "labels": {
+      "project_id": "passage-md-prod",
+      "host": "passage.md"
+    }
+  },
+  "httpCheck": {
+    "requestMethod": "GET",
+    "path": "/api/health",
+    "port": 443,
+    "useSsl": true,
+    "validateSsl": true,
+    "acceptedResponseStatusCodes": [
+      {
+        "statusClass": "STATUS_CLASS_2XX"
+      }
+    ]
+  },
+  "contentMatchers": [
+    {
+      "content": "\"status\":\"ok\"",
+      "matcher": "CONTAINS_STRING"
+    }
+  ]
+}

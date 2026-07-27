@@ -1,0 +1,90 @@
+{
+  "displayName": "Passage production",
+  "dashboardFilters": [{
+    "filterType": "RESOURCE_LABEL",
+    "labelKey": "project_id",
+    "stringValue": "passage-md-prod",
+    "templateVariable": "project_id"
+  }],
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "xPos": 0, "yPos": 0, "width": 6, "height": 4,
+        "widget": {
+          "title": "Cloud Run request volume",
+          "xyChart": {"dataSets": [{"plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
+            "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND metric.type = \"run.googleapis.com/request_count\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_RATE", "crossSeriesReducer": "REDUCE_SUM"}
+          }}}], "yAxis": {"label": "requests/s", "scale": "LINEAR"}}
+        }
+      },
+      {
+        "xPos": 6, "yPos": 0, "width": 6, "height": 4,
+        "widget": {
+          "title": "Cloud Run 5xx responses",
+          "xyChart": {"dataSets": [{"plotType": "STACKED_BAR", "timeSeriesQuery": {"timeSeriesFilter": {
+            "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_SUM", "crossSeriesReducer": "REDUCE_SUM"}
+          }}}], "yAxis": {"label": "5xx/min", "scale": "LINEAR"}}
+        }
+      },
+      {
+        "xPos": 0, "yPos": 4, "width": 6, "height": 4,
+        "widget": {
+          "title": "Cloud Run p95 latency",
+          "xyChart": {"dataSets": [{"plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
+            "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND metric.type = \"run.googleapis.com/request_latencies\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_PERCENTILE_95", "crossSeriesReducer": "REDUCE_MAX"}
+          }}}], "yAxis": {"label": "milliseconds", "scale": "LINEAR"}}
+        }
+      },
+      {
+        "xPos": 6, "yPos": 4, "width": 6, "height": 4,
+        "widget": {
+          "title": "Cloud Run active instances",
+          "xyChart": {"dataSets": [{"plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
+            "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND metric.type = \"run.googleapis.com/container/instance_count\" AND metric.label.state = \"active\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX", "crossSeriesReducer": "REDUCE_SUM"}
+          }}}], "yAxis": {"label": "instances", "scale": "LINEAR"}}
+        }
+      },
+      {
+        "xPos": 0, "yPos": 8, "width": 6, "height": 4,
+        "widget": {
+          "title": "Cloud SQL CPU and storage utilization",
+          "xyChart": {"dataSets": [
+            {"legendTemplate": "CPU", "plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
+              "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\"",
+              "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MEAN"}
+            }}},
+            {"legendTemplate": "Storage", "plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
+              "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/disk/utilization\"",
+              "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MEAN"}
+            }}}
+          ], "yAxis": {"label": "utilization", "scale": "LINEAR"}}
+        }
+      },
+      {
+        "xPos": 6, "yPos": 8, "width": 6, "height": 4,
+        "widget": {
+          "title": "Cloud SQL connections",
+          "xyChart": {"dataSets": [{"plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
+            "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX"}
+          }}}], "thresholds": [{"value": 20}], "yAxis": {"label": "connections", "scale": "LINEAR"}}
+        }
+      },
+      {
+        "xPos": 0, "yPos": 12, "width": 12, "height": 3,
+        "widget": {
+          "title": "Cloud SQL availability",
+          "scorecard": {"timeSeriesQuery": {"timeSeriesFilter": {
+            "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/up\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MIN"}
+          }}, "gaugeView": {"lowerBound": 0, "upperBound": 1}}
+        }
+      }
+    ]
+  }
+}

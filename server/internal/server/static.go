@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/owainlewis/passage.md/server/internal/httpx"
 )
 
 func StaticHandler(content fs.FS) http.Handler {
@@ -28,7 +30,7 @@ func StaticHandler(content fs.FS) http.Handler {
 		if !strings.HasSuffix(name, "/") {
 			htmlName := name + ".html"
 			if ok, err := exists(content, htmlName); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				httpx.WriteInternalError(w, r, "inspect static route", err, "static frontend could not be loaded")
 				return
 			} else if ok {
 				serveFile(w, r, content, htmlName)
@@ -36,7 +38,7 @@ func StaticHandler(content fs.FS) http.Handler {
 			}
 		}
 		if ok, err := exists(content, name); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpx.WriteInternalError(w, r, "inspect static route", err, "static frontend could not be loaded")
 			return
 		} else if ok {
 			if path.Ext(name) == ".html" {
@@ -70,6 +72,7 @@ func exists(content fs.FS, name string) (bool, error) {
 func serveFile(w http.ResponseWriter, r *http.Request, content fs.FS, name string) {
 	body, err := fs.ReadFile(content, name)
 	if err != nil {
+		httpx.LogError(r, "read static frontend", err)
 		http.Error(w, "static frontend has not been built", http.StatusServiceUnavailable)
 		return
 	}

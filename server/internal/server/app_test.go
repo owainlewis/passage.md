@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -8,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -895,6 +897,49 @@ func TestStripeWebhookUpdatesSubscriptionEntitlement(t *testing.T) {
 	}
 }
 
+func TestStripeWebhookFailureLogsEventContextWithoutPayload(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{StripeCustomerID: "cus_test"}
+	billingStore.updateSubscriptionErr = errors.New("database unavailable")
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+	now := time.Now().UTC()
+	body := []byte(`{
+		"id":"evt_safe_context",
+		"type":"customer.subscription.updated",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"private_marker":"must-not-be-logged",
+		"data":{"object":{"id":"sub_test","customer":"cus_test","status":"active"}}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/billing/webhook", strings.NewReader(string(body)))
+	req.Header.Set("Stripe-Signature", signedStripePayload(body, "whsec_test", now))
+	rec := httptest.NewRecorder()
+
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	logged := output.String()
+	for _, want := range []string{`"stripe_event_id":"evt_safe_context"`, `"stripe_event_type":"customer.subscription.updated"`, `"operation":"apply Stripe webhook"`} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log %q does not contain %q", logged, want)
+		}
+	}
+	if strings.Contains(logged, "must-not-be-logged") || strings.Contains(logged, string(body)) {
+		t.Fatalf("webhook payload was logged: %s", logged)
+	}
+}
+
 func TestStripeWebhookOrderGrantsPro(t *testing.T) {
 	now := time.Now().UTC()
 	periodEnd := now.Add(30 * 24 * time.Hour).Unix()
@@ -1734,12 +1779,13 @@ func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (docum
 }
 
 type routeBillingStore struct {
-	users               map[string]auth.User
-	states              map[string]billing.State
-	eventCreated        map[string]time.Time
-	subscriptionCreated map[string]time.Time
-	savedDocs           map[string]int
-	adminUsers          []billing.AdminUserRecord
+	users                 map[string]auth.User
+	states                map[string]billing.State
+	eventCreated          map[string]time.Time
+	subscriptionCreated   map[string]time.Time
+	savedDocs             map[string]int
+	adminUsers            []billing.AdminUserRecord
+	updateSubscriptionErr error
 }
 
 func newRouteBillingStore() *routeBillingStore {
@@ -1830,6 +1876,9 @@ func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string
 }
 
 func (s *routeBillingStore) UpdateSubscription(ctx context.Context, userID string, update billing.SubscriptionUpdate) error {
+	if s.updateSubscriptionErr != nil {
+		return s.updateSubscriptionErr
+	}
 	state := s.states[userID]
 	if state.StripeCustomerID != "" && update.CustomerID != "" && state.StripeCustomerID != update.CustomerID {
 		return nil

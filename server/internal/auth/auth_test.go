@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -166,6 +168,72 @@ func TestPasswordResetRequestDoesNotRevealQueueOrRateLimitState(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestPasswordResetQueueFailureLogsSafeRequestContext(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	store := newResetTestStore()
+	store.queueErr = errors.New("database unavailable")
+	service := NewServiceWithOptions(store, "test-secret", false, Options{
+		AppBaseURL:          "https://passage.md",
+		PasswordResetSender: &recordingPasswordResetSender{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/password-reset/request", strings.NewReader(`{"email":"private@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	service.RequestPasswordReset(rec, req)
+
+	logged := output.String()
+	for _, want := range []string{`"route":"/api/v1/auth/password-reset/request"`, `"operation":"queue password reset request"`, `"error":"database unavailable"`} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log %q does not contain %q", logged, want)
+		}
+	}
+	if strings.Contains(logged, "private@example.com") {
+		t.Fatalf("password reset email was logged: %s", logged)
+	}
+}
+
+func TestPasswordResetDeliveryFailureStaysObservableWhenRetrySchedulingFails(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	store := newResetTestStore()
+	store.claim = PasswordResetRequest{ID: "safe-request-id", Email: "private@example.com", Attempts: 2}
+	store.retryErr = errors.New("retry database unavailable")
+	sender := &recordingPasswordResetSender{err: errors.New("email provider unavailable")}
+	service := NewServiceWithOptions(store, "test-secret", false, Options{
+		AppBaseURL:          "https://passage.md",
+		PasswordResetSender: sender,
+	})
+
+	processed, err := service.processPasswordResetRequest(context.Background())
+
+	if !processed || err == nil {
+		t.Fatalf("processed = %v, error = %v", processed, err)
+	}
+	logged := output.String()
+	for _, want := range []string{
+		`"operation":"process password reset delivery"`,
+		`"operation":"schedule password reset retry"`,
+		`"reset_request_id":"safe-request-id"`,
+		`"error":"email provider unavailable"`,
+		`"error":"retry database unavailable"`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log %q does not contain %q", logged, want)
+		}
+	}
+	if strings.Contains(logged, "private@example.com") || strings.Contains(logged, sender.resetURL) {
+		t.Fatalf("password reset email or URL was logged: %s", logged)
 	}
 }
 
@@ -446,6 +514,7 @@ type resetTestStore struct {
 	resetTokenHash string
 	passwordHash   string
 	resetErr       error
+	retryErr       error
 	completedID    string
 	retriedID      string
 	retryAt        time.Time
@@ -484,7 +553,7 @@ func (s *resetTestStore) CompletePasswordResetRequest(_ context.Context, id stri
 func (s *resetTestStore) RetryPasswordResetRequest(_ context.Context, id string, availableAt time.Time) error {
 	s.retriedID = id
 	s.retryAt = availableAt
-	return nil
+	return s.retryErr
 }
 
 func (s *resetTestStore) CreatePasswordResetToken(_ context.Context, _ string, tokenHash string, expiresAt time.Time) error {

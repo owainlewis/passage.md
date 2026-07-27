@@ -1,0 +1,146 @@
+[
+  {
+    "displayName": "Passage health check failing",
+    "documentation": {
+      "content": "Production health checks have failed continuously for five minutes. Follow https://github.com/owainlewis/passage.md/blob/main/docs/incident-runbook.md",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "critical"},
+    "conditions": [{
+      "displayName": "External health check fails for 5 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"uptime_url\" AND resource.label.host = \"passage.md\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\"",
+        "aggregations": [{
+          "alignmentPeriod": "60s",
+          "perSeriesAligner": "ALIGN_FRACTION_TRUE"
+        }],
+        "comparison": "COMPARISON_LT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "trigger": {"count": 2}
+      }
+    }]
+  },
+  {
+    "displayName": "Passage Cloud Run elevated 5xx",
+    "documentation": {
+      "content": "Cloud Run has served at least five 5xx responses in a five-minute window. Check structured application errors and request logs in the Passage production dashboard.",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "critical"},
+    "conditions": [{
+      "displayName": "5xx rate exceeds 1 per minute for 5 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND resource.label.location = \"us-central1\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.label.response_code_class = \"5xx\"",
+        "aggregations": [{
+          "alignmentPeriod": "300s",
+          "perSeriesAligner": "ALIGN_RATE",
+          "crossSeriesReducer": "REDUCE_SUM"
+        }],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.0166666667,
+        "duration": "300s",
+        "trigger": {"count": 1}
+      }
+    }]
+  },
+  {
+    "displayName": "Passage Cloud Run high latency",
+    "documentation": {
+      "content": "Cloud Run p95 request latency has remained above two seconds for ten minutes. Check request volume, application errors, instance count, and database health.",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "warning"},
+    "conditions": [{
+      "displayName": "p95 latency exceeds 2 seconds for 10 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloud_run_revision\" AND resource.label.service_name = \"passage-md\" AND resource.label.location = \"us-central1\" AND metric.type = \"run.googleapis.com/request_latencies\"",
+        "aggregations": [{
+          "alignmentPeriod": "300s",
+          "perSeriesAligner": "ALIGN_PERCENTILE_95",
+          "crossSeriesReducer": "REDUCE_MAX"
+        }],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 2000,
+        "duration": "600s",
+        "trigger": {"count": 1}
+      }
+    }]
+  },
+  {
+    "displayName": "Passage Cloud SQL storage pressure",
+    "documentation": {
+      "content": "Cloud SQL disk utilization has remained above 80% for fifteen minutes. Confirm auto-resize, available quota, and recent data growth before changing storage.",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "warning"},
+    "conditions": [{
+      "displayName": "Disk utilization exceeds 80% for 15 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/disk/utilization\"",
+        "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MEAN"}],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.8,
+        "duration": "900s",
+        "trigger": {"count": 1}
+      }
+    }]
+  },
+  {
+    "displayName": "Passage Cloud SQL CPU pressure",
+    "documentation": {
+      "content": "Cloud SQL CPU utilization has remained above 80% for fifteen minutes. Check expensive requests, connection load, and query activity before resizing.",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "warning"},
+    "conditions": [{
+      "displayName": "CPU utilization exceeds 80% for 15 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\"",
+        "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MEAN"}],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.8,
+        "duration": "900s",
+        "trigger": {"count": 1}
+      }
+    }]
+  },
+  {
+    "displayName": "Passage Cloud SQL connection pressure",
+    "documentation": {
+      "content": "Cloud SQL has used more than 20 connections for ten minutes. The current db-f1-micro tier has little connection headroom. Check application instances and long-lived sessions.",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "warning"},
+    "conditions": [{
+      "displayName": "Connections exceed 20 for 10 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
+        "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MAX"}],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 20,
+        "duration": "600s",
+        "trigger": {"count": 1}
+      }
+    }]
+  },
+  {
+    "displayName": "Passage Cloud SQL unavailable",
+    "documentation": {
+      "content": "Cloud SQL has reported unavailable for five minutes. Follow the database recovery section of https://github.com/owainlewis/passage.md/blob/main/docs/incident-runbook.md",
+      "mimeType": "text/markdown"
+    },
+    "userLabels": {"environment": "production", "service": "passage-md", "severity": "critical"},
+    "conditions": [{
+      "displayName": "Database reports down for 5 minutes",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/up\"",
+        "aggregations": [{"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MIN"}],
+        "comparison": "COMPARISON_LT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "trigger": {"count": 1}
+      }
+    }]
+  }
+]
