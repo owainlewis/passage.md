@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -24,6 +26,27 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/migrations"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func awaitTestValue[T any](t *testing.T, ctx context.Context, values <-chan T, description string) T {
+	t.Helper()
+	select {
+	case value := <-values:
+		return value
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for %s: %v", description, ctx.Err())
+		var zero T
+		return zero
+	}
+}
+
+func testRelease(signal chan struct{}) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(signal)
+		})
+	}
+}
 
 func TestPasswordResetWithPostgres(t *testing.T) {
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
@@ -518,12 +541,14 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	db, err := database.Open(ctx, databaseURL)
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
 	defer db.Close()
+	defer cancel()
 	if _, err := migrations.Apply(ctx, db); err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +562,7 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 	`, email, "hash").Scan(&userID); err != nil {
 		t.Fatal(err)
 	}
-	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
 
 	store := billing.NewPGStore(db)
 	if _, err := store.FindUserByID(ctx, "not-a-uuid"); !errors.Is(err, billing.ErrUserNotFound) {
@@ -558,8 +583,8 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 		}()
 	}
 	close(start)
-	first := <-results
-	second := <-results
+	first := awaitTestValue(t, ctx, results, "first concurrent customer link")
+	second := awaitTestValue(t, ctx, results, "second concurrent customer link")
 	if first.err != nil {
 		t.Fatal(first.err)
 	}
@@ -610,11 +635,20 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 
 	firstEntered := make(chan struct{})
 	releaseFirst := make(chan struct{})
+	releaseFirstLoad := testRelease(releaseFirst)
+	defer releaseFirstLoad()
 	firstDone := make(chan error, 1)
 	go func() {
-		firstDone <- store.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+		firstDone <- store.RefreshSubscription(ctx, userID, func(loadCtx context.Context) (billing.SubscriptionUpdate, error) {
 			close(firstEntered)
-			<-releaseFirst
+			if acquired := db.Stat().AcquiredConns(); acquired != 0 {
+				return billing.SubscriptionUpdate{}, fmt.Errorf("pool has %d acquired connections during Stripe load", acquired)
+			}
+			select {
+			case <-releaseFirst:
+			case <-loadCtx.Done():
+				return billing.SubscriptionUpdate{}, loadCtx.Err()
+			}
 			return billing.SubscriptionUpdate{
 				CustomerID:            customerID,
 				SubscriptionID:        subscriptionID,
@@ -623,41 +657,42 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 			}, nil
 		})
 	}()
-	<-firstEntered
+	awaitTestValue(t, ctx, firstEntered, "first Stripe loader")
 
-	secondStarted := make(chan struct{})
+	secondDB, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		releaseFirstLoad()
+		cancel()
+		secondDB.Close()
+	}()
 	secondEntered := make(chan struct{})
 	secondDone := make(chan error, 1)
-	secondStore := billing.NewPGStore(db)
+	secondStore := billing.NewPGStore(secondDB)
 	go func() {
-		close(secondStarted)
 		secondDone <- secondStore.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
 			close(secondEntered)
 			return billing.SubscriptionUpdate{
 				CustomerID:            customerID,
 				SubscriptionID:        subscriptionID,
 				SubscriptionCreatedAt: &subscriptionCreated,
-				Status:                "active",
+				Status:                "past_due",
 			}, nil
 		})
 	}()
-	<-secondStarted
-	select {
-	case <-secondEntered:
-		t.Fatal("second subscription refresh entered before the first released its lock")
-	case <-time.After(50 * time.Millisecond):
+	secondCtx, cancelSecond := context.WithTimeout(ctx, 2*time.Second)
+	awaitTestValue(t, secondCtx, secondEntered, "second Stripe loader while the first is delayed")
+	secondErr := awaitTestValue(t, secondCtx, secondDone, "second subscription refresh")
+	cancelSecond()
+	releaseFirstLoad()
+	firstErr := awaitTestValue(t, ctx, firstDone, "first subscription refresh")
+	if secondErr != nil {
+		t.Fatal(secondErr)
 	}
-	close(releaseFirst)
-	if err := <-firstDone; err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-secondEntered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("second subscription refresh did not acquire the lock")
-	}
-	if err := <-secondDone; err != nil {
-		t.Fatal(err)
+	if firstErr != nil {
+		t.Fatal(firstErr)
 	}
 
 	state, err := store.State(ctx, userID)
@@ -666,8 +701,222 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 	}
 	if state.StripeCustomerID != customerID ||
 		state.StripeSubscriptionID != subscriptionID ||
-		state.StripeSubscriptionStatus != "active" {
+		state.StripeSubscriptionStatus != "past_due" {
 		t.Fatalf("stale or conflicting update changed state: %#v", state)
+	}
+}
+
+func TestBillingPGStoreRefreshFailureDoesNotHoldPoolConnection(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	setupDB, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer setupDB.Close()
+	defer cancel()
+	if _, err := migrations.Apply(ctx, setupDB); err != nil {
+		t.Fatal(err)
+	}
+
+	email := "billing-refresh-failure-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.com"
+	var userID string
+	if err := setupDB.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'hash')
+		RETURNING id::text
+	`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer setupDB.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+
+	singleConnectionURL, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := singleConnectionURL.Query()
+	values.Set("pool_max_conns", "1")
+	singleConnectionURL.RawQuery = values.Encode()
+	db, err := database.Open(ctx, singleConnectionURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	store := billing.NewPGStore(db)
+	loaderEntered := make(chan struct{})
+	releaseLoader := make(chan struct{})
+	releaseStripeLoad := testRelease(releaseLoader)
+	defer releaseStripeLoad()
+	refreshDone := make(chan error, 1)
+	customerID := "cus_refresh_failure_" + strings.ReplaceAll(userID, "-", "")
+	subscriptionID := "sub_refresh_failure_" + strings.ReplaceAll(userID, "-", "")
+	go func() {
+		refreshDone <- store.RefreshSubscription(ctx, userID, func(loadCtx context.Context) (billing.SubscriptionUpdate, error) {
+			close(loaderEntered)
+			select {
+			case <-releaseLoader:
+			case <-loadCtx.Done():
+				return billing.SubscriptionUpdate{}, loadCtx.Err()
+			}
+			return billing.SubscriptionUpdate{
+				CustomerID:     customerID,
+				SubscriptionID: subscriptionID,
+				Status:         "active",
+			}, nil
+		})
+	}()
+	awaitTestValue(t, ctx, loaderEntered, "delayed Stripe loader")
+
+	queryCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	var one int
+	queryErr := db.QueryRow(queryCtx, `SELECT 1`).Scan(&one)
+	if queryErr != nil {
+		t.Fatalf("database connection remained held during Stripe load: %v", queryErr)
+	}
+	if one != 1 {
+		t.Fatalf("SELECT 1 = %d", one)
+	}
+
+	stripeErr := errors.New("Stripe request timed out")
+	if err := store.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+		return billing.SubscriptionUpdate{}, stripeErr
+	}); !errors.Is(err, stripeErr) {
+		t.Fatalf("failed refresh error = %v, want %v", err, stripeErr)
+	}
+
+	releaseStripeLoad()
+	if err := awaitTestValue(t, ctx, refreshDone, "valid in-flight refresh"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.State(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StripeCustomerID != customerID ||
+		state.StripeSubscriptionID != subscriptionID ||
+		state.StripeSubscriptionStatus != "active" {
+		t.Fatalf("valid in-flight refresh was suppressed by failed newer refresh: %#v", state)
+	}
+	var generation, appliedGeneration int64
+	if err := db.QueryRow(ctx, `
+		SELECT stripe_refresh_generation, stripe_refresh_applied_generation
+		FROM billing_accounts
+		WHERE user_id = $1
+	`, userID).Scan(&generation, &appliedGeneration); err != nil {
+		t.Fatal(err)
+	}
+	if generation != 2 || appliedGeneration != 1 {
+		t.Fatalf("refresh generations = (%d, %d), want (2, 1)", generation, appliedGeneration)
+	}
+}
+
+func TestConcurrentStripeWebhookRefreshesApplyNewestSnapshot(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer cancel()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := "billing-webhook-race-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.com"
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'hash')
+		RETURNING id::text
+	`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+
+	customerID := "cus_webhook_race_" + strings.ReplaceAll(userID, "-", "")
+	subscriptionID := "sub_webhook_race_" + strings.ReplaceAll(userID, "-", "")
+	store := billing.NewPGStore(db)
+	if _, err := store.SetStripeCustomer(ctx, userID, customerID); err != nil {
+		t.Fatal(err)
+	}
+
+	firstStripeRequest := make(chan struct{})
+	releaseFirstStripeRequest := make(chan struct{})
+	releaseStripeRequest := testRelease(releaseFirstStripeRequest)
+	var stripeRequests atomic.Int32
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		status := "past_due"
+		if stripeRequests.Add(1) == 1 {
+			close(firstStripeRequest)
+			select {
+			case <-releaseFirstStripeRequest:
+			case <-r.Context().Done():
+				return
+			}
+			status = "active"
+		}
+		_, _ = fmt.Fprintf(w, `{
+			"id":%q,
+			"customer":%q,
+			"status":%q,
+			"metadata":{"passage_user_id":%q}
+		}`, subscriptionID, customerID, status, userID)
+	}))
+	defer stripeServer.Close()
+	defer releaseStripeRequest()
+
+	app := &App{
+		billing: billing.NewService(store, config.BillingConfig{
+			FreeMaxSavedDocs: 5,
+			ProMaxSavedDocs:  1000,
+		}),
+		stripe: billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+	}
+	refresh := func() error {
+		req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/webhook", nil).WithContext(ctx)
+		return app.applyCurrentSubscription(req, customerID, subscriptionID)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- refresh()
+	}()
+	awaitTestValue(t, ctx, firstStripeRequest, "first Stripe request")
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- refresh()
+	}()
+	secondCtx, cancelSecond := context.WithTimeout(ctx, 2*time.Second)
+	secondErr := awaitTestValue(t, secondCtx, secondDone, "newer webhook refresh")
+	cancelSecond()
+	releaseStripeRequest()
+	firstErr := awaitTestValue(t, ctx, firstDone, "delayed webhook refresh")
+	if secondErr != nil {
+		t.Fatal(secondErr)
+	}
+	if firstErr != nil {
+		t.Fatal(firstErr)
+	}
+	state, err := store.State(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StripeSubscriptionStatus != "past_due" {
+		t.Fatalf("stale delayed Stripe snapshot overwrote status: %#v", state)
 	}
 }
 

@@ -206,18 +206,44 @@ func (s *PGStore) UpdateSubscription(ctx context.Context, userID string, update 
 }
 
 func (s *PGStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	// Reserve an order before calling Stripe, without holding a database
+	// connection while the network request is in flight.
+	var generation int64
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO billing_accounts (user_id, stripe_refresh_generation)
+		VALUES ($1, 1)
+		ON CONFLICT (user_id) DO UPDATE
+		SET stripe_refresh_generation = billing_accounts.stripe_refresh_generation + 1
+		RETURNING stripe_refresh_generation
+	`, userID).Scan(&generation)
+	if err != nil {
+		return err
+	}
+
+	update, err := load(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Only the newest completed refresh may update the account. A failed newer
+	// refresh leaves room for an older successful request to apply.
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "passage:billing:"+userID); err != nil {
+	var appliedGeneration int64
+	if err := tx.QueryRow(ctx, `
+		SELECT stripe_refresh_applied_generation
+		FROM billing_accounts
+		WHERE user_id = $1
+		FOR UPDATE
+	`, userID).Scan(&appliedGeneration); err != nil {
 		return err
 	}
-	update, err := load(ctx)
-	if err != nil {
-		return err
+	if generation <= appliedGeneration {
+		return tx.Commit(ctx)
 	}
 	var refreshedAt time.Time
 	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&refreshedAt); err != nil {
@@ -225,6 +251,13 @@ func (s *PGStore) RefreshSubscription(ctx context.Context, userID string, load f
 	}
 	update.EventCreated = &refreshedAt
 	if err := updateSubscription(ctx, tx, userID, update); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE billing_accounts
+		SET stripe_refresh_applied_generation = $2
+		WHERE user_id = $1
+	`, userID, generation); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
