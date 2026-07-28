@@ -422,4 +422,17 @@ func assertPublicSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("X-Content-Type-Options = %q", got)
 	}
+	if got := rec.Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+		t.Fatalf("X-Robots-Tag = %q, want %q", got, "noindex, nofollow")
+	}
+}
+
+func TestPublicHTMLCarriesARobotsMetaTag(t *testing.T) {
+	page, err := renderPublicHTML(Document{Title: "Quarterly numbers", Body: "# Quarterly numbers"})
+	if err != nil {
+		t.Fatalf("render public HTML: %v", err)
+	}
+	if !strings.Contains(string(page), `<meta name="robots" content="noindex, nofollow">`) {
+		t.Fatalf("public html has no robots meta tag: %s", page)
+	}
 }

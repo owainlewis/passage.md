@@ -23,6 +23,7 @@ var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!docty
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
   <title>{{ .Title }}</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <style>
