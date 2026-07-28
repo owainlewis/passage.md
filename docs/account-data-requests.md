@@ -83,7 +83,15 @@ If local database deletion fails, Stripe is not changed and the Passage account 
 
 If Stripe cleanup fails after local deletion commits, the command retains a cleanup job and reports that the Passage account is already deleted.
 
-Fix the Stripe or network error, then rerun the same deletion command to retry the pending cleanup safely.
+Fix the Stripe or network error, then run the exact cleanup command reported by the failed deletion:
+
+```sh
+go run ./server/cmd/passage account cleanup-stripe cus_EXACT_CUSTOMER_ID
+```
+
+Stripe cleanup and Passage account deletion are separate commands so a cleanup retry cannot delete an account recreated later with the same email.
+
+If a current account also needs deletion, re-verify that request and run the confirmed deletion command again.
 
 Stripe may keep invoices, payments, disputes, and required accounting or fraud-prevention records after cancellation.
 

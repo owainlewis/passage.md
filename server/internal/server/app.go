@@ -497,6 +497,13 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if err := a.stripe.ConfigureCustomer(r.Context(), customerID, billing.CustomerParams{
+			Email:  user.Email,
+			UserID: user.ID,
+		}); err != nil {
+			httpx.WriteInternalError(w, r, "configure Stripe customer", err, "Stripe customer could not be configured")
+			return
+		}
 		sessionURL, err := a.stripe.CreateCheckoutSession(r.Context(), billing.CheckoutParams{
 			CustomerID:     customerID,
 			UserID:         user.ID,
@@ -533,6 +540,9 @@ func (a *App) reconcileStripeCustomerWrite(ctx context.Context, user auth.User, 
 		}
 		if account.Subscription.StripeCustomerID == candidateCustomerID {
 			return writeErr
+		}
+		if account.Subscription.StripeCustomerID == "" {
+			return fmt.Errorf("preserve Stripe customer candidate for idempotent retry: %w", writeErr)
 		}
 	}
 	if err := a.stripe.NeutralizeUnsubscribedCustomer(reconcileCtx, candidateCustomerID); err != nil {

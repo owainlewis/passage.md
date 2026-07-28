@@ -20,6 +20,8 @@ import (
 var ErrAccountNotFound = errors.New("account not found")
 var ErrActiveSubscription = errors.New("Stripe state must be terminal or explicitly verified as having no active subscription before deletion")
 var ErrStripeNeutralizerRequired = errors.New("Stripe checkout neutralization is required before deleting an account with a Stripe customer")
+var ErrPriorAccountStripeCleanupPending = errors.New("Stripe cleanup for a previously deleted account must be completed separately")
+var ErrStripeCleanupNotPending = errors.New("no matching Stripe cleanup job is pending")
 
 type StripeCustomerNeutralizer interface {
 	NeutralizeUnsubscribedCustomer(context.Context, string) error
@@ -145,13 +147,11 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 	if email == "" {
 		return ErrAccountNotFound
 	}
-	if customerID, err := pendingStripeCleanup(ctx, db, email); err != nil {
+	jobs := pgStripeCleanupJobs{db: db}
+	if customerID, err := jobs.customerForEmail(ctx, email); err != nil {
 		return err
 	} else if customerID != "" {
-		if options.Stripe == nil {
-			return ErrStripeNeutralizerRequired
-		}
-		return completeStripeCleanup(ctx, db, email, customerID, options.Stripe)
+		return fmt.Errorf("%w: run passage account cleanup-stripe %s", ErrPriorAccountStripeCleanupPending, customerID)
 	}
 	tx, err := db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -226,12 +226,23 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 	if account.StripeCustomerID == "" {
 		return nil
 	}
-	return completeStripeCleanup(ctx, db, email, account.StripeCustomerID, options.Stripe)
+	return CleanupStripeCustomer(ctx, db, account.StripeCustomerID, options.Stripe)
 }
 
-func pendingStripeCleanup(ctx context.Context, db *database.Pool, email string) (string, error) {
+type stripeCleanupJobs interface {
+	customerForEmail(context.Context, string) (string, error)
+	exists(context.Context, string) (bool, error)
+	recordFailure(context.Context, string, error) (bool, error)
+	delete(context.Context, string) error
+}
+
+type pgStripeCleanupJobs struct {
+	db *database.Pool
+}
+
+func (j pgStripeCleanupJobs) customerForEmail(ctx context.Context, email string) (string, error) {
 	var customerID string
-	err := db.QueryRow(ctx, `
+	err := j.db.QueryRow(ctx, `
 		SELECT stripe_customer_id
 		FROM stripe_customer_cleanup_jobs
 		WHERE account_email = $1
@@ -242,25 +253,86 @@ func pendingStripeCleanup(ctx context.Context, db *database.Pool, email string) 
 	return customerID, err
 }
 
-func completeStripeCleanup(ctx context.Context, db *database.Pool, email string, customerID string, stripe StripeCustomerNeutralizer) error {
+func (j pgStripeCleanupJobs) exists(ctx context.Context, customerID string) (bool, error) {
+	var exists bool
+	err := j.db.QueryRow(ctx, `
+		SELECT EXISTS (
+		  SELECT 1
+		  FROM stripe_customer_cleanup_jobs
+		  WHERE stripe_customer_id = $1
+		)
+	`, customerID).Scan(&exists)
+	return exists, err
+}
+
+func (j pgStripeCleanupJobs) recordFailure(ctx context.Context, customerID string, cleanupErr error) (bool, error) {
+	tag, err := j.db.Exec(ctx, `
+		UPDATE stripe_customer_cleanup_jobs
+		SET attempts = attempts + 1,
+		    last_error = $2,
+		    updated_at = now()
+		WHERE stripe_customer_id = $1
+	`, customerID, cleanupErr.Error())
+	return tag.RowsAffected() == 1, err
+}
+
+func (j pgStripeCleanupJobs) delete(ctx context.Context, customerID string) error {
+	_, err := j.db.Exec(ctx, `
+		DELETE FROM stripe_customer_cleanup_jobs
+		WHERE stripe_customer_id = $1
+	`, customerID)
+	return err
+}
+
+func CleanupStripeCustomer(ctx context.Context, db *database.Pool, customerID string, stripe StripeCustomerNeutralizer) error {
+	if stripe == nil {
+		return ErrStripeNeutralizerRequired
+	}
+	customerID = strings.TrimSpace(customerID)
+	if customerID == "" {
+		return errors.New("Stripe customer ID is required")
+	}
+	return cleanupStripeCustomer(ctx, pgStripeCleanupJobs{db: db}, customerID, stripe)
+}
+
+func cleanupStripeCustomer(ctx context.Context, jobs stripeCleanupJobs, customerID string, stripe StripeCustomerNeutralizer) error {
+	exists, err := jobs.exists(ctx, customerID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrStripeCleanupNotPending
+	}
 	if err := stripe.NeutralizeUnsubscribedCustomer(ctx, customerID); err != nil {
-		_, recordErr := db.Exec(ctx, `
-			UPDATE stripe_customer_cleanup_jobs
-			SET attempts = attempts + 1,
-			    last_error = $3,
-			    updated_at = now()
-			WHERE account_email = $1 AND stripe_customer_id = $2
-		`, email, customerID, err.Error())
+		recorded, recordErr := jobs.recordFailure(ctx, customerID, err)
 		if recordErr != nil {
 			return errors.Join(fmt.Errorf("Stripe cleanup is pending: %w", err), fmt.Errorf("record cleanup failure: %w", recordErr))
 		}
-		return fmt.Errorf("Passage account deleted; Stripe cleanup is pending and may be retried with the same command: %w", err)
+		if !recorded {
+			reconcileCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			stillPending, lookupErr := jobs.exists(reconcileCtx, customerID)
+			if lookupErr != nil {
+				return errors.Join(fmt.Errorf("Stripe cleanup is pending: %w", err), fmt.Errorf("reconcile cleanup job: %w", lookupErr))
+			}
+			if !stillPending {
+				return nil
+			}
+		}
+		return fmt.Errorf("Passage account deleted; Stripe cleanup is pending. Run passage account cleanup-stripe %s: %w", customerID, err)
 	}
-	_, err := db.Exec(ctx, `
-		DELETE FROM stripe_customer_cleanup_jobs
-		WHERE account_email = $1 AND stripe_customer_id = $2
-	`, email, customerID)
-	return err
+	if err := jobs.delete(ctx, customerID); err != nil {
+		reconcileCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		stillPending, lookupErr := jobs.exists(reconcileCtx, customerID)
+		if lookupErr != nil {
+			return errors.Join(err, fmt.Errorf("reconcile cleanup job deletion: %w", lookupErr))
+		}
+		if stillPending {
+			return err
+		}
+	}
+	return nil
 }
 
 func lockBillingState(ctx context.Context, tx pgx.Tx, account *Account) error {

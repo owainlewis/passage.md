@@ -241,15 +241,37 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 		t.Fatalf("pending Stripe cleanup jobs = %d, want 1", pending)
 	}
 
+	var recreatedUserID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'new-account-hash')
+		RETURNING id::text
+	`, email).Scan(&recreatedUserID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, recreatedUserID)
+	if _, err := db.Exec(ctx, `
+		INSERT INTO documents (owner_user_id, public_id, title, body)
+		VALUES ($1, $2, 'Recreated account document', '# Keep this document')
+	`, recreatedUserID, fmt.Sprintf("recreated-%d", stamp)); err != nil {
+		t.Fatal(err)
+	}
+
 	stripe := &fakeStripeNeutralizer{}
 	if err := Delete(ctx, db, email, DeleteOptions{
 		StripeVerifiedNoActiveSubscription: true,
 		Stripe:                             stripe,
-	}); err != nil {
+	}); !errors.Is(err, ErrPriorAccountStripeCleanupPending) {
+		t.Fatalf("delete with prior cleanup error = %v, want ErrPriorAccountStripeCleanupPending", err)
+	}
+	if len(stripe.customerIDs) != 0 {
+		t.Fatalf("Stripe calls from recreated-account deletion = %v, want none", stripe.customerIDs)
+	}
+	if err := CleanupStripeCustomer(ctx, db, customerID, stripe); err != nil {
 		t.Fatal(err)
 	}
 	if len(stripe.customerIDs) != 1 || stripe.customerIDs[0] != customerID {
-		t.Fatalf("neutralized customers = %v, want [%s]", stripe.customerIDs, customerID)
+		t.Fatalf("neutralized customers from dedicated cleanup = %v, want [%s]", stripe.customerIDs, customerID)
 	}
 	if err := db.QueryRow(ctx, `
 		SELECT count(*) FROM stripe_customer_cleanup_jobs
@@ -259,6 +281,28 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 	}
 	if pending != 0 {
 		t.Fatalf("pending Stripe cleanup jobs after retry = %d, want 0", pending)
+	}
+	var recreatedRows int
+	if err := db.QueryRow(ctx, `
+		SELECT count(*)
+		FROM users
+		JOIN documents ON documents.owner_user_id = users.id
+		WHERE users.id = $1
+	`, recreatedUserID).Scan(&recreatedRows); err != nil {
+		t.Fatal(err)
+	}
+	if recreatedRows != 1 {
+		t.Fatalf("recreated account and document rows after cleanup retry = %d, want 1", recreatedRows)
+	}
+
+	if err := Delete(ctx, db, email, DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM users WHERE id = $1`, recreatedUserID).Scan(&recreatedRows); err != nil {
+		t.Fatal(err)
+	}
+	if recreatedRows != 0 {
+		t.Fatalf("recreated account rows after separately confirmed deletion = %d, want 0", recreatedRows)
 	}
 }
 

@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,14 +68,20 @@ func NewStripeClient(secretKey string, baseURL string, client *http.Client) *Str
 }
 
 func (c *StripeClient) CreateCustomer(ctx context.Context, params CustomerParams) (string, error) {
+	idempotencyKey := sha256.Sum256([]byte("passage-customer:" + params.UserID))
+	var out stripeObject
+	if err := c.postFormWithIdempotencyKey(ctx, "/v1/customers", url.Values{}, fmt.Sprintf("passage-customer-%x", idempotencyKey[:]), &out); err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
+func (c *StripeClient) ConfigureCustomer(ctx context.Context, customerID string, params CustomerParams) error {
 	values := url.Values{}
 	values.Set("email", params.Email)
 	values.Set("metadata[passage_user_id]", params.UserID)
 	var out stripeObject
-	if err := c.postForm(ctx, "/v1/customers", values, &out); err != nil {
-		return "", err
-	}
-	return out.ID, nil
+	return c.postForm(ctx, "/v1/customers/"+url.PathEscape(customerID), values, &out)
 }
 
 func (c *StripeClient) CreateCheckoutSession(ctx context.Context, params CheckoutParams) (string, error) {
@@ -212,7 +219,15 @@ func (c *StripeClient) postForm(ctx context.Context, path string, values url.Val
 	return c.request(ctx, http.MethodPost, path, values, target)
 }
 
+func (c *StripeClient) postFormWithIdempotencyKey(ctx context.Context, path string, values url.Values, key string, target *stripeObject) error {
+	return c.requestWithIdempotencyKey(ctx, http.MethodPost, path, values, key, target)
+}
+
 func (c *StripeClient) request(ctx context.Context, method string, path string, values url.Values, target any) error {
+	return c.requestWithIdempotencyKey(ctx, method, path, values, "", target)
+}
+
+func (c *StripeClient) requestWithIdempotencyKey(ctx context.Context, method string, path string, values url.Values, idempotencyKey string, target any) error {
 	if c == nil || c.secretKey == "" {
 		return ErrStripeConfig
 	}
@@ -227,6 +242,9 @@ func (c *StripeClient) request(ctx context.Context, method string, path string, 
 	req.SetBasicAuth(c.secretKey, "")
 	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	if idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
 	}
 	res, err := c.client.Do(req)
 	if err != nil {

@@ -67,6 +67,64 @@ func TestStripeClientRetrievesSubscriptionSnapshot(t *testing.T) {
 	}
 }
 
+func TestCreateCustomerUsesStableUserIdempotencyKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/customers" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Idempotency-Key"); got != "passage-customer-80c9db756700f8c3fa26ad6c7ca10d124783eb87731b2eb522aeb376ec8ad0e4" {
+			t.Fatalf("Idempotency-Key = %q", got)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if len(r.Form) != 0 {
+			t.Fatalf("unlinked customer form = %v, want no personal data", r.Form)
+		}
+		writeStripeJSON(t, w, map[string]string{"id": "cus_test"})
+	}))
+	defer server.Close()
+
+	client := NewStripeClient("sk_test", server.URL, server.Client())
+	customerID, err := client.CreateCustomer(context.Background(), CustomerParams{
+		Email:  "writer@example.com",
+		UserID: "user-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if customerID != "cus_test" {
+		t.Fatalf("customer ID = %q, want cus_test", customerID)
+	}
+}
+
+func TestConfigureCustomerAddsPersonalDataAfterLinking(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/customers/cus_test" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Form.Get("email"); got != "writer@example.com" {
+			t.Fatalf("email = %q, want writer@example.com", got)
+		}
+		if got := r.Form.Get("metadata[passage_user_id]"); got != "user-1" {
+			t.Fatalf("passage user ID = %q, want user-1", got)
+		}
+		writeStripeJSON(t, w, map[string]string{"id": "cus_test"})
+	}))
+	defer server.Close()
+
+	client := NewStripeClient("sk_test", server.URL, server.Client())
+	if err := client.ConfigureCustomer(context.Background(), "cus_test", CustomerParams{
+		Email:  "writer@example.com",
+		UserID: "user-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNeutralizeUnsubscribedCustomerExpiresSessionsAndDeletesCustomer(t *testing.T) {
 	var operations []string
 	listRequests := 0

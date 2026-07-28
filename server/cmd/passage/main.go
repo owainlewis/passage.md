@@ -64,7 +64,7 @@ func run(args []string) error {
 }
 
 func usage() error {
-	return errors.New("usage: passage serve|migrate|user <email>|account export <email> <output.zip>|account delete <email> --confirm <email> [--stripe-verified-no-active-subscription]")
+	return errors.New("usage: passage serve|migrate|user <email>|account export <email> <output.zip>|account delete <email> --confirm <email> [--stripe-verified-no-active-subscription]|account cleanup-stripe <customer-id>")
 }
 
 func serve(cfg config.Config) error {
@@ -251,9 +251,29 @@ func account(cfg config.Config, args []string) error {
 		}
 		fmt.Printf("account permanently deleted: %s\n", strings.ToLower(strings.TrimSpace(args[1])))
 		return nil
+	case "cleanup-stripe":
+		if len(args) != 2 || strings.TrimSpace(args[1]) == "" {
+			return errors.New("usage: passage account cleanup-stripe <customer-id>")
+		}
+		stripe := billing.NewStripeClient(cfg.Billing.StripeSecretKey, "", nil)
+		if err := cleanupStripeCustomerResult(args[1], accountdata.CleanupStripeCustomer(ctx, db, args[1], stripe)); err != nil {
+			return err
+		}
+		fmt.Printf("Stripe cleanup completed: %s\n", strings.TrimSpace(args[1]))
+		return nil
 	default:
 		return usage()
 	}
+}
+
+func cleanupStripeCustomerResult(customerID string, err error) error {
+	if errors.Is(err, accountdata.ErrStripeCleanupNotPending) {
+		return fmt.Errorf("no matching pending Stripe cleanup job: %s", strings.TrimSpace(customerID))
+	}
+	if err != nil {
+		return fmt.Errorf("cleanup Stripe customer: %w", err)
+	}
+	return nil
 }
 
 func generatedPassword() (string, error) {
