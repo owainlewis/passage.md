@@ -136,6 +136,28 @@ func TestPasswordResetRequestQueuesGenericResponseAndWorkerSendsHashedToken(t *t
 	}
 }
 
+func TestPasswordResetWorkerDoesNotSendInactiveToken(t *testing.T) {
+	store := newResetTestStore()
+	store.claim = PasswordResetRequest{ID: "expired-request", Email: "person@example.com", Attempts: 2}
+	store.tokenErr = ErrInvalidResetToken
+	sender := &recordingPasswordResetSender{}
+	service := NewServiceWithOptions(store, "test-secret", false, Options{
+		AppBaseURL:          "https://passage.md",
+		PasswordResetSender: sender,
+	})
+
+	processed, err := service.processPasswordResetRequest(context.Background())
+	if err != nil || !processed {
+		t.Fatalf("processed = %v, error = %v", processed, err)
+	}
+	if sender.email != "" || sender.resetURL != "" {
+		t.Fatalf("inactive token was sent to %q with URL %q", sender.email, sender.resetURL)
+	}
+	if store.completedID != "expired-request" || store.retriedID != "" {
+		t.Fatalf("completed = %q, retried = %q", store.completedID, store.retriedID)
+	}
+}
+
 func TestDirectClientIPIgnoresForwardedHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.RemoteAddr = "192.0.2.10:1234"
@@ -536,6 +558,7 @@ type resetTestStore struct {
 	claim          PasswordResetRequest
 	tokenHash      string
 	expiresAt      time.Time
+	tokenErr       error
 	tokenValid     bool
 	resetTokenHash string
 	passwordHash   string
@@ -585,6 +608,9 @@ func (s *resetTestStore) RetryPasswordResetRequest(_ context.Context, id string,
 func (s *resetTestStore) CreatePasswordResetToken(_ context.Context, _ string, tokenHash string, expiresAt time.Time) error {
 	s.tokenHash = tokenHash
 	s.expiresAt = expiresAt
+	if s.tokenErr != nil {
+		return s.tokenErr
+	}
 	s.tokenValid = true
 	return nil
 }

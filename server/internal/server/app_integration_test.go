@@ -17,6 +17,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
@@ -113,6 +114,113 @@ func TestPasswordResetWithPostgres(t *testing.T) {
 	if got := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/auth/password-reset/confirm", `{"token":"`+token+`","password":"another-password-123"}`, nil, ""); got != http.StatusBadRequest {
 		t.Fatalf("reused token status = %d", got)
 	}
+}
+
+func TestPasswordResetRetryOrderingWithPostgres(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := fmt.Sprintf("password-reset-ordering-%d@example.com", time.Now().UnixNano())
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'old-password-hash')
+		RETURNING id::text
+	`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
+
+	store := auth.NewPGStore(db)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	tokenAExpiresAt := now.Add(time.Hour)
+	tokenAHash := integrationTokenHash(email + "-request-a")
+	tokenBHash := integrationTokenHash(email + "-request-b")
+
+	// Request A creates its deterministic token before delivery fails.
+	if err := store.CreatePasswordResetToken(ctx, email, tokenAHash, tokenAExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	// Request B is then created and delivered successfully.
+	if err := store.CreatePasswordResetToken(ctx, email, tokenBHash, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	// Retrying A must reuse its still-valid token without invalidating B.
+	if err := store.CreatePasswordResetToken(ctx, email, tokenAHash, now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var storedTokenAExpiry time.Time
+	if err := db.QueryRow(ctx, `SELECT expires_at FROM password_reset_tokens WHERE token_hash = $1`, tokenAHash).Scan(&storedTokenAExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if !storedTokenAExpiry.Equal(tokenAExpiresAt) {
+		t.Fatalf("request A retry changed expiry from %s to %s", tokenAExpiresAt, storedTokenAExpiry)
+	}
+
+	for name, tokenHash := range map[string]string{"request A": tokenAHash, "request B": tokenBHash} {
+		valid, err := store.PasswordResetTokenValid(ctx, tokenHash, now.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !valid {
+			t.Fatalf("%s token is invalid after request A retry", name)
+		}
+	}
+
+	if err := store.ResetPassword(ctx, tokenBHash, "new-password-hash", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	for name, tokenHash := range map[string]string{"request A": tokenAHash, "request B": tokenBHash} {
+		valid, err := store.PasswordResetTokenValid(ctx, tokenHash, now.Add(3*time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if valid {
+			t.Fatalf("%s token remained valid after request B reset", name)
+		}
+	}
+	if err := store.CreatePasswordResetToken(ctx, email, tokenAHash, now.Add(time.Hour)); !errors.Is(err, auth.ErrInvalidResetToken) {
+		t.Fatalf("used request A token retry error = %v", err)
+	}
+
+	if _, err := db.Exec(ctx, `
+		UPDATE password_reset_tokens
+		SET expires_at = $2
+		WHERE token_hash = $1
+	`, tokenAHash, now.Add(-25*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreatePasswordResetToken(ctx, email, tokenAHash, now.Add(time.Hour)); !errors.Is(err, auth.ErrInvalidResetToken) {
+		t.Fatalf("old used request A token retry error = %v", err)
+	}
+	var matchingTokens int
+	var used bool
+	if err := db.QueryRow(ctx, `
+		SELECT count(*), bool_and(used_at IS NOT NULL)
+		FROM password_reset_tokens
+		WHERE token_hash = $1
+	`, tokenAHash).Scan(&matchingTokens, &used); err != nil {
+		t.Fatal(err)
+	}
+	if matchingTokens != 1 || !used {
+		t.Fatalf("old token tombstone count = %d, used = %v", matchingTokens, used)
+	}
+}
+
+func integrationTokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 type integrationResetEmail struct {
