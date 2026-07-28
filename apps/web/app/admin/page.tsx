@@ -13,6 +13,7 @@ type AdminUser = {
   source: string;
   subscriptionStatus?: string;
   savedDocs: number;
+  storedMarkdownBytes: number;
 };
 
 type AdminDashboard = {
@@ -30,6 +31,10 @@ function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatStoredMarkdown(value: number) {
+  return `${new Intl.NumberFormat("en-GB").format(value)} B`;
 }
 
 function label(value: string) {
@@ -114,7 +119,7 @@ function AdminPage() {
         <section className="adminHeader">
           <p className="adminKicker">Admin</p>
           <h1>Accounts</h1>
-          <p>A simple view of Passage users and their active documents.</p>
+          <p>A simple view of Passage users, active documents, and stored Markdown.</p>
         </section>
 
         {!dashboard ? (
@@ -153,6 +158,7 @@ function AdminPage() {
                         <th scope="col">Source</th>
                         <th scope="col">Subscription</th>
                         <th scope="col" className="adminNumber">Documents</th>
+                        <th scope="col" className="adminNumber">Stored Markdown</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -168,6 +174,7 @@ function AdminPage() {
                           <td>{label(user.source)}</td>
                           <td>{label(user.subscriptionStatus ?? "")}</td>
                           <td className="adminNumber">{user.savedDocs}</td>
+                          <td className="adminNumber">{formatStoredMarkdown(user.storedMarkdownBytes)}</td>
                         </tr>
                       ))}
                     </tbody>
