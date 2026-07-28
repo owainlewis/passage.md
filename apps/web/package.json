@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && npm run build:public-assets",
+    "build:public-assets": "esbuild public-assets/mermaid.ts --bundle --format=esm --minify --outfile=out/assets/public-mermaid.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -12,7 +13,7 @@
   "dependencies": {
     "isomorphic-dompurify": "^3.19.0",
     "marked": "^18.0.7",
-    "mermaid": "^11.16.0",
+    "mermaid": "11.16.0",
     "next": "^16.2.10",
     "react": "^19.2.1",
     "react-dom": "^19.2.8"
@@ -24,6 +25,7 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "esbuild": "0.28.1",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.2.12",
     "jsdom": "^29.1.1",

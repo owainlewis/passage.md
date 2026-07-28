@@ -114,15 +114,7 @@ var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!docty
 <body>
   <main>{{ .Body }}</main>
   {{ if .HasMermaid }}
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "neutral"
-    });
-    await mermaid.run({ querySelector: ".mermaid" });
-  </script>
+  <script type="module" src="/assets/public-mermaid.mjs"></script>
   {{ end }}
 </body>
 </html>`))
