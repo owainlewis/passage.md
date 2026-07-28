@@ -126,19 +126,27 @@ func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
 	store := newMemoryStore()
 	store.adminUsers = []AdminUserRecord{
 		{
-			User:      auth.User{ID: "owner", Email: "owner@example.com"},
-			CreatedAt: createdAt,
-			SavedDocs: 3,
+			User:                auth.User{ID: "owner", Email: "owner@example.com"},
+			CreatedAt:           createdAt,
+			SavedDocs:           3,
+			StoredMarkdownBytes: 300,
 		},
 		{
-			User:      auth.User{ID: "paid", Email: "paid@example.com"},
-			CreatedAt: createdAt.Add(-time.Hour),
-			State:     State{StripeSubscriptionStatus: "active"},
-			SavedDocs: 8,
+			User:                auth.User{ID: "paid", Email: "paid@example.com"},
+			CreatedAt:           createdAt.Add(-time.Hour),
+			State:               State{StripeSubscriptionStatus: "active"},
+			SavedDocs:           8,
+			StoredMarkdownBytes: 800,
+		},
+		{
+			User:                auth.User{ID: "many-docs", Email: "many@example.com"},
+			CreatedAt:           createdAt.Add(-2 * time.Hour),
+			SavedDocs:           5,
+			StoredMarkdownBytes: 300,
 		},
 		{
 			User:      auth.User{ID: "free", Email: "free@example.com"},
-			CreatedAt: createdAt.Add(-2 * time.Hour),
+			CreatedAt: createdAt.Add(-3 * time.Hour),
 			State:     State{ManualPlan: &manualFree, CommunityAccess: true},
 		},
 	}
@@ -152,17 +160,20 @@ func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dashboard.Totals != (AdminTotals{Users: 3, Free: 1, Pro: 2}) {
+	if dashboard.Totals != (AdminTotals{Users: 4, Free: 2, Pro: 2}) {
 		t.Fatalf("totals = %#v", dashboard.Totals)
 	}
-	if dashboard.Users[0].Source != SourceOwner || dashboard.Users[0].SavedDocs != 3 {
-		t.Fatalf("owner = %#v", dashboard.Users[0])
+	if dashboard.Users[0].Email != "paid@example.com" || dashboard.Users[0].Source != SourceStripe || dashboard.Users[0].StoredMarkdownBytes != 800 {
+		t.Fatalf("largest = %#v", dashboard.Users[0])
 	}
-	if dashboard.Users[1].Source != SourceStripe || dashboard.Users[1].SubscriptionStatus != "active" {
-		t.Fatalf("paid = %#v", dashboard.Users[1])
+	if dashboard.Users[1].Email != "many@example.com" || dashboard.Users[1].SavedDocs != 5 {
+		t.Fatalf("document-count tie break = %#v", dashboard.Users[1])
 	}
-	if dashboard.Users[2].Plan != PlanFree || dashboard.Users[2].Source != SourceManual {
-		t.Fatalf("free = %#v", dashboard.Users[2])
+	if dashboard.Users[2].Email != "owner@example.com" || dashboard.Users[2].Source != SourceOwner || dashboard.Users[2].SavedDocs != 3 {
+		t.Fatalf("owner = %#v", dashboard.Users[2])
+	}
+	if dashboard.Users[3].Plan != PlanFree || dashboard.Users[3].Source != SourceManual {
+		t.Fatalf("free = %#v", dashboard.Users[3])
 	}
 
 	if _, err := service.AdminDashboard(context.Background(), auth.User{Email: "free@example.com"}); err != ErrNotAdmin {

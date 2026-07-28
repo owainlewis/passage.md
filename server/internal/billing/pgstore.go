@@ -61,6 +61,13 @@ func (s *PGStore) FindUserByStripeCustomer(ctx context.Context, customerID strin
 
 func (s *PGStore) ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error) {
 	rows, err := s.db.Query(ctx, `
+		WITH document_usage AS (
+			SELECT owner_user_id,
+			       count(*) FILTER (WHERE archived_at IS NULL) AS saved_docs,
+			       COALESCE(sum(octet_length(body)), 0) AS stored_markdown_bytes
+			FROM documents
+			GROUP BY owner_user_id
+		)
 		SELECT users.id::text,
 		       users.email,
 		       users.created_at,
@@ -78,14 +85,11 @@ func (s *PGStore) ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 		       COALESCE(billing_accounts.stripe_price_id, ''),
 		       billing_accounts.stripe_current_period_end,
 		       COALESCE(billing_accounts.stripe_cancel_at_period_end, false),
-		       (
-		         SELECT count(*)
-		         FROM documents
-		         WHERE owner_user_id = users.id
-		           AND archived_at IS NULL
-		       )
+		       COALESCE(document_usage.saved_docs, 0),
+		       COALESCE(document_usage.stored_markdown_bytes, 0)
 		FROM users
 		LEFT JOIN billing_accounts ON billing_accounts.user_id = users.id
+		LEFT JOIN document_usage ON document_usage.owner_user_id = users.id
 		ORDER BY users.created_at DESC, users.email
 	`)
 	if err != nil {
@@ -111,6 +115,7 @@ func (s *PGStore) ListAdminUsers(ctx context.Context) ([]AdminUserRecord, error)
 			&record.State.StripeCurrentPeriodEnd,
 			&record.State.StripeCancelAtPeriodEnd,
 			&record.SavedDocs,
+			&record.StoredMarkdownBytes,
 		); err != nil {
 			return nil, err
 		}

@@ -62,7 +62,8 @@ describe("Admin", () => {
                 createdAt: "2026-07-18T10:00:00Z",
                 plan: "pro",
                 source: "owner",
-                savedDocs: 2
+                savedDocs: 2,
+                storedMarkdownBytes: 2048
               },
               {
                 id: "paid",
@@ -71,7 +72,8 @@ describe("Admin", () => {
                 plan: "pro",
                 source: "stripe",
                 subscriptionStatus: "active",
-                savedDocs: 8
+                savedDocs: 8,
+                storedMarkdownBytes: 1024
               },
               {
                 id: "free",
@@ -79,7 +81,8 @@ describe("Admin", () => {
                 createdAt: "2026-07-16T10:00:00Z",
                 plan: "free",
                 source: "default",
-                savedDocs: 1
+                savedDocs: 1,
+                storedMarkdownBytes: 0
               }
             ]
           }),
@@ -101,6 +104,10 @@ describe("Admin", () => {
     expect(screen.getByText("paid@example.com")).toBeInTheDocument();
     expect(screen.getByText("free@example.com")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Stored Markdown" })).toBeInTheDocument();
+    expect(screen.getByText("2,048 B")).toBeInTheDocument();
+    expect(screen.getByText("1,024 B")).toBeInTheDocument();
+    expect(screen.getByText("0 B")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/admin/dashboard", { credentials: "include" });
   });
 
@@ -156,7 +163,8 @@ describe("Admin", () => {
                 createdAt: "2026-07-18T10:00:00Z",
                 plan: "pro",
                 source: "owner",
-                savedDocs: 2
+                savedDocs: 2,
+                storedMarkdownBytes: 2048
               }]
             }),
             { status: 200 }

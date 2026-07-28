@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -91,20 +92,22 @@ type Store interface {
 }
 
 type AdminUserRecord struct {
-	User      auth.User
-	CreatedAt time.Time
-	State     State
-	SavedDocs int
+	User                auth.User
+	CreatedAt           time.Time
+	State               State
+	SavedDocs           int
+	StoredMarkdownBytes int64
 }
 
 type AdminUser struct {
-	ID                 string    `json:"id"`
-	Email              string    `json:"email"`
-	CreatedAt          time.Time `json:"createdAt"`
-	Plan               Plan      `json:"plan"`
-	Source             string    `json:"source"`
-	SubscriptionStatus string    `json:"subscriptionStatus,omitempty"`
-	SavedDocs          int       `json:"savedDocs"`
+	ID                  string    `json:"id"`
+	Email               string    `json:"email"`
+	CreatedAt           time.Time `json:"createdAt"`
+	Plan                Plan      `json:"plan"`
+	Source              string    `json:"source"`
+	SubscriptionStatus  string    `json:"subscriptionStatus,omitempty"`
+	SavedDocs           int       `json:"savedDocs"`
+	StoredMarkdownBytes int64     `json:"storedMarkdownBytes"`
 }
 
 type AdminTotals struct {
@@ -178,13 +181,14 @@ func (s *Service) AdminDashboard(ctx context.Context, admin auth.User) (AdminDas
 	for _, record := range records {
 		account := s.accountFromState(record.User.Email, record.State, record.SavedDocs)
 		user := AdminUser{
-			ID:                 record.User.ID,
-			Email:              record.User.Email,
-			CreatedAt:          record.CreatedAt,
-			Plan:               account.Plan,
-			Source:             account.Source,
-			SubscriptionStatus: account.Subscription.Status,
-			SavedDocs:          account.Usage.SavedDocs,
+			ID:                  record.User.ID,
+			Email:               record.User.Email,
+			CreatedAt:           record.CreatedAt,
+			Plan:                account.Plan,
+			Source:              account.Source,
+			SubscriptionStatus:  account.Subscription.Status,
+			SavedDocs:           account.Usage.SavedDocs,
+			StoredMarkdownBytes: record.StoredMarkdownBytes,
 		}
 		dashboard.Users = append(dashboard.Users, user)
 		dashboard.Totals.Users++
@@ -194,6 +198,20 @@ func (s *Service) AdminDashboard(ctx context.Context, admin auth.User) (AdminDas
 			dashboard.Totals.Free++
 		}
 	}
+	sort.SliceStable(dashboard.Users, func(i, j int) bool {
+		left := dashboard.Users[i]
+		right := dashboard.Users[j]
+		if left.StoredMarkdownBytes != right.StoredMarkdownBytes {
+			return left.StoredMarkdownBytes > right.StoredMarkdownBytes
+		}
+		if left.SavedDocs != right.SavedDocs {
+			return left.SavedDocs > right.SavedDocs
+		}
+		if !left.CreatedAt.Equal(right.CreatedAt) {
+			return left.CreatedAt.After(right.CreatedAt)
+		}
+		return left.Email < right.Email
+	})
 	return dashboard, nil
 }
 
