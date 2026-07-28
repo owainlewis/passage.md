@@ -84,7 +84,7 @@ func serve(cfg config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := database.Open(ctx, cfg.DatabaseURL)
+	db, err := database.Open(ctx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}
@@ -157,7 +157,7 @@ func migrate(cfg config.Config) error {
 	}
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, cfg.DatabaseURL)
+	db, err := database.Open(ctx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}
@@ -194,7 +194,7 @@ func user(cfg config.Config, args []string) error {
 	}
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, cfg.DatabaseURL)
+	db, err := database.Open(ctx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}
@@ -228,7 +228,7 @@ func account(cfg config.Config, args []string) error {
 		return usage()
 	}
 	ctx := context.Background()
-	db, err := database.Open(ctx, cfg.DatabaseURL)
+	db, err := database.Open(ctx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}

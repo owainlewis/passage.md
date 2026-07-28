@@ -4,11 +4,13 @@ set -euo pipefail
 required_variables=(
   APP_BASE_URL
   CLOUD_RUN_MIGRATION_JOB
+  CLOUD_RUN_MAX_INSTANCES
   CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT
   CLOUD_RUN_SERVICE
   CLOUD_SQL_INSTANCE
   COMMIT_SHA
   DATABASE_SECRET
+  DATABASE_MAX_CONNS
   GCP_PROJECT_ID
   GCP_REGION
   IMAGE
@@ -47,10 +49,11 @@ deployed_revision="$(
     --project="${GCP_PROJECT_ID}" \
     --region="${GCP_REGION}" \
     --image="${IMAGE}" \
-    --update-env-vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},RESEND_FROM=${RESEND_FROM}" \
+    --update-env-vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},RESEND_FROM=${RESEND_FROM}" \
     --update-secrets="RESEND_API_KEY=passage-resend-api-key:latest" \
     --no-cpu-throttling \
     --min=1 \
+    --max="${CLOUD_RUN_MAX_INSTANCES}" \
     --update-labels="commit-sha=${COMMIT_SHA}" \
     --no-traffic \
     --format='value(status.latestCreatedRevisionName)' \

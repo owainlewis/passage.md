@@ -597,6 +597,43 @@ gcloud sql instances delete TEMPORARY_INSTANCE \
   --project=passage-md-prod
 ```
 
+## Connection capacity budget
+
+The launch database is a zonal PostgreSQL 16 `db-f1-micro`.
+
+Production reports `max_connections=25`, `superuser_reserved_connections=3`, and `reserved_connections=0`.
+That leaves 22 usable connections.
+Seventy percent of usable capacity is 15 connections after rounding down.
+
+The application budget is deliberately lower:
+
+- `PASSAGE_DATABASE_MAX_CONNS=3` per Cloud Run instance.
+- One minimum Cloud Run instance.
+- Four maximum Cloud Run instances.
+- Twelve worst-case application connections, or 54.5 percent of usable capacity.
+
+The remaining ten usable connections cover the one-connection migration task, operator access, and transient platform or maintenance needs.
+The Cloud SQL connection alert and dashboard threshold are both 12 connections so non-application usage above the application budget is visible.
+
+After a database tier or PostgreSQL configuration change, query only the non-secret capacity settings:
+
+```sql
+SELECT name, setting
+FROM pg_settings
+WHERE name IN (
+  'max_connections',
+  'reserved_connections',
+  'superuser_reserved_connections'
+)
+ORDER BY name;
+```
+
+Recalculate usable connections by subtracting both reserved values from `max_connections`.
+Round 70 percent of that result down.
+Choose the per-instance pool limit and Cloud Run maximum together so their product does not exceed the result.
+Update `DATABASE_MAX_CONNS`, `CLOUD_RUN_MAX_INSTANCES`, the dashboard threshold, and the connection-pressure alert in the same reviewed change.
+Then run the bounded pool test, deploy, describe the live service scaling, run a controlled concurrency smoke test, and inspect Cloud SQL connection metrics before accepting the new budget.
+
 ## Evidence
 
 For every recovery drill or incident, record:

@@ -72,7 +72,7 @@
           "xyChart": {"dataSets": [{"plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
             "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
             "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX"}
-          }}}], "thresholds": [{"value": 20}], "yAxis": {"label": "connections", "scale": "LINEAR"}}
+          }}}], "thresholds": [{"value": 12}], "yAxis": {"label": "connections", "scale": "LINEAR"}}
         }
       },
       {

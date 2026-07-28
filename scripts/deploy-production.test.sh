@@ -7,11 +7,13 @@ trap 'rm -rf "${temporary_dir}"' EXIT
 
 export APP_BASE_URL="https://passage.test"
 export CLOUD_RUN_MIGRATION_JOB="passage-migrate-test"
+export CLOUD_RUN_MAX_INSTANCES="4"
 export CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT="passage-run@test.iam.gserviceaccount.com"
 export CLOUD_RUN_SERVICE="passage-test"
 export CLOUD_SQL_INSTANCE="test:region:database"
 export COMMIT_SHA="0123456789abcdef"
 export DATABASE_SECRET="passage-test-database-url"
+export DATABASE_MAX_CONNS="3"
 export GCP_PROJECT_ID="passage-test"
 export GCP_REGION="us-central1"
 export IMAGE="us-central1-docker.pkg.dev/passage-test/passage/passage:0123456789abcdef"
@@ -49,10 +51,11 @@ traffic_update="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
 [[ "${service_deploy}" == *"--project=${GCP_PROJECT_ID}"* ]]
 [[ "${service_deploy}" == *"--region=${GCP_REGION}"* ]]
 [[ "${service_deploy}" == *"--image=${IMAGE}"* ]]
-[[ "${service_deploy}" == *"--update-env-vars=APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},RESEND_FROM=${RESEND_FROM}"* ]]
+[[ "${service_deploy}" == *"--update-env-vars=APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},RESEND_FROM=${RESEND_FROM}"* ]]
 [[ "${service_deploy}" == *"--update-secrets=RESEND_API_KEY=passage-resend-api-key:latest"* ]]
 [[ "${service_deploy}" == *"--no-cpu-throttling"* ]]
 [[ "${service_deploy}" == *"--min=1"* ]]
+[[ "${service_deploy}" == *"--max=${CLOUD_RUN_MAX_INSTANCES}"* ]]
 [[ "${service_deploy}" == *"--update-labels=commit-sha=${COMMIT_SHA}"* ]]
 [[ "${service_deploy}" == *"--no-traffic"* ]]
 [[ "${service_deploy}" == *"--format=value(status.latestCreatedRevisionName)"* ]]
