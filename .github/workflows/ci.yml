@@ -147,6 +147,9 @@ jobs:
       - name: Test production deployment gate
         run: scripts/deploy-production.test.sh
 
+      - name: Test monitoring configuration
+        run: ops/monitoring/validate.test.sh
+
       - name: Build and maybe push image
         uses: docker/build-push-action@v7
         with:

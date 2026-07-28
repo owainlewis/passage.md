@@ -115,8 +115,11 @@
     "conditions": [{
       "displayName": "Connections exceed 12 for 10 minutes",
       "conditionThreshold": {
-        "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
-        "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MAX"}],
+        "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/postgresql/num_backends\"",
+        "aggregations": [
+          {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX", "crossSeriesReducer": "REDUCE_SUM"},
+          {"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MAX"}
+        ],
         "comparison": "COMPARISON_GT",
         "thresholdValue": 12,
         "duration": "600s",
