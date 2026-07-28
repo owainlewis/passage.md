@@ -231,7 +231,9 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 			ID:       "11111111-1111-1111-1111-111111111111",
 			PublicID: publicID,
 			Title:    "Shared",
-			Body:     "# Shared\n\n<script>alert(1)</script>\n\nBody.",
+			Body: "# Shared\n\n<script>alert(1)</script>\n\n" +
+				`<img src=x onerror="alert(2)"><iframe src="https://evil.test"></iframe>` +
+				"\n\nBody.",
 		},
 	}
 	handler := NewHandler(store)
@@ -255,6 +257,10 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	}
 	if strings.Contains(html.Body.String(), "<script>") {
 		t.Fatalf("html contains unsanitized script: %s", html.Body.String())
+	}
+	if strings.Contains(html.Body.String(), "onerror=") ||
+		strings.Contains(html.Body.String(), "<iframe") {
+		t.Fatalf("html contains executable hostile markup: %s", html.Body.String())
 	}
 	assertPublicSecurityHeaders(t, html)
 
@@ -320,8 +326,11 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 	if strings.Contains(body, `<pre><code class="language-mermaid"`) {
 		t.Fatalf("html still contains unrendered mermaid code block: %s", body)
 	}
-	if !strings.Contains(body, `cdn.jsdelivr.net/npm/mermaid@11.16.0`) {
-		t.Fatalf("html does not load mermaid: %s", body)
+	if !strings.Contains(body, `<script type="module" src="/assets/public-mermaid.mjs"></script>`) {
+		t.Fatalf("html does not load the local Mermaid module: %s", body)
+	}
+	if strings.Contains(body, "cdn.jsdelivr.net") || strings.Contains(body, `src="https://`) {
+		t.Fatalf("html loads third-party executable code: %s", body)
 	}
 	if strings.Contains(body, `<script>alert(1)</script>`) {
 		t.Fatalf("html contains unescaped mermaid content: %s", body)
@@ -402,6 +411,10 @@ func assertPublicSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q", got)
+	}
+	const wantCSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'none'"
+	if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
+		t.Fatalf("Content-Security-Policy = %q, want %q", got, wantCSP)
 	}
 	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
 		t.Fatalf("Referrer-Policy = %q", got)
