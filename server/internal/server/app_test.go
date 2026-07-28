@@ -1749,6 +1749,7 @@ func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
 	body := []byte(`{
 		"id":"evt_invoice_failed",
 		"type":"invoice.payment_failed",
+		"api_version":"2024-06-20",
 		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
 		"data":{"object":{
 			"customer":"cus_test",
@@ -1770,6 +1771,173 @@ func TestStripeInvoicePaymentFailedPreservesSubscriptionMetadata(t *testing.T) {
 	}
 	if state.StripePriceID != "price_test" || state.StripeCurrentPeriodEnd == nil || !state.StripeCurrentPeriodEnd.Equal(periodEnd) || !state.StripeCancelAtPeriodEnd {
 		t.Fatalf("subscription metadata was not preserved: %#v", state)
+	}
+}
+
+func TestStripeInvoicePaymentFailedSupportsCurrentSchema(t *testing.T) {
+	billingStore := newRouteBillingStore()
+	billingStore.states["user-1"] = billing.State{
+		StripeCustomerID:         "cus_test",
+		StripeSubscriptionID:     "sub_test",
+		StripeSubscriptionStatus: "active",
+	}
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/subscriptions/sub_test" {
+			t.Fatalf("unexpected Stripe request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"sub_test",
+			"customer":"cus_test",
+			"status":"past_due",
+			"metadata":{"passage_user_id":"user-1"},
+			"items":{"data":[{"price":{"id":"price_test"}}]}
+		}`))
+	}))
+	defer stripeServer.Close()
+
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+	now := time.Now().UTC()
+	body := []byte(`{
+		"id":"evt_current_invoice_failed",
+		"type":"invoice.payment_failed",
+		"api_version":"2025-03-31.basil",
+		"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+		"data":{"object":{
+			"customer":"cus_test",
+			"parent":{
+				"type":"subscription_details",
+				"subscription_details":{"subscription":"sub_test"}
+			}
+		}}
+	}`)
+
+	rec := postStripeWebhook(t, app, body, now)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := billingStore.states["user-1"].StripeSubscriptionStatus; got != "past_due" {
+		t.Fatalf("status = %q, want past_due", got)
+	}
+}
+
+func TestStripeInvoicePaymentFailedIgnoresInvalidShapesObservably(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	tests := []struct {
+		name   string
+		object string
+	}{
+		{
+			name:   "malformed customer",
+			object: `"customer":{},"subscription":"sub_test"`,
+		},
+		{
+			name:   "missing subscription",
+			object: `"customer":"cus_test"`,
+		},
+		{
+			name:   "malformed legacy subscription",
+			object: `"customer":"cus_test","subscription":{}`,
+		},
+		{
+			name:   "malformed parent",
+			object: `"customer":"cus_test","parent":[]`,
+		},
+		{
+			name: "unrelated parent",
+			object: `"customer":"cus_test","parent":{` +
+				`"type":"quote_details",` +
+				`"subscription_details":{"subscription":"sub_test"}` +
+				`}`,
+		},
+		{
+			name: "missing subscription details",
+			object: `"customer":"cus_test","parent":{` +
+				`"type":"subscription_details"` +
+				`}`,
+		},
+		{
+			name: "malformed current subscription does not fall back to legacy",
+			object: `"customer":"cus_test","subscription":"sub_legacy","parent":{` +
+				`"type":"subscription_details",` +
+				`"subscription_details":{"subscription":{}}` +
+				`}`,
+		},
+		{
+			name: "conflicting references",
+			object: `"customer":"cus_test","subscription":"sub_legacy","parent":{` +
+				`"type":"subscription_details",` +
+				`"subscription_details":{"subscription":"sub_current"}` +
+				`}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output.Reset()
+			retrievals := 0
+			stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				retrievals++
+				http.Error(w, "subscription must not be retrieved", http.StatusInternalServerError)
+			}))
+			defer stripeServer.Close()
+
+			billingStore := newRouteBillingStore()
+			billingStore.states["user-1"] = billing.State{
+				StripeCustomerID:         "cus_test",
+				StripeSubscriptionID:     "sub_test",
+				StripeSubscriptionStatus: "active",
+			}
+			app := &App{
+				static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+				auth:          auth.NewService(newRouteAuthStore(), "test-secret", false),
+				billing:       billing.NewService(billingStore, routeBillingConfig()),
+				stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+				billingConfig: routeStripeBillingConfig(),
+			}
+			now := time.Now().UTC()
+			body := []byte(`{
+				"id":"evt_ignored_invoice",
+				"type":"invoice.payment_failed",
+				"api_version":"2025-03-31.basil",
+				"created":` + strconv.FormatInt(now.Unix(), 10) + `,
+				"data":{"object":{` + test.object + `}}
+			}`)
+
+			rec := postStripeWebhook(t, app, body, now)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			if retrievals != 0 {
+				t.Fatalf("Stripe subscription retrievals = %d, want 0", retrievals)
+			}
+			if got := billingStore.states["user-1"].StripeSubscriptionStatus; got != "active" {
+				t.Fatalf("subscription status changed to %q", got)
+			}
+			logged := output.String()
+			for _, want := range []string{
+				`"stripe_event_id":"evt_ignored_invoice"`,
+				`"stripe_event_type":"invoice.payment_failed"`,
+				`"stripe_api_version":"2025-03-31.basil"`,
+				`"operation":"ignore Stripe invoice payment failure"`,
+			} {
+				if !strings.Contains(logged, want) {
+					t.Fatalf("log %q does not contain %q", logged, want)
+				}
+			}
+			if strings.Contains(logged, test.object) || strings.Contains(logged, string(body)) {
+				t.Fatalf("webhook payload was logged: %s", logged)
+			}
+		})
 	}
 }
 
