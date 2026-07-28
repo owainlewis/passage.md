@@ -1887,6 +1887,26 @@ button {
   width: 100%;
 }
 
+.planRenewal {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.pricingPolicies {
+  margin: 18px auto 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.pricingPolicies a,
+.footerTag a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .planCtaDisabled {
   color: var(--muted);
   cursor: default;
@@ -1918,7 +1938,10 @@ button {
 .footerLinks {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: clamp(14px, 3vw, 28px);
+  max-width: 34rem;
   font-size: 0.9rem;
 }
 
@@ -2431,6 +2454,120 @@ button {
   justify-self: start;
 }
 
+.accountPolicyLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.accountPolicyLinks a,
+.policyBody a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --------------------------------------------------------------- policies */
+
+.policyPage {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.policyNav,
+.policyFooter {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.policyNav {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.policyMain {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: clamp(48px, 8vw, 76px) 24px;
+}
+
+.policyKicker,
+.policyDate {
+  color: var(--muted);
+  font: 0.78rem/1.4 var(--mono);
+}
+
+.policyKicker {
+  margin: 0 0 14px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.policyMain h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 7vw, 3.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.policySummary {
+  max-width: 36rem;
+  margin: 18px 0 0;
+  color: var(--ink-soft);
+  font-size: 1.08rem;
+  line-height: 1.65;
+}
+
+.policyDate {
+  margin: 16px 0 0;
+}
+
+.policyBody {
+  margin-top: 42px;
+}
+
+.policyBody section {
+  padding: 26px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.policyBody h2 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+  letter-spacing: 0;
+}
+
+.policyBody p {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  line-height: 1.75;
+}
+
+.policyBody p:last-child {
+  margin-bottom: 0;
+}
+
+.policyFooter {
+  align-items: flex-start;
+  border-top: 1px solid var(--hairline);
+}
+
+.policyFooter nav {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+
 /* ---------------------------------------------------------------- admin */
 
 .adminShell {
@@ -2680,6 +2817,16 @@ button {
   .accountMetaList div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .landingFooter,
+  .policyFooter {
+    flex-direction: column;
+  }
+
+  .footerLinks,
+  .policyFooter nav {
+    justify-content: flex-start;
   }
 
   .adminTop,

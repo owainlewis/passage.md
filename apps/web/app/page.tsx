@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
+import { MERCHANT_NAME, SupportLink } from "./legal";
 
 function PenIcon() {
   return (
@@ -183,7 +184,7 @@ export default function Landing() {
                 Pro<span className="planTag">Monthly</span>
               </p>
               <p className="planPrice">
-                $6.99<span className="planPer"> / month</span>
+                $6.99<span className="planPer"> USD / month</span>
               </p>
               <ul className="planList">
                 <li>Everything in Free</li>
@@ -194,8 +195,15 @@ export default function Landing() {
               <Link className="btnPrimary planCta" href="/account">
                 Upgrade
               </Link>
+              <p className="planRenewal">
+                Renews monthly until cancelled.
+                Cancel through the Stripe portal.
+              </p>
             </div>
           </div>
+          <p className="pricingPolicies">
+            See the <Link href="/cancellation">Cancellation Policy</Link> and <Link href="/refunds">Refund Policy</Link>.
+          </p>
         </section>
       </main>
 
@@ -203,11 +211,19 @@ export default function Landing() {
         <div className="footerBrand">
           <Brand />
           <span className="footerTag">Markdown writing for humans and agents.</span>
+          <span className="footerTag">Operated by {MERCHANT_NAME}.</span>
+          <span className="footerTag">
+            Support: <SupportLink />
+          </span>
         </div>
-        <nav className="footerLinks">
+        <nav className="footerLinks" aria-label="Footer links">
           <Link href="/write">Start writing</Link>
           <Link href="/cli">CLI</Link>
           <a href="#pricing">Pricing</a>
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/refunds">Refunds</Link>
+          <Link href="/cancellation">Cancellation</Link>
         </nav>
       </footer>
     </div>

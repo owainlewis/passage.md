@@ -14,7 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/owainlewis/passage.md/server/internal/accountdata"
 	"github.com/owainlewis/passage.md/server/internal/auth"
+	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
@@ -54,13 +56,15 @@ func run(args []string) error {
 		return migrate(cfg)
 	case "user":
 		return user(cfg, args[2:])
+	case "account":
+		return account(cfg, args[2:])
 	default:
 		return usage()
 	}
 }
 
 func usage() error {
-	return errors.New("usage: passage serve|migrate|user <email>")
+	return errors.New("usage: passage serve|migrate|user <email>|account export <email> <output.zip>|account delete <email> --confirm <email> [--stripe-verified-no-active-subscription]|account cleanup-stripe <customer-id>")
 }
 
 func serve(cfg config.Config) error {
@@ -203,6 +207,72 @@ func user(cfg config.Config, args []string) error {
 	fmt.Printf("email: %s\n", email)
 	fmt.Printf("password: %s\n", password)
 	fmt.Println("Store this password now. It will not be shown again.")
+	return nil
+}
+
+func account(cfg config.Config, args []string) error {
+	if cfg.DatabaseURL == "" {
+		return errors.New("DATABASE_URL is required")
+	}
+	if len(args) < 1 {
+		return usage()
+	}
+	ctx := context.Background()
+	db, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	defer db.Close()
+
+	switch args[0] {
+	case "export":
+		if len(args) != 3 {
+			return errors.New("usage: passage account export <email> <output.zip>")
+		}
+		if err := accountdata.Export(ctx, db, args[1], args[2], time.Now()); err != nil {
+			return fmt.Errorf("export account: %w", err)
+		}
+		fmt.Printf("account export written to %s\n", args[2])
+		return nil
+	case "delete":
+		validLength := len(args) == 4 || len(args) == 5
+		if !validLength ||
+			args[2] != "--confirm" ||
+			!strings.EqualFold(strings.TrimSpace(args[1]), strings.TrimSpace(args[3])) ||
+			(len(args) == 5 && args[4] != "--stripe-verified-no-active-subscription") {
+			return errors.New("usage: passage account delete <email> --confirm <same-email> [--stripe-verified-no-active-subscription]")
+		}
+		options := accountdata.DeleteOptions{
+			StripeVerifiedNoActiveSubscription: len(args) == 5,
+			Stripe:                             billing.NewStripeClient(cfg.Billing.StripeSecretKey, "", nil),
+		}
+		if err := accountdata.Delete(ctx, db, args[1], options); err != nil {
+			return fmt.Errorf("delete account: %w", err)
+		}
+		fmt.Printf("account permanently deleted: %s\n", strings.ToLower(strings.TrimSpace(args[1])))
+		return nil
+	case "cleanup-stripe":
+		if len(args) != 2 || strings.TrimSpace(args[1]) == "" {
+			return errors.New("usage: passage account cleanup-stripe <customer-id>")
+		}
+		stripe := billing.NewStripeClient(cfg.Billing.StripeSecretKey, "", nil)
+		if err := cleanupStripeCustomerResult(args[1], accountdata.CleanupStripeCustomer(ctx, db, args[1], stripe)); err != nil {
+			return err
+		}
+		fmt.Printf("Stripe cleanup completed: %s\n", strings.TrimSpace(args[1]))
+		return nil
+	default:
+		return usage()
+	}
+}
+
+func cleanupStripeCustomerResult(customerID string, err error) error {
+	if errors.Is(err, accountdata.ErrStripeCleanupNotPending) {
+		return fmt.Errorf("no matching pending Stripe cleanup job: %s", strings.TrimSpace(customerID))
+	}
+	if err != nil {
+		return fmt.Errorf("cleanup Stripe customer: %w", err)
+	}
 	return nil
 }
 

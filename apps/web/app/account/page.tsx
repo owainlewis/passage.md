@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
 import { Brand } from "../brand";
+import { SupportLink } from "../legal";
 
 type APIToken = {
   id: string;
@@ -144,7 +145,7 @@ function AccountPage() {
                   <dd>{isCommunity ? "Community access" : account?.subscription.status ?? "None"}</dd>
                 </div>
                 <div>
-                  <dt>{isCommunity ? "Cost" : "Renews"}</dt>
+                  <dt>{isCommunity ? "Cost" : account?.subscription.cancelAtPeriodEnd ? "Access ends" : "Renews"}</dt>
                   <dd>{isCommunity ? "Included at no cost. No renewal." : formatDate(account?.subscription.currentPeriodEnd)}</dd>
                 </div>
               </dl>
@@ -180,6 +181,25 @@ function AccountPage() {
             </div>
             <div className="accountPanelBody">
               <TokenManager locked={!isPro} />
+            </div>
+          </div>
+
+          <div className="accountPanel">
+            <div className="accountPanelIntro">
+              <h2>Data and policies</h2>
+              <p>Account exports, deletion requests, and service policies.</p>
+            </div>
+            <div className="accountPanelBody">
+              <p className="mutedLine">
+                Email <SupportLink /> from your account address to request a machine-readable export or permanent account
+                deletion.
+              </p>
+              <nav className="accountPolicyLinks" aria-label="Account policy links">
+                <Link href="/terms">Terms</Link>
+                <Link href="/privacy">Privacy</Link>
+                <Link href="/refunds">Refunds</Link>
+                <Link href="/cancellation">Cancellation</Link>
+              </nav>
             </div>
           </div>
         </section>
