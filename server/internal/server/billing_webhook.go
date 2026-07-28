@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -100,13 +101,32 @@ func (a *App) applyStripeEvent(r *http.Request, event stripeEvent) error {
 		if err := json.Unmarshal(event.Data.Object, &invoice); err != nil {
 			return err
 		}
-		if !validStripeIdentifier(invoice.Customer, "cus_") ||
-			!validStripeIdentifier(invoice.Subscription, "sub_") {
+		customerID, err := stripeInvoiceIdentifier(invoice.Customer, "cus_", "customer")
+		if err != nil {
+			logIgnoredStripeInvoice(r, event, err)
 			return nil
 		}
-		return a.applyCurrentSubscription(r, invoice.Customer, invoice.Subscription)
+		subscriptionID, err := invoice.subscriptionID()
+		if err != nil {
+			logIgnoredStripeInvoice(r, event, err)
+		}
+		if subscriptionID == "" {
+			return nil
+		}
+		return a.applyCurrentSubscription(r, customerID, subscriptionID)
 	}
 	return nil
+}
+
+func logIgnoredStripeInvoice(r *http.Request, event stripeEvent, err error) {
+	httpx.LogWarning(
+		r,
+		"ignore Stripe invoice payment failure",
+		err,
+		"stripe_event_id", event.ID,
+		"stripe_event_type", event.Type,
+		"stripe_api_version", event.APIVersion,
+	)
 }
 
 func (a *App) applyCurrentSubscription(r *http.Request, customerID string, subscriptionID string) error {
@@ -226,10 +246,11 @@ func verifyStripeSignature(payload []byte, header string, secret string, now tim
 }
 
 type stripeEvent struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Created int64  `json:"created"`
-	Data    struct {
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	APIVersion string `json:"api_version"`
+	Created    int64  `json:"created"`
+	Data       struct {
 		Object json.RawMessage `json:"object"`
 	} `json:"data"`
 }
@@ -248,6 +269,65 @@ type stripeSubscription struct {
 }
 
 type stripeInvoice struct {
-	Customer     string `json:"customer"`
-	Subscription string `json:"subscription"`
+	Customer     json.RawMessage `json:"customer"`
+	Subscription json.RawMessage `json:"subscription"`
+	Parent       json.RawMessage `json:"parent"`
+}
+
+func (i stripeInvoice) subscriptionID() (string, error) {
+	legacy, legacyErr := stripeInvoiceIdentifier(i.Subscription, "sub_", "legacy subscription")
+	if missingStripeJSONValue(i.Parent) {
+		if legacyErr == nil {
+			return legacy, nil
+		}
+		return "", legacyErr
+	}
+
+	var parent struct {
+		Type                string          `json:"type"`
+		SubscriptionDetails json.RawMessage `json:"subscription_details"`
+	}
+	if err := json.Unmarshal(i.Parent, &parent); err != nil {
+		return "", errors.New("Stripe invoice has a malformed parent")
+	}
+	if parent.Type != "subscription_details" {
+		return "", errors.New("Stripe invoice parent is not subscription details")
+	}
+
+	var details struct {
+		Subscription json.RawMessage `json:"subscription"`
+	}
+	if missingStripeJSONValue(parent.SubscriptionDetails) ||
+		json.Unmarshal(parent.SubscriptionDetails, &details) != nil {
+		return "", errors.New("Stripe invoice has malformed subscription details")
+	}
+
+	current, currentErr := stripeInvoiceIdentifier(details.Subscription, "sub_", "current subscription")
+	if currentErr != nil {
+		return "", currentErr
+	}
+	if legacyErr == nil && legacy != current {
+		return "", errors.New("Stripe invoice has conflicting subscription references")
+	}
+	return current, nil
+}
+
+func stripeInvoiceIdentifier(raw json.RawMessage, prefix string, field string) (string, error) {
+	if missingStripeJSONValue(raw) {
+		return "", errors.New("Stripe invoice has a missing " + field)
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", errors.New("Stripe invoice has a malformed " + field)
+	}
+	value = strings.TrimSpace(value)
+	if !validStripeIdentifier(value, prefix) {
+		return "", errors.New("Stripe invoice has an invalid " + field)
+	}
+	return value, nil
+}
+
+func missingStripeJSONValue(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null"))
 }

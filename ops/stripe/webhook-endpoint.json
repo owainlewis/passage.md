@@ -1,0 +1,12 @@
+{
+  "url": "https://passage.md/api/v1/billing/webhook",
+  "api_version": "2025-03-31.basil",
+  "status": "enabled",
+  "enabled_events": [
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.payment_failed"
+  ]
+}

@@ -103,6 +103,30 @@ Check application and database health:
 curl --fail-with-body --silent --show-error https://passage.md/api/health
 ```
 
+## Stripe Webhook Contract
+
+The launch webhook endpoint contract is recorded in `ops/stripe/webhook-endpoint.json`.
+
+Its API version is pinned to `2025-03-31.basil`.
+
+Do not let the live endpoint inherit the Stripe account default.
+
+Stripe introduced `invoice.parent.subscription_details.subscription` in that version.
+
+The application retains compatibility with legacy events that use the top-level `invoice.subscription` field.
+
+Do not create or enable the live endpoint until public launch activation is explicitly approved.
+
+During the approved activation, create the endpoint from the recorded URL, API version, and exact event list.
+
+The recorded `enabled` status is the required post-approval target, not permission to enable the endpoint before approval.
+
+Retrieve the endpoint after creation and fail the activation check unless its `api_version`, URL, enabled events, and status exactly match the recorded contract.
+
+Record only the endpoint ID and verified non-secret fields in the launch issue.
+
+Never record the endpoint signing secret.
+
 ## Cloud Run Rollback
 
 Use this path when a deployment is bad but the database is healthy.
