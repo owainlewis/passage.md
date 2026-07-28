@@ -183,6 +183,32 @@ func TestNeutralizeUnsubscribedCustomerRequiresStripeConfiguration(t *testing.T)
 	}
 }
 
+func TestNeutralizeUnsubscribedCustomerTreatsAlreadyDeletedCustomerAsComplete(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/checkout/sessions":
+			writeStripeJSON(t, w, map[string]any{"data": []any{}, "has_more": false})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/customers/cus_deleted":
+			w.WriteHeader(http.StatusNotFound)
+			writeStripeJSON(t, w, map[string]any{
+				"error": map[string]string{
+					"code":    "resource_missing",
+					"message": "No such customer",
+				},
+			})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, `{"error":{"message":"unexpected request"}}`, http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	client := NewStripeClient("sk_test", server.URL, server.Client())
+	if err := client.NeutralizeUnsubscribedCustomer(context.Background(), "cus_deleted"); err != nil {
+		t.Fatalf("already deleted customer error = %v", err)
+	}
+}
+
 func writeStripeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

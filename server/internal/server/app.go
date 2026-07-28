@@ -482,10 +482,7 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			}
 			customerID, err = a.billing.SetStripeCustomer(r.Context(), user.ID, candidateCustomerID)
 			if err != nil {
-				cleanupErr := a.cleanupStripeCustomer(r.Context(), candidateCustomerID)
-				if cleanupErr != nil {
-					err = errors.Join(err, fmt.Errorf("delete unlinked Stripe customer: %w", cleanupErr))
-				}
+				err = a.reconcileStripeCustomerWrite(r.Context(), user, candidateCustomerID, err)
 				httpx.WriteInternalError(w, r, "save Stripe customer", err, "billing customer could not be saved")
 				return
 			}
@@ -519,6 +516,29 @@ func (a *App) cleanupStripeCustomer(ctx context.Context, customerID string) erro
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stripeCustomerCleanupTimeout)
 	defer cancel()
 	return a.stripe.NeutralizeUnsubscribedCustomer(cleanupCtx, customerID)
+}
+
+func (a *App) reconcileStripeCustomerWrite(ctx context.Context, user auth.User, candidateCustomerID string, writeErr error) error {
+	reconcileCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stripeCustomerCleanupTimeout)
+	defer cancel()
+
+	if _, err := a.billing.UserByID(reconcileCtx, user.ID); err != nil {
+		if !errors.Is(err, billing.ErrUserNotFound) {
+			return errors.Join(writeErr, fmt.Errorf("reconcile Stripe customer owner: %w", err))
+		}
+	} else {
+		account, err := a.billing.Account(reconcileCtx, user)
+		if err != nil {
+			return errors.Join(writeErr, fmt.Errorf("reconcile stored Stripe customer: %w", err))
+		}
+		if account.Subscription.StripeCustomerID == candidateCustomerID {
+			return writeErr
+		}
+	}
+	if err := a.stripe.NeutralizeUnsubscribedCustomer(reconcileCtx, candidateCustomerID); err != nil {
+		return errors.Join(writeErr, fmt.Errorf("delete unlinked Stripe customer: %w", err))
+	}
+	return writeErr
 }
 
 func (a *App) createPortalSession(w http.ResponseWriter, r *http.Request) {

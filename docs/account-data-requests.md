@@ -75,11 +75,15 @@ It cannot override an active or unknown local subscription state.
 
 Deleting any account with a Stripe customer requires `STRIPE_SECRET_KEY`.
 
-The command expires every open Checkout session for the exact Stripe customer, confirms none remain, then permanently deletes the Stripe customer before deleting the Passage account.
+The command records durable Stripe cleanup work in the same transaction that permanently deletes the Passage account.
 
-Deleting the Stripe customer prevents an abandoned Checkout session from creating a subscription after the local account is gone.
+After that transaction commits, it expires every open Checkout session for the exact Stripe customer, confirms none remain, then permanently deletes the Stripe customer.
 
-If any Stripe request fails, the command leaves the Passage account intact.
+If local database deletion fails, Stripe is not changed and the Passage account remains intact.
+
+If Stripe cleanup fails after local deletion commits, the command retains a cleanup job and reports that the Passage account is already deleted.
+
+Fix the Stripe or network error, then rerun the same deletion command to retry the pending cleanup safely.
 
 Stripe may keep invoices, payments, disputes, and required accounting or fraud-prevention records after cancellation.
 
@@ -91,7 +95,7 @@ For an account with no Stripe customer, or a Stripe subscription already in a te
 go run ./server/cmd/passage account delete customer@example.com --confirm customer@example.com
 ```
 
-For a terminal Stripe subscription, the command performs the same Checkout-session expiry, recheck, and Stripe-customer deletion before deleting the Passage account.
+For a terminal Stripe subscription, the command performs the same durable Checkout-session expiry, recheck, and Stripe-customer cleanup process.
 
 The transaction immediately removes the Passage user row and database records linked by cascading foreign keys:
 
@@ -105,11 +109,15 @@ It also removes queued password-reset requests, reset-token rate limits, and the
 
 Security rate-limit records that cannot be linked back to an account age out of use after their rate-limit window and are removed during later cleanup.
 
+The pending cleanup job contains only the account email, Stripe customer ID, retry count, last error, and timestamps.
+
+It is removed when Stripe cleanup succeeds.
+
 Provider logs and Stripe billing records follow their own retention or legal-record rules.
 
 Confirm that sign-in fails and any formerly shared document URL returns `404`.
 
-Tell the customer when active-database deletion is complete.
+Tell the customer when account deletion is complete and whether Stripe cleanup is still pending.
 
 ## Backups and retention
 

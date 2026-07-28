@@ -805,6 +805,58 @@ func TestBillingCheckoutDeletesCustomerWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+func TestBillingCheckoutPreservesCandidateAfterAmbiguousPersistenceError(t *testing.T) {
+	authStore := newRouteAuthStore()
+	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
+	billingStore := newRouteBillingStore()
+	billingStore.setStripeCustomerErr = errors.New("connection lost after commit")
+	billingStore.persistStripeCustomerBeforeError = true
+	customerDeleted := false
+	checkoutCreated := false
+	stripeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/customers":
+			_, _ = w.Write([]byte(`{"id":"cus_candidate"}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/customers/cus_candidate":
+			customerDeleted = true
+			_, _ = w.Write([]byte(`{"id":"cus_candidate","deleted":true}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/checkout/sessions":
+			checkoutCreated = true
+			_, _ = w.Write([]byte(`{"id":"cs_test","url":"https://checkout.stripe.test/session"}`))
+		default:
+			t.Errorf("unexpected Stripe request: %s %s", r.Method, r.URL.String())
+			http.Error(w, `{"error":{"message":"unexpected request"}}`, http.StatusBadRequest)
+		}
+	}))
+	defer stripeServer.Close()
+	app := &App{
+		static:        fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
+		auth:          auth.NewService(authStore, "test-secret", false),
+		billing:       billing.NewService(billingStore, routeBillingConfig()),
+		stripe:        billing.NewStripeClient("sk_test_123", stripeServer.URL, stripeServer.Client()),
+		billingConfig: routeStripeBillingConfig(),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/billing/checkout", nil)
+	req.Header.Set("Origin", "http://passage.test")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if customerDeleted {
+		t.Fatal("candidate customer was deleted after an ambiguous committed write")
+	}
+	if checkoutCreated {
+		t.Fatal("Checkout session was created after an ambiguous persistence error")
+	}
+	if got := billingStore.states["user-1"].StripeCustomerID; got != "cus_candidate" {
+		t.Fatalf("stored customer = %q, want cus_candidate", got)
+	}
+}
+
 func TestBillingCheckoutDeletesSupersededCustomerAndUsesCanonicalCustomer(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
@@ -1885,16 +1937,17 @@ func (s *routeDocumentStore) GetPublic(ctx context.Context, token string) (docum
 }
 
 type routeBillingStore struct {
-	users                   map[string]auth.User
-	states                  map[string]billing.State
-	eventCreated            map[string]time.Time
-	subscriptionCreated     map[string]time.Time
-	savedDocs               map[string]int
-	adminUsers              []billing.AdminUserRecord
-	updateSubscriptionErr   error
-	setStripeCustomerErr    error
-	setStripeCustomerResult string
-	setStripeCustomerHook   func()
+	users                            map[string]auth.User
+	states                           map[string]billing.State
+	eventCreated                     map[string]time.Time
+	subscriptionCreated              map[string]time.Time
+	savedDocs                        map[string]int
+	adminUsers                       []billing.AdminUserRecord
+	updateSubscriptionErr            error
+	setStripeCustomerErr             error
+	setStripeCustomerResult          string
+	setStripeCustomerHook            func()
+	persistStripeCustomerBeforeError bool
 }
 
 func newRouteBillingStore() *routeBillingStore {
@@ -1979,6 +2032,11 @@ func (s *routeBillingStore) SetStripeCustomer(ctx context.Context, userID string
 		s.setStripeCustomerHook()
 	}
 	if s.setStripeCustomerErr != nil {
+		if s.persistStripeCustomerBeforeError {
+			state := s.states[userID]
+			state.StripeCustomerID = customerID
+			s.states[userID] = state
+		}
 		return "", s.setStripeCustomerErr
 	}
 	state := s.states[userID]

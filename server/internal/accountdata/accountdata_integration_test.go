@@ -227,8 +227,18 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 	if err := db.QueryRow(ctx, `SELECT count(*) FROM users WHERE id = $1`, userID).Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
-	if remaining != 1 {
-		t.Fatalf("users after Stripe failure = %d, want 1", remaining)
+	if remaining != 0 {
+		t.Fatalf("users after committed deletion = %d, want 0", remaining)
+	}
+	var pending int
+	if err := db.QueryRow(ctx, `
+		SELECT count(*) FROM stripe_customer_cleanup_jobs
+		WHERE account_email = $1 AND stripe_customer_id = $2
+	`, email, customerID).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending != 1 {
+		t.Fatalf("pending Stripe cleanup jobs = %d, want 1", pending)
 	}
 
 	stripe := &fakeStripeNeutralizer{}
@@ -240,6 +250,15 @@ func TestDeleteRequiresExplicitVerificationForStripeCustomerWithoutSubscription(
 	}
 	if len(stripe.customerIDs) != 1 || stripe.customerIDs[0] != customerID {
 		t.Fatalf("neutralized customers = %v, want [%s]", stripe.customerIDs, customerID)
+	}
+	if err := db.QueryRow(ctx, `
+		SELECT count(*) FROM stripe_customer_cleanup_jobs
+		WHERE account_email = $1
+	`, email).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending != 0 {
+		t.Fatalf("pending Stripe cleanup jobs after retry = %d, want 0", pending)
 	}
 }
 
@@ -282,8 +301,12 @@ func TestExportTransactionKeepsConsistentSnapshotDuringDeletion(t *testing.T) {
 	if _, err := db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
 		t.Fatal(err)
 	}
-	documents, err := loadDocuments(ctx, tx, account.ID)
+	writer := zip.NewWriter(io.Discard)
+	documents, err := writeDocuments(ctx, tx, writer, account.ID)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
 	tokens, err := loadTokens(ctx, tx, account.ID)
@@ -295,6 +318,116 @@ func TestExportTransactionKeepsConsistentSnapshotDuringDeletion(t *testing.T) {
 	}
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDeleteDoesNotTouchStripeWhenDatabaseDeletionFails(t *testing.T) {
+	db := testDatabase(t)
+	ctx := context.Background()
+	stamp := time.Now().UnixNano()
+	email := fmt.Sprintf("account-data-db-failure-%d@example.com", stamp)
+	customerID := fmt.Sprintf("cus_db_failure_%d", stamp)
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'test-hash')
+		RETURNING id::text
+	`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if _, err := db.Exec(ctx, `
+		INSERT INTO billing_accounts (user_id, stripe_customer_id, stripe_subscription_status)
+		VALUES ($1, $2, 'canceled')
+	`, userID, customerID); err != nil {
+		t.Fatal(err)
+	}
+
+	functionName := fmt.Sprintf("fail_account_delete_%d", stamp)
+	triggerName := fmt.Sprintf("fail_account_delete_trigger_%d", stamp)
+	if _, err := db.Exec(ctx, fmt.Sprintf(`
+		CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+		  IF OLD.email = %s THEN
+		    RAISE EXCEPTION 'forced account deletion failure';
+		  END IF;
+		  RETURN OLD;
+		END
+		$$;
+		CREATE TRIGGER %s BEFORE DELETE ON users
+		FOR EACH ROW EXECUTE FUNCTION %s()
+	`, functionName, quoteSQLLiteral(email), triggerName, functionName)); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON users; DROP FUNCTION IF EXISTS %s()`, triggerName, functionName))
+
+	stripe := &fakeStripeNeutralizer{}
+	if err := Delete(ctx, db, email, DeleteOptions{Stripe: stripe}); err == nil {
+		t.Fatal("delete error = nil, want forced database failure")
+	}
+	if len(stripe.customerIDs) != 0 {
+		t.Fatalf("Stripe calls before local commit = %v, want none", stripe.customerIDs)
+	}
+	var users int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM users WHERE id = $1`, userID).Scan(&users); err != nil {
+		t.Fatal(err)
+	}
+	if users != 1 {
+		t.Fatalf("users after database failure = %d, want 1", users)
+	}
+	var jobs int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM stripe_customer_cleanup_jobs WHERE account_email = $1`, email).Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 0 {
+		t.Fatalf("cleanup jobs after rolled-back deletion = %d, want 0", jobs)
+	}
+}
+
+func TestExportStreamsLargeArchivedAccount(t *testing.T) {
+	db := testDatabase(t)
+	ctx := context.Background()
+	stamp := time.Now().UnixNano()
+	email := fmt.Sprintf("account-export-large-%d@example.com", stamp)
+	var userID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ($1, 'test-hash')
+		RETURNING id::text
+	`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	const documentCount = 48
+	const documentSize = 512 * 1024
+	if _, err := db.Exec(ctx, `
+		INSERT INTO documents (owner_user_id, public_id, title, body, archived_at)
+		SELECT $1,
+		       $2 || '-' || series::text,
+		       'Large archived document ' || series::text,
+		       repeat('x', $3),
+		       now()
+		FROM generate_series(1, $4) AS series
+	`, userID, fmt.Sprintf("large-%d", stamp), documentSize, documentCount); err != nil {
+		t.Fatal(err)
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "large-account-export.zip")
+	if err := Export(ctx, db, email, outputPath, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	files := readExport(t, outputPath)
+	var manifest []Document
+	if err := json.Unmarshal(files["documents.json"], &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest) != documentCount {
+		t.Fatalf("document manifest count = %d, want %d", len(manifest), documentCount)
+	}
+	for _, document := range manifest {
+		if got := len(files[document.Path]); got != documentSize {
+			t.Fatalf("%s size = %d, want %d", document.Path, got, documentSize)
+		}
 	}
 }
 
@@ -353,6 +486,10 @@ type fakeStripeNeutralizer struct {
 func (f *fakeStripeNeutralizer) NeutralizeUnsubscribedCustomer(_ context.Context, customerID string) error {
 	f.customerIDs = append(f.customerIDs, customerID)
 	return f.err
+}
+
+func quoteSQLLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func testDatabase(t *testing.T) *database.Pool {

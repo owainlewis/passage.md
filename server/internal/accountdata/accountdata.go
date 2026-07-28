@@ -55,7 +55,6 @@ type Document struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 	UpdatedAt  time.Time  `json:"updatedAt"`
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
-	body       string
 }
 
 type Token struct {
@@ -87,15 +86,8 @@ func Export(ctx context.Context, db *database.Pool, email string, outputPath str
 	if err != nil {
 		return err
 	}
-	documents, err := loadDocuments(ctx, tx, account.ID)
-	if err != nil {
-		return err
-	}
 	tokens, err := loadTokens(ctx, tx, account.ID)
 	if err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
 
@@ -118,20 +110,18 @@ func Export(ctx context.Context, db *database.Pool, email string, outputPath str
 	if err := writeJSONFile(writer, "account.json", accountExport{Version: 1, ExportedAt: now.UTC(), Account: account}); err != nil {
 		return err
 	}
+	documents, err := writeDocuments(ctx, tx, writer, account.ID)
+	if err != nil {
+		return err
+	}
 	if err := writeJSONFile(writer, "documents.json", documents); err != nil {
 		return err
 	}
 	if err := writeJSONFile(writer, "api-tokens.json", tokens); err != nil {
 		return err
 	}
-	for _, document := range documents {
-		entry, err := writer.Create(document.Path)
-		if err != nil {
-			return err
-		}
-		if _, err := entry.Write([]byte(document.body)); err != nil {
-			return err
-		}
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 	if err := writer.Close(); err != nil {
 		return err
@@ -154,6 +144,14 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 	email = normalizeEmail(email)
 	if email == "" {
 		return ErrAccountNotFound
+	}
+	if customerID, err := pendingStripeCleanup(ctx, db, email); err != nil {
+		return err
+	} else if customerID != "" {
+		if options.Stripe == nil {
+			return ErrStripeNeutralizerRequired
+		}
+		return completeStripeCleanup(ctx, db, email, customerID, options.Stripe)
 	}
 	tx, err := db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -184,8 +182,16 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 		if options.Stripe == nil {
 			return ErrStripeNeutralizerRequired
 		}
-		if err := options.Stripe.NeutralizeUnsubscribedCustomer(ctx, account.StripeCustomerID); err != nil {
-			return fmt.Errorf("neutralize Stripe customer: %w", err)
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO stripe_customer_cleanup_jobs (account_email, stripe_customer_id)
+			VALUES ($1, $2)
+			ON CONFLICT (account_email) DO UPDATE
+			SET stripe_customer_id = EXCLUDED.stripe_customer_id,
+			    attempts = 0,
+			    last_error = NULL,
+			    updated_at = now()
+		`, email, account.StripeCustomerID); err != nil {
+			return err
 		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM password_reset_requests WHERE lower(email) = $1`, email); err != nil {
@@ -214,7 +220,47 @@ func Delete(ctx context.Context, db *database.Pool, email string, options Delete
 	if tag.RowsAffected() != 1 {
 		return ErrAccountNotFound
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if account.StripeCustomerID == "" {
+		return nil
+	}
+	return completeStripeCleanup(ctx, db, email, account.StripeCustomerID, options.Stripe)
+}
+
+func pendingStripeCleanup(ctx context.Context, db *database.Pool, email string) (string, error) {
+	var customerID string
+	err := db.QueryRow(ctx, `
+		SELECT stripe_customer_id
+		FROM stripe_customer_cleanup_jobs
+		WHERE account_email = $1
+	`, email).Scan(&customerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return customerID, err
+}
+
+func completeStripeCleanup(ctx context.Context, db *database.Pool, email string, customerID string, stripe StripeCustomerNeutralizer) error {
+	if err := stripe.NeutralizeUnsubscribedCustomer(ctx, customerID); err != nil {
+		_, recordErr := db.Exec(ctx, `
+			UPDATE stripe_customer_cleanup_jobs
+			SET attempts = attempts + 1,
+			    last_error = $3,
+			    updated_at = now()
+			WHERE account_email = $1 AND stripe_customer_id = $2
+		`, email, customerID, err.Error())
+		if recordErr != nil {
+			return errors.Join(fmt.Errorf("Stripe cleanup is pending: %w", err), fmt.Errorf("record cleanup failure: %w", recordErr))
+		}
+		return fmt.Errorf("Passage account deleted; Stripe cleanup is pending and may be retried with the same command: %w", err)
+	}
+	_, err := db.Exec(ctx, `
+		DELETE FROM stripe_customer_cleanup_jobs
+		WHERE account_email = $1 AND stripe_customer_id = $2
+	`, email, customerID)
+	return err
 }
 
 func lockBillingState(ctx context.Context, tx pgx.Tx, account *Account) error {
@@ -298,7 +344,7 @@ func loadAccount(ctx context.Context, tx pgx.Tx, email string, lock string) (Acc
 	return account, err
 }
 
-func loadDocuments(ctx context.Context, tx pgx.Tx, userID string) ([]Document, error) {
+func writeDocuments(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID string) ([]Document, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, public_id, title, body, shared_at, created_at, updated_at, archived_at
 		FROM documents
@@ -312,11 +358,12 @@ func loadDocuments(ctx context.Context, tx pgx.Tx, userID string) ([]Document, e
 	documents := []Document{}
 	for rows.Next() {
 		var document Document
+		var body string
 		if err := rows.Scan(
 			&document.ID,
 			&document.PublicID,
 			&document.Title,
-			&document.body,
+			&body,
 			&document.SharedAt,
 			&document.CreatedAt,
 			&document.UpdatedAt,
@@ -326,6 +373,13 @@ func loadDocuments(ctx context.Context, tx pgx.Tx, userID string) ([]Document, e
 		}
 		document.Path = "documents/" + document.ID + ".md"
 		documents = append(documents, document)
+		entry, err := writer.Create(document.Path)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			return nil, err
+		}
 	}
 	return documents, rows.Err()
 }

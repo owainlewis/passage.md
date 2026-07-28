@@ -52,6 +52,8 @@ export default function Privacy() {
           permanently.
           A verified permanent-deletion request removes the account and its documents, shares, sessions, API tokens,
           grants, and local billing state from the active database.
+          If Stripe cleanup must be retried, Passage temporarily keeps the account email and Stripe customer ID in a
+          restricted cleanup record and removes that record when cleanup succeeds.
         </p>
         <p>
           Routine database backups and point-in-time recovery data follow a seven-backup and seven-day schedule.

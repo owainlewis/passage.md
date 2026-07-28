@@ -166,7 +166,11 @@ func (c *StripeClient) NeutralizeUnsubscribedCustomer(ctx context.Context, custo
 		}
 		if len(sessions) == 0 {
 			var deleted stripeObject
-			return c.request(ctx, http.MethodDelete, "/v1/customers/"+url.PathEscape(customerID), nil, &deleted)
+			err := c.request(ctx, http.MethodDelete, "/v1/customers/"+url.PathEscape(customerID), nil, &deleted)
+			if stripeResourceMissing(err) {
+				return nil
+			}
+			return err
 		}
 		for _, session := range sessions {
 			var expired stripeObject
@@ -188,6 +192,9 @@ func (c *StripeClient) listOpenCheckoutSessions(ctx context.Context, customerID 
 		var out stripeList
 		path := "/v1/checkout/sessions?" + values.Encode()
 		if err := c.request(ctx, http.MethodGet, path, nil, &out); err != nil {
+			if stripeResourceMissing(err) {
+				return nil, nil
+			}
 			return nil, err
 		}
 		sessions = append(sessions, out.Data...)
@@ -230,9 +237,13 @@ func (c *StripeClient) request(ctx context.Context, method string, path string, 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		var failure stripeObject
 		if err := json.NewDecoder(res.Body).Decode(&failure); err == nil && failure.Error != nil && failure.Error.Message != "" {
-			return fmt.Errorf("stripe request failed: %s", failure.Error.Message)
+			return &stripeRequestError{
+				status:  res.StatusCode,
+				code:    failure.Error.Code,
+				message: failure.Error.Message,
+			}
 		}
-		return fmt.Errorf("stripe request failed with status %d", res.StatusCode)
+		return &stripeRequestError{status: res.StatusCode}
 	}
 	return json.NewDecoder(res.Body).Decode(target)
 }
@@ -250,6 +261,25 @@ type stripeList struct {
 
 type stripeError struct {
 	Message string `json:"message"`
+	Code    string `json:"code"`
+}
+
+type stripeRequestError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *stripeRequestError) Error() string {
+	if e.message != "" {
+		return fmt.Sprintf("stripe request failed: %s", e.message)
+	}
+	return fmt.Sprintf("stripe request failed with status %d", e.status)
+}
+
+func stripeResourceMissing(err error) bool {
+	var stripeErr *stripeRequestError
+	return errors.As(err, &stripeErr) && stripeErr.code == "resource_missing"
 }
 
 type stripeSubscription struct {
