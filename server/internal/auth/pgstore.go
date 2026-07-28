@@ -282,29 +282,44 @@ func (s *PGStore) RetryPasswordResetRequest(ctx context.Context, id string, avai
 }
 
 func (s *PGStore) CreatePasswordResetToken(ctx context.Context, email string, tokenHash string, expiresAt time.Time) error {
+	// Token hashes are deterministic across delivery retries, so rows remain as
+	// tombstones until account deletion to prevent reviving a used credential.
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, "DELETE FROM password_reset_tokens WHERE expires_at < now() - interval '24 hours'"); err != nil {
-		return err
-	}
 	var userID string
 	if err := tx.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1 FOR UPDATE`, email).Scan(&userID); errors.Is(err, pgx.ErrNoRows) {
 		return ErrInvalidAuth
 	} else if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND token_hash <> $2 AND used_at IS NULL`, userID, tokenHash); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (token_hash) DO NOTHING
-	`, userID, tokenHash, expiresAt); err != nil {
+	`, userID, tokenHash, expiresAt)
+	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 0 {
+		var valid bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM password_reset_tokens
+				WHERE token_hash = $1
+				  AND user_id = $2
+				  AND used_at IS NULL
+				  AND expires_at > now()
+			)
+		`, tokenHash, userID).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return ErrInvalidResetToken
+		}
 	}
 	return tx.Commit(ctx)
 }

@@ -291,7 +291,7 @@ func (s *Service) processPasswordResetRequest(ctx context.Context) (bool, error)
 		return true, nil
 	}
 	token := s.passwordResetToken(request.ID)
-	if err := s.passwordResetStore.CreatePasswordResetToken(ctx, request.Email, hashToken(token), now.Add(passwordResetDuration)); errors.Is(err, ErrInvalidAuth) {
+	if err := s.passwordResetStore.CreatePasswordResetToken(ctx, request.Email, hashToken(token), now.Add(passwordResetDuration)); errors.Is(err, ErrInvalidAuth) || errors.Is(err, ErrInvalidResetToken) {
 		return true, s.passwordResetStore.CompletePasswordResetRequest(ctx, request.ID, now)
 	} else if err != nil {
 		return retry(err)
