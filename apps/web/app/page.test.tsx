@@ -1406,6 +1406,58 @@ describe("Write (editor)", () => {
     expect(documentLoads).toBe(1);
   });
 
+  it("replaces documents and cancels a pending save when the active account changes", async () => {
+    let sessionRequests = 0;
+    let documentLoads = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        const user = sessionRequests === 1
+          ? { id: "user-1", email: "one@example.com" }
+          : { id: "user-2", email: "two@example.com" };
+        return new Response(JSON.stringify({ authenticated: true, user, account: proAccount }), { status: 200 });
+      }
+      if (url === "/api/v1/docs" && !init?.method) {
+        documentLoads += 1;
+        const documents = sessionRequests === 1
+          ? [{ id: "doc-one", body: "# First account" }]
+          : [{ id: "doc-two", body: "# Second account" }];
+        return new Response(JSON.stringify({ documents }), { status: 200 });
+      }
+      if (url === "/api/v1/docs/doc-one" && init?.method === "PATCH") {
+        return new Response(JSON.stringify({ id: "doc-one", body: JSON.parse(String(init.body)).body }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppProviders>
+        <Write />
+      </AppProviders>
+    );
+
+    expect(await screen.findByRole("button", { name: /First account/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# First account\n\nMust not cross accounts." }
+    });
+
+    window.dispatchEvent(new Event("focus"));
+
+    expect(await screen.findByRole("button", { name: /Second account/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /First account/ })).not.toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    expect(documentLoads).toBe(2);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-one",
+      expect.objectContaining({ method: "PATCH" })
+    );
+  });
+
   it("creates a server share link for a signed-in document", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
