@@ -689,15 +689,17 @@ func TestAdminDashboardRequiresOwnerAndReturnsAccountSummary(t *testing.T) {
 	billingStore := newRouteBillingStore()
 	billingStore.adminUsers = []billing.AdminUserRecord{
 		{
-			User:      auth.User{ID: "admin-1", Email: "owain@owainlewis.com"},
-			CreatedAt: time.Date(2026, time.July, 18, 10, 0, 0, 0, time.UTC),
-			SavedDocs: 2,
+			User:                auth.User{ID: "admin-1", Email: "owain@owainlewis.com"},
+			CreatedAt:           time.Date(2026, time.July, 18, 10, 0, 0, 0, time.UTC),
+			SavedDocs:           2,
+			StoredMarkdownBytes: 200,
 		},
 		{
-			User:      auth.User{ID: "user-2", Email: "two@example.com"},
-			CreatedAt: time.Date(2026, time.July, 17, 10, 0, 0, 0, time.UTC),
-			State:     billing.State{StripeSubscriptionStatus: "active"},
-			SavedDocs: 4,
+			User:                auth.User{ID: "user-2", Email: "two@example.com"},
+			CreatedAt:           time.Date(2026, time.July, 17, 10, 0, 0, 0, time.UTC),
+			State:               billing.State{StripeSubscriptionStatus: "active"},
+			SavedDocs:           4,
+			StoredMarkdownBytes: 400,
 		},
 		{
 			User:      auth.User{ID: "user-3", Email: "three@example.com"},
@@ -744,6 +746,7 @@ func TestAdminDashboardRequiresOwnerAndReturnsAccountSummary(t *testing.T) {
 		`"email":"two@example.com"`,
 		`"subscriptionStatus":"active"`,
 		`"savedDocs":4`,
+		`"storedMarkdownBytes":400`,
 	} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body missing %s: %s", want, rec.Body.String())
@@ -751,6 +754,10 @@ func TestAdminDashboardRequiresOwnerAndReturnsAccountSummary(t *testing.T) {
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("cache control = %q", rec.Header().Get("Cache-Control"))
+	}
+	body := rec.Body.String()
+	if strings.Index(body, `"email":"two@example.com"`) > strings.Index(body, `"email":"owain@owainlewis.com"`) {
+		t.Fatalf("dashboard is not largest-first: %s", body)
 	}
 }
 

@@ -987,7 +987,7 @@ func TestConcurrentStripeWebhookRefreshesApplyNewestSnapshot(t *testing.T) {
 	}
 }
 
-func TestBillingPGStoreListsAdminUsersWithActiveDocumentCounts(t *testing.T) {
+func TestBillingPGStoreListsAdminUsersWithUsage(t *testing.T) {
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
@@ -1015,11 +1015,13 @@ func TestBillingPGStoreListsAdminUsersWithActiveDocumentCounts(t *testing.T) {
 	defer func() {
 		_, _ = db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
 	}()
+	activeBody := "# Active ✅"
+	archivedBody := "# Archived"
 	if _, err := db.Exec(ctx, `
 		INSERT INTO documents (owner_user_id, public_id, title, body, archived_at)
-		VALUES ($1, $2, 'Active', '', NULL),
-		       ($1, $3, 'Archived', '', now())
-	`, userID, "active-"+userID, "archived-"+userID); err != nil {
+		VALUES ($1, $2, 'Active', $4, NULL),
+		       ($1, $3, 'Archived', $5, now())
+	`, userID, "active-"+userID, "archived-"+userID, activeBody, archivedBody); err != nil {
 		t.Fatal(err)
 	}
 	store := billing.NewPGStore(db)
@@ -1040,7 +1042,11 @@ func TestBillingPGStoreListsAdminUsersWithActiveDocumentCounts(t *testing.T) {
 		if record.User.ID != userID {
 			continue
 		}
-		if record.User.Email != email || record.SavedDocs != 1 || record.State.StripeSubscriptionStatus != "active" {
+		wantBytes := int64(len([]byte(activeBody)) + len([]byte(archivedBody)))
+		if record.User.Email != email ||
+			record.SavedDocs != 1 ||
+			record.StoredMarkdownBytes != wantBytes ||
+			record.State.StripeSubscriptionStatus != "active" {
 			t.Fatalf("record = %#v", record)
 		}
 		return

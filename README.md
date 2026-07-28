@@ -127,6 +127,14 @@ Local development without Postgres uses process-local counters.
 Database recovery mode also uses process-local counters so allowed reads remain database read-only while the outer write fence blocks mutations.
 The existing Postgres-backed password-reset request and confirmation limits remain separate and unchanged.
 
+### Admin usage report
+
+Configured owner emails can read `GET /api/v1/admin/dashboard` with an authenticated browser session.
+Each account row includes email, effective plan and source, active saved-document count, and approximate stored Markdown bytes.
+Stored bytes include archived document bodies because they remain in Postgres.
+Rows are sorted by stored bytes, then active document count.
+Signed-out and non-owner requests are rejected, and responses use `Cache-Control: no-store`.
+
 ### Production password reset email
 
 Passage sends password reset email through Resend from `passage.md <mail@passage.md>`.
