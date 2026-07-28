@@ -70,8 +70,8 @@
         "widget": {
           "title": "Cloud SQL connections",
           "xyChart": {"dataSets": [{"plotType": "LINE", "timeSeriesQuery": {"timeSeriesFilter": {
-            "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
-            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX"}
+            "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/postgresql/num_backends\"",
+            "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX", "crossSeriesReducer": "REDUCE_SUM"}
           }}}], "thresholds": [{"value": 12}], "yAxis": {"label": "connections", "scale": "LINEAR"}}
         }
       },
