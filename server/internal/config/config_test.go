@@ -125,6 +125,24 @@ func TestFromEnvEnablesStripeBillingExplicitly(t *testing.T) {
 	}
 }
 
+func TestFromEnvEnablesWriteFenceExplicitly(t *testing.T) {
+	t.Setenv("PASSAGE_WRITES_DISABLED", "true")
+
+	cfg := FromEnv()
+	if !cfg.WritesDisabled {
+		t.Fatal("WritesDisabled = false, want true")
+	}
+}
+
+func TestFromEnvLeavesWriteFenceDisabledByDefault(t *testing.T) {
+	t.Setenv("PASSAGE_WRITES_DISABLED", "")
+
+	cfg := FromEnv()
+	if cfg.WritesDisabled {
+		t.Fatal("WritesDisabled = true, want false")
+	}
+}
+
 func TestFromEnvLoadsPasswordResetConfiguration(t *testing.T) {
 	t.Setenv("APP_BASE_URL", "https://passage.md")
 	t.Setenv("RESEND_API_KEY", " re_secret ")

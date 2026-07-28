@@ -199,6 +199,28 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 		t.Fatalf("other owner get status = %d, want %d", got, http.StatusNotFound)
 	}
 
+	if _, err := db.Exec(ctx, `UPDATE api_tokens SET last_used_at = NULL WHERE id = $1`, tokenResponse.APIToken.ID); err != nil {
+		t.Fatal(err)
+	}
+	fencedApp := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{
+		WritesDisabled: true,
+		Billing: config.BillingConfig{
+			FreeMaxSavedDocs: 5,
+			ProMaxSavedDocs:  1000,
+			OwnerEmails:      []string{"token-one@example.com"},
+		},
+	})
+	fencedServer := httptest.NewServer(fencedApp.Routes())
+	defer fencedServer.Close()
+	doIntegrationRequest(t, http.MethodGet, fencedServer.URL+"/api/v1/docs", "", nil, tokenResponse.Token)
+	var tokenUsageWasWritten bool
+	if err := db.QueryRow(ctx, `SELECT last_used_at IS NOT NULL FROM api_tokens WHERE id = $1`, tokenResponse.APIToken.ID).Scan(&tokenUsageWasWritten); err != nil {
+		t.Fatal(err)
+	}
+	if tokenUsageWasWritten {
+		t.Fatal("write-fenced bearer read updated api_tokens.last_used_at")
+	}
+
 	doIntegrationRequest(t, http.MethodDelete, server.URL+"/api/v1/api-tokens/"+tokenResponse.APIToken.ID, "", userOneCookies, "")
 	if got := doIntegrationStatus(t, http.MethodGet, server.URL+"/api/v1/docs", "", nil, tokenResponse.Token); got != http.StatusUnauthorized {
 		t.Fatalf("revoked token status = %d, want %d", got, http.StatusUnauthorized)

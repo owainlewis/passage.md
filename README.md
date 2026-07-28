@@ -38,6 +38,7 @@ Every saved doc is plain Markdown, private by default, and addressable through w
 
 - [PRD](docs/prd.md)
 - [Architecture](docs/architecture.md)
+- [Production runbook](docs/production-runbook.md)
 - [Document API contract](docs/document-api.md)
 - [CLI](docs/cli.md)
 - [Project board](https://github.com/users/owainlewis/projects/14)
