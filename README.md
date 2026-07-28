@@ -120,10 +120,11 @@ It selects the client using `PASSAGE_FORWARDED_HOPS`, which defaults to the two 
 Local development trusts no forwarding headers.
 Override both values together if the production proxy path changes.
 
-Counters live in process memory.
-They are safe for concurrent requests but apply per Cloud Run instance, reset when an instance restarts, and are not a strict global quota when Cloud Run scales out.
-This is suitable for basic launch protection.
-Use a distributed store if strict cross-instance enforcement becomes necessary.
+With Postgres configured and writes enabled, counters are enforced atomically across Cloud Run instances and survive deploys and instance restarts.
+Client IPs and user IDs are stored only as scoped HMAC digests.
+Expired counters are removed through bounded, indexed cleanup batches.
+Local development without Postgres uses process-local counters.
+Database recovery mode also uses process-local counters so allowed reads remain database read-only while the outer write fence blocks mutations.
 The existing Postgres-backed password-reset request and confirmation limits remain separate and unchanged.
 
 ### Production password reset email
