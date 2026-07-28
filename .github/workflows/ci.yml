@@ -13,6 +13,10 @@ env:
   GCP_PROJECT_ID: passage-md-prod
   GCP_REGION: us-central1
   CLOUD_RUN_SERVICE: passage-md
+  CLOUD_RUN_MIGRATION_JOB: passage-md-migrate
+  CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: passage-md-run@passage-md-prod.iam.gserviceaccount.com
+  CLOUD_SQL_INSTANCE: passage-md-prod:us-central1:passage-md-postgres
+  DATABASE_SECRET: passage-database-url
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
   IMAGE_NAME: passage-md
   APP_BASE_URL: https://passage.md
@@ -22,7 +26,7 @@ env:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   web:
@@ -138,6 +142,9 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
+      - name: Test production deployment gate
+        run: scripts/deploy-production.test.sh
+
       - name: Build and maybe push image
         uses: docker/build-push-action@v7
         with:
@@ -147,20 +154,9 @@ jobs:
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
 
-      - name: Deploy to Cloud Run
+      - name: Migrate and deploy to Cloud Run
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: google-github-actions/deploy-cloudrun@v3
-        with:
-          project_id: ${{ env.GCP_PROJECT_ID }}
-          region: ${{ env.GCP_REGION }}
-          service: ${{ env.CLOUD_RUN_SERVICE }}
-          image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          env_vars: |
-            APP_ENV=production
-            APP_BASE_URL=${{ env.APP_BASE_URL }}
-            GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }}
-            RESEND_FROM=${{ env.RESEND_FROM }}
-          secrets: |
-            RESEND_API_KEY=passage-resend-api-key:latest
-          flags: '--no-cpu-throttling --min=1'
-          revision_traffic: LATEST=100
+        env:
+          IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: scripts/deploy-production.sh

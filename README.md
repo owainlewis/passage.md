@@ -80,6 +80,10 @@ Run database migrations:
 go run ./server/cmd/passage migrate
 ```
 
+`passage serve` never applies migrations.
+Run `migrate` before starting the app locally or deploying a new application revision.
+`npm run dev` does this automatically.
+
 Build the static web app and run the Go server:
 
 ```sh

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >>"${PASSAGE_GCLOUD_LOG:?}"
+
+if [[ "${PASSAGE_FAIL_MIGRATION:-false}" == "true" && "$*" == "run jobs execute "* ]]; then
+  exit 1
+fi
+
+if [[ "${PASSAGE_EMPTY_REVISION:-false}" != "true" && "$*" == "run deploy "* ]]; then
+  printf '%s\n' "${PASSAGE_DEPLOYED_REVISION:-passage-test-00001-test}"
+fi

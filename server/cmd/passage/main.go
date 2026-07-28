@@ -91,10 +91,6 @@ func serve(cfg config.Config) error {
 	defer db.Close()
 	if cfg.WritesDisabled {
 		slog.Warn("database write fence is enabled")
-	} else {
-		if _, err := migrations.Apply(ctx, db); err != nil {
-			return fmt.Errorf("apply migrations: %w", err)
-		}
 	}
 
 	staticFS, err := web.FileSystem(cfg.StaticDir)
