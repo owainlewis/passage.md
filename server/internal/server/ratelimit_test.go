@@ -1,6 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +17,14 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/documents"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
 )
+
+type errorRateLimitStore struct {
+	err error
+}
+
+func (s errorRateLimitStore) consume(context.Context, string, string, time.Time, time.Duration, int) (bool, time.Duration, error) {
+	return false, 0, s.err
+}
 
 func TestFixedWindowLimiterAllowsBlocksResetsAndSeparatesKeys(t *testing.T) {
 	now := time.Date(2026, time.July, 27, 12, 0, 0, 0, time.UTC)
@@ -35,6 +47,64 @@ func TestFixedWindowLimiterAllowsBlocksResetsAndSeparatesKeys(t *testing.T) {
 	now = now.Add(time.Minute)
 	if allowed, _ := limiter.allow("user-1"); !allowed {
 		t.Fatal("request after window reset was blocked")
+	}
+}
+
+func TestPersistentRateLimitKeysAreScopedAndPrivacySafe(t *testing.T) {
+	authHash := newRateLimitKeyHasher("secret-one", "auth_mutation")("198.51.100.20")
+	if len(authHash) != 64 || authHash == "198.51.100.20" || strings.Contains(authHash, "198.51.100.20") {
+		t.Fatalf("auth hash = %q", authHash)
+	}
+	if repeated := newRateLimitKeyHasher("secret-one", "auth_mutation")("198.51.100.20"); repeated != authHash {
+		t.Fatalf("repeated hash = %q, want %q", repeated, authHash)
+	}
+	if otherScope := newRateLimitKeyHasher("secret-one", "shared_html")("198.51.100.20"); otherScope == authHash {
+		t.Fatal("different scopes produced the same hash")
+	}
+	if otherSecret := newRateLimitKeyHasher("secret-two", "auth_mutation")("198.51.100.20"); otherSecret == authHash {
+		t.Fatal("different secrets produced the same hash")
+	}
+}
+
+func TestRateLimitStoreFailureFailsClosed(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	limiter := newPersistentFixedWindowLimiter(
+		"auth_mutation",
+		config.RateLimitConfig{Requests: 1, Window: time.Minute},
+		errorRateLimitStore{err: errors.New("database unavailable")},
+		"test-secret",
+	)
+	app := &App{
+		static: fstest.MapFS{"index.html": {Data: []byte("ok")}},
+		rateLimiters: appRateLimiters{
+			authMutation: limiter,
+		},
+		clientIP: httpx.NewClientIPResolver(nil, 0),
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", nil)
+	request.RemoteAddr = "192.0.2.10:1234"
+	app.Routes().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+	if body := recorder.Body.String(); body != "{\"error\":\"rate limit service unavailable\"}\n" {
+		t.Fatalf("body = %q", body)
+	}
+	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
+	}
+	logged := output.String()
+	if !strings.Contains(logged, `"operation":"check abuse rate limit"`) || !strings.Contains(logged, `"error":"database unavailable"`) {
+		t.Fatalf("log = %s", logged)
+	}
+	if strings.Contains(logged, "192.0.2.10") {
+		t.Fatalf("log contains raw client IP: %s", logged)
 	}
 }
 

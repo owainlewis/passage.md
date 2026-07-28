@@ -62,12 +62,18 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 		options.SessionSecret = "dev-session-secret-change-me"
 	}
 	clientIP := httpx.NewClientIPResolver(options.Proxy.TrustedCIDRs, options.Proxy.ForwardedHops)
+	rateLimiters := newAppRateLimiters(options.RateLimits)
+	// Recovery mode must remain database read-only. Its outer write fence blocks
+	// mutations, while the allowed reads temporarily retain process-local limits.
+	if db != nil && !options.WritesDisabled {
+		rateLimiters = newPersistentAppRateLimiters(options.RateLimits, newPGRateLimitStore(db), options.SessionSecret)
+	}
 	app := &App{
 		static:         static,
 		billingConfig:  options.Billing,
 		gcpProjectID:   options.GCPProjectID,
 		stripe:         billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
-		rateLimiters:   newAppRateLimiters(options.RateLimits),
+		rateLimiters:   rateLimiters,
 		clientIP:       clientIP,
 		writesDisabled: options.WritesDisabled,
 	}
@@ -619,7 +625,7 @@ func (a *App) listAPITokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if !a.allowUserRequest(w, a.rateLimiters.apiToken, user.ID) {
+		if !a.allowUserRequest(w, r, a.rateLimiters.apiToken, user.ID) {
 			return
 		}
 		a.auth.ListAPITokens(w, r, user)
@@ -631,7 +637,7 @@ func (a *App) createAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if !a.allowUserRequest(w, a.rateLimiters.apiToken, user.ID) {
+		if !a.allowUserRequest(w, r, a.rateLimiters.apiToken, user.ID) {
 			return
 		}
 		if !a.requirePro(w, r, user) {
@@ -646,7 +652,7 @@ func (a *App) revokeAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auth.RequireSessionUser(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if !a.allowUserRequest(w, a.rateLimiters.apiToken, user.ID) {
+		if !a.allowUserRequest(w, r, a.rateLimiters.apiToken, user.ID) {
 			return
 		}
 		a.auth.RevokeAPIToken(w, r, user)
@@ -793,7 +799,7 @@ func (a *App) requireUserForDocs(next func(http.ResponseWriter, *http.Request, a
 
 func (a *App) requireUserForDocumentMutation(next func(http.ResponseWriter, *http.Request, auth.User)) http.HandlerFunc {
 	return a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
-		if !a.allowUserRequest(w, a.rateLimiters.documentMutation, user.ID) {
+		if !a.allowUserRequest(w, r, a.rateLimiters.documentMutation, user.ID) {
 			return
 		}
 		next(w, r, user)
