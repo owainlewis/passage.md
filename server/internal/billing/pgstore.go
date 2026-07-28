@@ -202,7 +202,8 @@ func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customer
 }
 
 func (s *PGStore) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
-	return updateSubscription(ctx, s.db, userID, update)
+	_, err := updateSubscription(ctx, s.db, userID, update)
+	return err
 }
 
 func (s *PGStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
@@ -250,8 +251,12 @@ func (s *PGStore) RefreshSubscription(ctx context.Context, userID string, load f
 		return err
 	}
 	update.EventCreated = &refreshedAt
-	if err := updateSubscription(ctx, tx, userID, update); err != nil {
+	applied, err := updateSubscription(ctx, tx, userID, update)
+	if err != nil {
 		return err
+	}
+	if !applied {
+		return tx.Commit(ctx)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE billing_accounts
@@ -267,8 +272,8 @@ type subscriptionExecutor interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
-func updateSubscription(ctx context.Context, executor subscriptionExecutor, userID string, update SubscriptionUpdate) error {
-	_, err := executor.Exec(ctx, `
+func updateSubscription(ctx context.Context, executor subscriptionExecutor, userID string, update SubscriptionUpdate) (bool, error) {
+	tag, err := executor.Exec(ctx, `
 		INSERT INTO billing_accounts (
 			user_id,
 			stripe_customer_id,
@@ -324,7 +329,7 @@ func updateSubscription(ctx context.Context, executor subscriptionExecutor, user
 		    )
 		  )
 	`, userID, emptyToNil(update.CustomerID), update.SubscriptionID, update.SubscriptionCreatedAt, update.Status, emptyToNil(update.PriceID), update.CurrentPeriodEnd, update.CancelAtPeriodEnd, update.EventCreated)
-	return err
+	return tag.RowsAffected() > 0, err
 }
 
 func (s *PGStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {

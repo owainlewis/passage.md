@@ -704,6 +704,73 @@ func TestBillingPGStoreRejectsStaleSubscriptionAndCustomerUpdates(t *testing.T) 
 		state.StripeSubscriptionStatus != "past_due" {
 		t.Fatalf("stale or conflicting update changed state: %#v", state)
 	}
+
+	if err := store.UpdateSubscription(ctx, userID, billing.SubscriptionUpdate{
+		CustomerID:            customerID,
+		SubscriptionID:        subscriptionID,
+		SubscriptionCreatedAt: &subscriptionCreated,
+		Status:                "active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	validEntered := make(chan struct{})
+	releaseValid := make(chan struct{})
+	releaseValidLoad := testRelease(releaseValid)
+	defer releaseValidLoad()
+	validDone := make(chan error, 1)
+	go func() {
+		validDone <- store.RefreshSubscription(ctx, userID, func(loadCtx context.Context) (billing.SubscriptionUpdate, error) {
+			close(validEntered)
+			select {
+			case <-releaseValid:
+			case <-loadCtx.Done():
+				return billing.SubscriptionUpdate{}, loadCtx.Err()
+			}
+			return billing.SubscriptionUpdate{
+				CustomerID:            customerID,
+				SubscriptionID:        subscriptionID,
+				SubscriptionCreatedAt: &subscriptionCreated,
+				Status:                "past_due",
+			}, nil
+		})
+	}()
+	awaitTestValue(t, ctx, validEntered, "valid delayed Stripe loader")
+
+	rejectedSubscriptionCreated := subscriptionCreated.Add(-time.Hour)
+	if err := secondStore.RefreshSubscription(ctx, userID, func(context.Context) (billing.SubscriptionUpdate, error) {
+		return billing.SubscriptionUpdate{
+			CustomerID:            customerID,
+			SubscriptionID:        "sub_rejected_" + strings.ReplaceAll(userID, "-", ""),
+			SubscriptionCreatedAt: &rejectedSubscriptionCreated,
+			Status:                "canceled",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	releaseValidLoad()
+	if err := awaitTestValue(t, ctx, validDone, "valid delayed refresh after rejected newer refresh"); err != nil {
+		t.Fatal(err)
+	}
+	state, err = store.State(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StripeSubscriptionID != subscriptionID || state.StripeSubscriptionStatus != "past_due" {
+		t.Fatalf("rejected newer refresh suppressed valid delayed snapshot: %#v", state)
+	}
+	var generation, appliedGeneration int64
+	if err := db.QueryRow(ctx, `
+		SELECT stripe_refresh_generation, stripe_refresh_applied_generation
+		FROM billing_accounts
+		WHERE user_id = $1
+	`, userID).Scan(&generation, &appliedGeneration); err != nil {
+		t.Fatal(err)
+	}
+	if generation != 4 || appliedGeneration != 3 {
+		t.Fatalf("refresh generations = (%d, %d), want (4, 3)", generation, appliedGeneration)
+	}
 }
 
 func TestBillingPGStoreRefreshFailureDoesNotHoldPoolConnection(t *testing.T) {
