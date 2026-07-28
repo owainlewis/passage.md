@@ -164,6 +164,20 @@ npm test
 go test ./server/...
 ```
 
+Audit production dependencies:
+
+```sh
+npm audit --omit=dev --audit-level=high
+```
+
+CI fails on high or critical production advisories.
+The root overrides are temporary, exact pins for dependencies that the current Next.js patch still resolves to vulnerable versions.
+They replace only Next.js's exact vulnerable PostCSS and sharp resolutions.
+The full audit still reports brace-expansion and its ESLint dependants as high severity.
+Those paths are development-only, do not ship in the application image, and cannot take untrusted runtime input.
+Clearing them requires incompatible minimatch or ESLint upgrades, so revisit them when the project adopts ESLint 10 instead of forcing development dependencies across major-version boundaries.
+Remove an override after its direct parent declares a fixed compatible dependency and `npm audit` remains clear.
+
 Build the web app:
 
 ```sh
