@@ -79,6 +79,7 @@ type Store interface {
 	CreateAPIToken(ctx context.Context, userID string, name string, tokenHash string) (APIToken, error)
 	RevokeAPIToken(ctx context.Context, userID string, id string) error
 	FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
+	FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (User, error)
 }
 
 type PasswordResetStore interface {
@@ -97,6 +98,7 @@ type Options struct {
 	AppBaseURL          string
 	PasswordResetSender PasswordResetSender
 	ClientIP            func(*http.Request) string
+	WritesDisabled      bool
 }
 
 type Service struct {
@@ -108,6 +110,7 @@ type Service struct {
 	passwordResetSender PasswordResetSender
 	clientIP            func(*http.Request) string
 	now                 func() time.Time
+	writesDisabled      bool
 }
 
 func NewService(store Store, secret string, cookieSecure bool) *Service {
@@ -129,6 +132,7 @@ func NewServiceWithOptions(store Store, secret string, cookieSecure bool, option
 		passwordResetSender: options.PasswordResetSender,
 		clientIP:            clientIP,
 		now:                 time.Now,
+		writesDisabled:      options.WritesDisabled,
 	}
 }
 
@@ -400,7 +404,13 @@ func (s *Service) UserFromBearerRequest(r *http.Request) (User, bool) {
 	if !ok {
 		return User{}, false
 	}
-	user, err := s.store.FindUserByAPITokenHash(r.Context(), hashToken(token), s.now())
+	var user User
+	var err error
+	if s.writesDisabled {
+		user, err = s.store.FindUserByAPITokenHashReadOnly(r.Context(), hashToken(token))
+	} else {
+		user, err = s.store.FindUserByAPITokenHash(r.Context(), hashToken(token), s.now())
+	}
 	if err != nil && !errors.Is(err, ErrUnauthorized) {
 		httpx.LogError(r, "authenticate API token", err)
 	}

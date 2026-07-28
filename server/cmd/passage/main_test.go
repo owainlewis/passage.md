@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,33 @@ func TestServeRequiresDatabaseURL(t *testing.T) {
 	}
 	if err.Error() != "DATABASE_URL is required" {
 		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestWriteFenceBlocksMutationCommands(t *testing.T) {
+	t.Setenv("PASSAGE_WRITES_DISABLED", "true")
+
+	for _, args := range [][]string{
+		{"migrate"},
+		{"user", "user@example.com"},
+		{"account", "delete", "user@example.com", "--confirm", "user@example.com"},
+		{"account", "cleanup-stripe", "cus_pending"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			err := run(append([]string{"passage"}, args...))
+			if err == nil || !strings.Contains(err.Error(), "disabled while PASSAGE_WRITES_DISABLED is enabled") {
+				t.Fatalf("run error = %v", err)
+			}
+		})
+	}
+}
+
+func TestWriteFenceAllowsAccountExportCommand(t *testing.T) {
+	t.Setenv("PASSAGE_WRITES_DISABLED", "true")
+
+	err := run([]string{"passage", "account", "export", "user@example.com", "account.zip"})
+	if err == nil || err.Error() != "DATABASE_URL is required" {
+		t.Fatalf("run error = %v, want DATABASE_URL requirement after fence allows export", err)
 	}
 }
 

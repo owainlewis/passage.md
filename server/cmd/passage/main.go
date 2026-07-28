@@ -53,10 +53,19 @@ func run(args []string) error {
 	case "serve":
 		return serve(cfg)
 	case "migrate":
+		if cfg.WritesDisabled {
+			return errors.New("migrate is disabled while PASSAGE_WRITES_DISABLED is enabled")
+		}
 		return migrate(cfg)
 	case "user":
+		if cfg.WritesDisabled {
+			return errors.New("user is disabled while PASSAGE_WRITES_DISABLED is enabled")
+		}
 		return user(cfg, args[2:])
 	case "account":
+		if cfg.WritesDisabled && accountCommandWrites(args[2:]) {
+			return errors.New("account mutation is disabled while PASSAGE_WRITES_DISABLED is enabled")
+		}
 		return account(cfg, args[2:])
 	default:
 		return usage()
@@ -80,8 +89,12 @@ func serve(cfg config.Config) error {
 		return fmt.Errorf("connect database: %w", err)
 	}
 	defer db.Close()
-	if _, err := migrations.Apply(ctx, db); err != nil {
-		return fmt.Errorf("apply migrations: %w", err)
+	if cfg.WritesDisabled {
+		slog.Warn("database write fence is enabled")
+	} else {
+		if _, err := migrations.Apply(ctx, db); err != nil {
+			return fmt.Errorf("apply migrations: %w", err)
+		}
 	}
 
 	staticFS, err := web.FileSystem(cfg.StaticDir)
@@ -104,6 +117,7 @@ func serve(cfg config.Config) error {
 		RateLimits:          cfg.RateLimits,
 		Proxy:               cfg.Proxy,
 		GCPProjectID:        os.Getenv("GCP_PROJECT_ID"),
+		WritesDisabled:      cfg.WritesDisabled,
 	})
 	go app.RunPasswordResetWorker(ctx)
 	server := newHTTPServer(cfg.Port, app.Routes())
@@ -264,6 +278,10 @@ func account(cfg config.Config, args []string) error {
 	default:
 		return usage()
 	}
+}
+
+func accountCommandWrites(args []string) bool {
+	return len(args) == 0 || args[0] != "export"
 }
 
 func cleanupStripeCustomerResult(customerID string, err error) error {

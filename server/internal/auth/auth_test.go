@@ -447,6 +447,30 @@ func TestRequireUserAcceptsBearerToken(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+	if store.trackedTokenReads != 1 || store.readOnlyTokenReads != 0 {
+		t.Fatalf("token reads = tracked %d, read-only %d", store.trackedTokenReads, store.readOnlyTokenReads)
+	}
+}
+
+func TestWriteFenceAuthenticatesBearerTokenWithoutUsageWrite(t *testing.T) {
+	store := newMemoryStore()
+	service := NewServiceWithOptions(store, "test-secret", false, Options{WritesDisabled: true})
+	user := User{ID: "user-1", Email: "u@example.com"}
+	plain := "psg_test-token"
+	store.apiTokens[hashToken(plain)] = memoryAPIToken{
+		user:      user,
+		tokenHash: hashToken(plain),
+		token:     APIToken{ID: "11111111-1111-1111-1111-111111111111", Name: "Test"},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs", nil)
+	req.Header.Set("Authorization", "Bearer "+plain)
+	if got, ok := service.UserFromRequest(req); !ok || got != user {
+		t.Fatalf("UserFromRequest = %#v, %t", got, ok)
+	}
+	if store.trackedTokenReads != 0 || store.readOnlyTokenReads != 1 {
+		t.Fatalf("token reads = tracked %d, read-only %d", store.trackedTokenReads, store.readOnlyTokenReads)
+	}
 }
 
 func TestRequireSessionUserRejectsBearerToken(t *testing.T) {
@@ -477,14 +501,16 @@ func TestRequireSessionUserRejectsBearerToken(t *testing.T) {
 }
 
 type memoryStore struct {
-	users            map[string]UserWithPassword
-	sessions         map[string]User
-	apiTokens        map[string]memoryAPIToken
-	nextID           int
-	nextTokenID      int
-	lastAPITokenHash string
-	findErr          error
-	deleteErr        error
+	users              map[string]UserWithPassword
+	sessions           map[string]User
+	apiTokens          map[string]memoryAPIToken
+	nextID             int
+	nextTokenID        int
+	lastAPITokenHash   string
+	trackedTokenReads  int
+	readOnlyTokenReads int
+	findErr            error
+	deleteErr          error
 }
 
 type recordingPasswordResetSender struct {
@@ -678,6 +704,16 @@ func (s *memoryStore) RevokeAPIToken(ctx context.Context, userID string, id stri
 }
 
 func (s *memoryStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error) {
+	s.trackedTokenReads++
+	record, ok := s.apiTokens[tokenHash]
+	if !ok || record.revoked {
+		return User{}, ErrUnauthorized
+	}
+	return record.user, nil
+}
+
+func (s *memoryStore) FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (User, error) {
+	s.readOnlyTokenReads++
 	record, ok := s.apiTokens[tokenHash]
 	if !ok || record.revoked {
 		return User{}, ErrUnauthorized

@@ -29,6 +29,7 @@ type Options struct {
 	RateLimits          config.AbuseRateLimitConfig
 	Proxy               config.ProxyConfig
 	GCPProjectID        string
+	WritesDisabled      bool
 }
 
 type App struct {
@@ -43,6 +44,7 @@ type App struct {
 	rateLimiters   appRateLimiters
 	clientIP       httpx.ClientIPResolver
 	gcpProjectID   string
+	writesDisabled bool
 }
 
 type databasePinger interface {
@@ -61,12 +63,13 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 	}
 	clientIP := httpx.NewClientIPResolver(options.Proxy.TrustedCIDRs, options.Proxy.ForwardedHops)
 	app := &App{
-		static:        static,
-		billingConfig: options.Billing,
-		gcpProjectID:  options.GCPProjectID,
-		stripe:        billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
-		rateLimiters:  newAppRateLimiters(options.RateLimits),
-		clientIP:      clientIP,
+		static:         static,
+		billingConfig:  options.Billing,
+		gcpProjectID:   options.GCPProjectID,
+		stripe:         billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
+		rateLimiters:   newAppRateLimiters(options.RateLimits),
+		clientIP:       clientIP,
+		writesDisabled: options.WritesDisabled,
 	}
 	if db != nil {
 		app.databaseHealth = db
@@ -74,6 +77,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 			AppBaseURL:          options.AppBaseURL,
 			PasswordResetSender: options.PasswordResetSender,
 			ClientIP:            clientIP.Resolve,
+			WritesDisabled:      options.WritesDisabled,
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db))
@@ -83,7 +87,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 }
 
 func (a *App) RunPasswordResetWorker(ctx context.Context) {
-	if a.auth != nil {
+	if !a.writesDisabled && a.auth != nil {
 		a.auth.RunPasswordResetWorker(ctx)
 	}
 }
@@ -124,7 +128,26 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /write/{$}", a.write)
 	mux.HandleFunc("GET /write/{publicId}", a.write)
 	mux.Handle("/", StaticHandler(a.static))
-	return httpx.WithRequestContext(mux, a.gcpProjectID)
+	var handler http.Handler = mux
+	if a.writesDisabled {
+		handler = writeFence(handler)
+	}
+	return httpx.WithRequestContext(handler, a.gcpProjectID)
+}
+
+func writeFence(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Retry-After", "60")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"error": "writes are temporarily disabled for database recovery",
+			})
+		}
+	})
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {

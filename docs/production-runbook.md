@@ -144,13 +144,196 @@ Never target `passage-md-postgres` with a restore command.
 ### 1. Stabilize and resolve
 
 1. Stop the source of damaging writes if writes are still occurring.
-2. Keep production deletion protection enabled.
-3. Record the incident time in UTC and choose a recovery timestamp before the damaging change.
-4. Resolve the production project, instance, region, database version, edition, tier, storage size, storage type, and backup or recovery timestamp.
-5. For an incident recovery that can lead to cutover, stop all application writes and record the last accepted write boundary before choosing the final recovery point.
-6. Keep writes stopped through restore verification and cutover validation.
-7. Identify any legitimate writes after the chosen recovery point so they can be reconciled before writes reopen.
-8. Confirm the chosen temporary instance name does not exist.
+2. Pause normal application deployments and cancel any queued deployment before changing traffic.
+3. Keep production deletion protection enabled.
+4. Record the incident time in UTC and identify a candidate recovery timestamp before the damaging change.
+5. Resolve the production project, instance, region, database version, edition, tier, storage size, storage type, and backup or recovery timestamp.
+6. For an incident recovery that can lead to cutover, enable and verify the application write fence below.
+7. Keep the fence enabled through restore verification and cutover validation.
+8. Select the final recovery point only after the fenced revision has all traffic and every previously serving revision has drained.
+9. Identify any legitimate writes after the chosen recovery point so they can be reconciled before writes reopen.
+10. Confirm the chosen temporary instance name does not exist.
+
+`PASSAGE_WRITES_DISABLED=true` makes the server reject every non-read HTTP method with `503 Service Unavailable`.
+
+This includes browser and CLI document writes, auth and administration mutations, billing routes, and Stripe webhooks.
+
+It also prevents startup migrations, disables the password-reset queue worker, and blocks the `migrate`, `user`, `account delete`, and `account cleanup-stripe` commands in that process.
+
+Bearer-authenticated reads remain available without updating API-token usage timestamps.
+
+`account export` remains available because it performs the required read-only database export.
+
+Resolve every revision currently receiving traffic before enabling the fence:
+
+```sh
+project=passage-md-prod
+region=us-central1
+service=passage-md
+base_url=https://passage.md
+
+service_state="$(
+  gcloud run services describe "$service" \
+    --project="$project" \
+    --region="$region" \
+    --format=json
+)"
+
+previous_revisions="$(
+  printf '%s\n' "$service_state" |
+    jq -er '
+      [.status.traffic[]? | select((.percent // 0) > 0) | .revisionName]
+      | unique
+      | if length > 0 then .[] else error("expected at least one traffic-bearing revision") end
+    '
+)"
+
+test -n "$previous_revisions"
+```
+
+Create a fenced revision and direct all traffic to it:
+
+```sh
+gcloud run services update "$service" \
+  --project="$project" \
+  --region="$region" \
+  --update-env-vars=PASSAGE_WRITES_DISABLED=true
+
+gcloud run services update-traffic "$service" \
+  --project="$project" \
+  --region="$region" \
+  --to-latest
+```
+
+Verify the exact deployed environment value, latest ready revision, and 100 percent traffic assignment with a fail-closed check:
+
+```sh
+service_state="$(
+  gcloud run services describe "$service" \
+    --project="$project" \
+    --region="$region" \
+    --format=json
+)"
+
+fenced_revision="$(
+  printf '%s\n' "$service_state" |
+    jq -er '.status.latestReadyRevisionName'
+)"
+
+if ! printf '%s\n' "$service_state" | jq -e \
+  --arg revision "$fenced_revision" '
+    any(
+      .spec.template.spec.containers[0].env[]?;
+      .name == "PASSAGE_WRITES_DISABLED" and .value == "true"
+    )
+    and any(
+      .status.traffic[]?;
+      .revisionName == $revision and .percent == 100
+    )
+  ' >/dev/null; then
+  echo 'The write-fenced revision is not configured and serving 100 percent of traffic.' >&2
+  exit 1
+fi
+
+if printf '%s\n' "$previous_revisions" | grep -Fxq "$fenced_revision"; then
+  echo 'The fence did not create a new revision.' >&2
+  exit 1
+fi
+```
+
+Verify a read and a representative mutation through the production URL:
+
+```sh
+curl --fail --silent --show-error "$base_url/api/health" |
+  jq -e '.status == "ok" and .database == "ok"'
+
+write_status="$(
+  curl --silent --show-error \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    --request POST \
+    --header 'Content-Type: application/json' \
+    --data '{}' \
+    "$base_url/api/v1/auth/login"
+)"
+
+test "$write_status" = "503"
+```
+
+The production Cloud Run request timeout is 300 seconds.
+
+Wait at least 300 seconds after the traffic check so requests on the previous revisions finish before selecting and recording the final recovery point.
+
+Then verify through Cloud Monitoring that every previous revision has no active or idle instances.
+
+This also stops its password-reset worker when production uses instance-based CPU allocation.
+
+Cloud Monitoring samples this metric every 60 seconds and can take up to 120 additional seconds to publish it.
+
+Keep one fixed observation boundary and poll for up to six minutes so the visibility delay cannot move the target on each retry.
+
+```sh
+drain_observation_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+monitoring_deadline="$(( $(date +%s) + 360 ))"
+
+while :; do
+  monitoring_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  access_token="$(gcloud auth print-access-token)" || exit 1
+  all_revisions_drained=true
+
+  for previous_revision in $previous_revisions; do
+    instance_filter='metric.type="run.googleapis.com/container/instance_count" AND resource.type="cloud_run_revision"'
+    instance_filter="$instance_filter AND resource.labels.service_name=\"$service\""
+    instance_filter="$instance_filter AND resource.labels.revision_name=\"$previous_revision\""
+
+    if ! previous_revision_instances="$(
+      curl --fail --silent --show-error --get \
+        --header "Authorization: Bearer $access_token" \
+        --data-urlencode "filter=$instance_filter" \
+        --data-urlencode "interval.startTime=$drain_observation_after" \
+        --data-urlencode "interval.endTime=$monitoring_end" \
+        --data-urlencode 'view=FULL' \
+        "https://monitoring.googleapis.com/v3/projects/$project/timeSeries"
+    )"; then
+      all_revisions_drained=false
+      break
+    fi
+
+    if ! printf '%s\n' "$previous_revision_instances" | jq -e \
+      --arg observed_after "$drain_observation_after" '
+        .error == null
+        and (
+          [
+            .timeSeries[]?
+            | .points[0]?
+            | select(.interval.endTime >= $observed_after)
+            | .value.int64Value
+            | tonumber
+          ] as $counts
+          | ($counts | length) > 0
+          and all($counts[]; . == 0)
+        )
+      ' >/dev/null; then
+      all_revisions_drained=false
+      break
+    fi
+  done
+  unset access_token
+
+  if [ "$all_revisions_drained" = true ]; then
+    break
+  fi
+  if [ "$(date +%s)" -ge "$monitoring_deadline" ]; then
+    echo 'A previous revision did not produce a fresh zero-instance observation.' >&2
+    exit 1
+  fi
+  sleep 30
+done
+```
+
+Record the fence verification time and select the final recovery point only after this check passes.
+
+Do not treat console maintenance banners, client-side controls, or a single disabled route as a write fence.
 
 ### 2. Restore to a temporary instance
 
@@ -310,6 +493,55 @@ Create a separately reviewed plan to update the application database secret to t
 Record the database boundary and recovery instance used by each Cloud Run revision.
 
 Reopen writes only after the recovered database, application revision, and reconciled data have passed validation.
+
+Before disabling the fence, reconcile legitimate post-boundary activity and confirm that Stripe has retained failed webhook deliveries for retry.
+
+Disable the fence by deploying a new revision and sending all traffic to it:
+
+```sh
+gcloud run services update "$service" \
+  --project="$project" \
+  --region="$region" \
+  --update-env-vars=PASSAGE_WRITES_DISABLED=false
+
+gcloud run services update-traffic "$service" \
+  --project="$project" \
+  --region="$region" \
+  --to-latest
+```
+
+Fail closed if the new revision does not have the explicit false value and 100 percent of traffic:
+
+```sh
+service_state="$(
+  gcloud run services describe "$service" \
+    --project="$project" \
+    --region="$region" \
+    --format=json
+)"
+
+write_revision="$(
+  printf '%s\n' "$service_state" |
+    jq -er '.status.latestReadyRevisionName'
+)"
+
+if ! printf '%s\n' "$service_state" | jq -e \
+  --arg revision "$write_revision" '
+    any(
+      .spec.template.spec.containers[0].env[]?;
+      .name == "PASSAGE_WRITES_DISABLED" and .value == "false"
+    )
+    and any(
+      .status.traffic[]?;
+      .revisionName == $revision and .percent == 100
+    )
+  ' >/dev/null; then
+  echo 'The write-enabled revision is not configured and serving 100 percent of traffic.' >&2
+  exit 1
+fi
+```
+
+Recheck health, verify that the representative login request no longer returns the fence response, and monitor Stripe webhook delivery retries before closing the incident.
 
 Routing back to the original database is safe only before writes reopen on the recovered database.
 

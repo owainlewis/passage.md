@@ -147,6 +147,21 @@ func (s *PGStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, 
 	return user, err
 }
 
+func (s *PGStore) FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (User, error) {
+	var user User
+	err := s.db.QueryRow(ctx, `
+		SELECT users.id::text, users.email
+		FROM api_tokens
+		JOIN users ON users.id = api_tokens.user_id
+		WHERE api_tokens.token_hash = $1
+		  AND api_tokens.revoked_at IS NULL
+	`, tokenHash).Scan(&user.ID, &user.Email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrUnauthorized
+	}
+	return user, err
+}
+
 func (s *PGStore) ConsumePasswordResetAttempt(ctx context.Context, ipHash string, emailHash string, now time.Time, window time.Duration, limit int) (time.Duration, error) {
 	return s.consumePasswordResetRateLimit(ctx, "password_reset_rate_limits", []rateLimitKey{{"ip", ipHash}, {"email", emailHash}}, now, window, limit)
 }

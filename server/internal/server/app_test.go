@@ -99,6 +99,79 @@ func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
 	}
 }
 
+func TestWriteFenceBlocksEveryMutationRoute(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil, Options{WritesDisabled: true})
+
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/auth/register"},
+		{http.MethodPost, "/api/v1/auth/referral/validate"},
+		{http.MethodPost, "/api/v1/auth/referral-signup"},
+		{http.MethodPost, "/api/v1/auth/login"},
+		{http.MethodPost, "/api/v1/auth/logout"},
+		{http.MethodPost, "/api/v1/auth/password-reset/request"},
+		{http.MethodPost, "/api/v1/auth/password-reset/confirm"},
+		{http.MethodPatch, "/api/v1/admin/users/user@example.com/account"},
+		{http.MethodPost, "/api/v1/admin/community-referrals"},
+		{http.MethodPost, "/api/v1/admin/community-referrals/referral-id/rotate"},
+		{http.MethodPost, "/api/v1/admin/community-referrals/referral-id/disable"},
+		{http.MethodPost, "/api/v1/admin/community-grants/revoke"},
+		{http.MethodPost, "/api/v1/billing/checkout"},
+		{http.MethodPost, "/api/v1/billing/portal"},
+		{http.MethodPost, "/api/v1/billing/webhook"},
+		{http.MethodPost, "/api/v1/api-tokens"},
+		{http.MethodDelete, "/api/v1/api-tokens/token-id"},
+		{http.MethodPost, "/api/v1/docs"},
+		{http.MethodPatch, "/api/v1/docs/document-id"},
+		{http.MethodDelete, "/api/v1/docs/document-id"},
+		{http.MethodPost, "/api/v1/docs/document-id/share"},
+		{http.MethodDelete, "/api/v1/docs/document-id/share"},
+	}
+
+	for _, route := range routes {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(route.method, route.path, nil)
+			app.Routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+			}
+			if body := rec.Body.String(); body != "{\"error\":\"writes are temporarily disabled for database recovery\"}\n" {
+				t.Fatalf("body = %q", body)
+			}
+			if retryAfter := rec.Header().Get("Retry-After"); retryAfter != "60" {
+				t.Fatalf("Retry-After = %q, want 60", retryAfter)
+			}
+			if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
+			}
+		})
+	}
+}
+
+func TestWriteFenceKeepsReadRoutesAvailable(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil, Options{WritesDisabled: true})
+
+	for _, path := range []string{"/", "/api/v1/me"} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			app.Routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestDocsRequireDatabase(t *testing.T) {
 	app := NewApp(fstest.MapFS{
 		"index.html": {Data: []byte("<main>passage</main>")},
@@ -2006,6 +2079,10 @@ func (s *routeAuthStore) FindUserByAPITokenHash(ctx context.Context, tokenHash s
 		return auth.User{}, auth.ErrUnauthorized
 	}
 	return user, nil
+}
+
+func (s *routeAuthStore) FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (auth.User, error) {
+	return s.FindUserByAPITokenHash(ctx, tokenHash, time.Time{})
 }
 
 func routeTokenHash(token string) string {
