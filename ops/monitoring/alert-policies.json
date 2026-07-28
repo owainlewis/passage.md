@@ -113,7 +113,7 @@
     },
     "userLabels": {"environment": "production", "service": "passage-md", "severity": "warning"},
     "conditions": [{
-      "displayName": "Connections exceed 20 for 10 minutes",
+      "displayName": "Connections exceed 12 for 10 minutes",
       "conditionThreshold": {
         "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
         "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MAX"}],
