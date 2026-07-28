@@ -108,17 +108,17 @@
   {
     "displayName": "Passage Cloud SQL connection pressure",
     "documentation": {
-      "content": "Cloud SQL has used more than 20 connections for ten minutes. The current db-f1-micro tier has little connection headroom. Check application instances and long-lived sessions.",
+      "content": "Cloud SQL has used more than 12 connections for ten minutes, exceeding the launch application connection budget. Check application instances, migration jobs, and long-lived sessions.",
       "mimeType": "text/markdown"
     },
     "userLabels": {"environment": "production", "service": "passage-md", "severity": "warning"},
     "conditions": [{
-      "displayName": "Connections exceed 20 for 10 minutes",
+      "displayName": "Connections exceed 12 for 10 minutes",
       "conditionThreshold": {
         "filter": "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"passage-md-prod:passage-md-postgres\" AND metric.type = \"cloudsql.googleapis.com/database/network/connections\"",
         "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_MAX"}],
         "comparison": "COMPARISON_GT",
-        "thresholdValue": 20,
+        "thresholdValue": 12,
         "duration": "600s",
         "trigger": {"count": 1}
       }

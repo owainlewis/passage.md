@@ -8,6 +8,7 @@ import (
 func TestFromEnvDefaultsPort(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("PASSAGE_DATABASE_MAX_CONNS", "")
 	t.Setenv("STATIC_DIR", "apps/web/out")
 	t.Setenv("SESSION_SECRET", "")
 	t.Setenv("APP_ENV", "")
@@ -22,6 +23,9 @@ func TestFromEnvDefaultsPort(t *testing.T) {
 	if cfg.DatabaseURL != "postgres://example" {
 		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
 	}
+	if cfg.DatabaseMaxConns != 3 {
+		t.Fatalf("DatabaseMaxConns = %d, want 3", cfg.DatabaseMaxConns)
+	}
 	if cfg.StaticDir != "apps/web/out" {
 		t.Fatalf("StaticDir = %q", cfg.StaticDir)
 	}
@@ -30,6 +34,22 @@ func TestFromEnvDefaultsPort(t *testing.T) {
 	}
 	if cfg.CookieSecure {
 		t.Fatal("CookieSecure = true, want false")
+	}
+}
+
+func TestFromEnvLoadsPositiveDatabaseConnectionLimit(t *testing.T) {
+	t.Setenv("PASSAGE_DATABASE_MAX_CONNS", "7")
+	if got := FromEnv().DatabaseMaxConns; got != 7 {
+		t.Fatalf("DatabaseMaxConns = %d, want 7", got)
+	}
+
+	for _, value := range []string{"0", "-1", "invalid", "2147483648"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("PASSAGE_DATABASE_MAX_CONNS", value)
+			if got := FromEnv().DatabaseMaxConns; got != 3 {
+				t.Fatalf("DatabaseMaxConns = %d, want fallback 3", got)
+			}
+		})
 	}
 }
 

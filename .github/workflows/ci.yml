@@ -16,6 +16,8 @@ env:
   CLOUD_RUN_MIGRATION_JOB: passage-md-migrate
   CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: passage-md-run@passage-md-prod.iam.gserviceaccount.com
   CLOUD_SQL_INSTANCE: passage-md-prod:us-central1:passage-md-postgres
+  CLOUD_RUN_MAX_INSTANCES: 4
+  DATABASE_MAX_CONNS: 3
   DATABASE_SECRET: passage-database-url
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
   IMAGE_NAME: passage-md

@@ -10,17 +10,18 @@ import (
 )
 
 type Config struct {
-	AppEnv         string
-	Port           string
-	DatabaseURL    string
-	StaticDir      string
-	SessionSecret  string
-	CookieSecure   bool
-	WritesDisabled bool
-	PasswordReset  PasswordResetConfig
-	Billing        BillingConfig
-	RateLimits     AbuseRateLimitConfig
-	Proxy          ProxyConfig
+	AppEnv           string
+	Port             string
+	DatabaseURL      string
+	DatabaseMaxConns int32
+	StaticDir        string
+	SessionSecret    string
+	CookieSecure     bool
+	WritesDisabled   bool
+	PasswordReset    PasswordResetConfig
+	Billing          BillingConfig
+	RateLimits       AbuseRateLimitConfig
+	Proxy            ProxyConfig
 }
 
 type RateLimitConfig struct {
@@ -81,13 +82,14 @@ func FromEnv() Config {
 		sessionSecret = "dev-session-secret-change-me"
 	}
 	return Config{
-		AppEnv:         appEnv,
-		Port:           valueOrDefault(os.Getenv("PORT"), "8080"),
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
-		StaticDir:      os.Getenv("STATIC_DIR"),
-		SessionSecret:  sessionSecret,
-		CookieSecure:   appEnv == "production",
-		WritesDisabled: boolFromEnv(os.Getenv("PASSAGE_WRITES_DISABLED")),
+		AppEnv:           appEnv,
+		Port:             valueOrDefault(os.Getenv("PORT"), "8080"),
+		DatabaseURL:      os.Getenv("DATABASE_URL"),
+		DatabaseMaxConns: positiveInt32OrDefault(os.Getenv("PASSAGE_DATABASE_MAX_CONNS"), 3),
+		StaticDir:        os.Getenv("STATIC_DIR"),
+		SessionSecret:    sessionSecret,
+		CookieSecure:     appEnv == "production",
+		WritesDisabled:   boolFromEnv(os.Getenv("PASSAGE_WRITES_DISABLED")),
 		PasswordReset: PasswordResetConfig{
 			AppBaseURL:   appBaseURL,
 			ResendAPIKey: strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
@@ -185,6 +187,14 @@ func intOrDefault(value string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func positiveInt32OrDefault(value string, fallback int32) int32 {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return int32(parsed)
 }
 
 func durationOrDefault(value string, fallback time.Duration) time.Duration {
