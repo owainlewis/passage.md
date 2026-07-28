@@ -146,3 +146,39 @@ Failed `main` CI runs create or update an assigned `Production deployment failed
 Inspect the failing job before retrying.
 
 If production changed before failure, compare the active Cloud Run revision with the workflow commit and roll back when needed.
+
+### Migration gate
+
+Production application instances never apply migrations during startup.
+
+The `main` workflow builds and pushes one commit-tagged image, configures the `passage-md-migrate` Cloud Run Job to use that image, runs one migration task with no retries, and waits for success.
+It then deploys a ready application revision without traffic, resolves that exact revision name, and pins 100% traffic to it as the final step.
+
+If the migration job fails, the workflow exits before `gcloud run deploy`.
+The existing application revision and traffic remain unchanged.
+
+Inspect recent executions without printing environment values:
+
+```sh
+gcloud run jobs executions list \
+  --project passage-md-prod \
+  --region us-central1 \
+  --job passage-md-migrate
+```
+
+The migration runner retains its PostgreSQL advisory lock.
+A manual retry is safe after the cause is understood because applied migration versions are recorded in `schema_migrations`.
+
+During database recovery, `PASSAGE_WRITES_DISABLED` fences application mutations only.
+It does not suppress or trigger migrations because the application no longer runs them.
+Do not execute the migration job against a recovery database unless the recovery plan explicitly requires it.
+
+### Application rollback versus schema rollback
+
+Moving traffic to an earlier Cloud Run revision does not reverse database migrations.
+
+Before deployment, migrations must remain compatible with both the previous and new application revisions.
+If a schema change causes an incident, prefer a forward fix.
+Use point-in-time recovery to a separate database only when a forward fix is unsafe, then follow the controlled database recovery procedure above.
+
+Never attempt an automatic down migration in production.

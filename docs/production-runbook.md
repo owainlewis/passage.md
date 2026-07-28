@@ -182,7 +182,12 @@ Never target `passage-md-postgres` with a restore command.
 
 This includes browser and CLI document writes, auth and administration mutations, billing routes, and Stripe webhooks.
 
-It also prevents startup migrations, disables the password-reset queue worker, and blocks the `migrate`, `user`, `account delete`, and `account cleanup-stripe` commands in that process.
+Application startup never applies migrations, regardless of the write-fence setting.
+
+The fence disables the password-reset queue worker and blocks the `migrate`, `user`, `account delete`, and `account cleanup-stripe` commands in that process.
+
+The production migration job is a separate Cloud Run resource and does not inherit the service write-fence variable.
+Do not execute it against a recovery database unless the reviewed recovery plan explicitly requires migrations.
 
 Bearer-authenticated reads remain available without updating API-token usage timestamps.
 
@@ -506,10 +511,11 @@ fi
 
 Do not shift traffic or reopen writes until both fail-closed recovery settings and checkpoint checks pass.
 
-Passage applies its embedded database migrations every time the server starts.
+`passage serve` never applies embedded database migrations.
 
-For recovery from a bad migration, resolve a known-good image digest built before that migration and verify that its embedded migration set does not contain the bad migration.
+For recovery from a bad migration, resolve a known-good image digest built before that migration and verify that it remains compatible with the recovered schema.
 
+Do not run the explicit migration job against the recovered database.
 Do not start the recovered database with the bad image or an unverified `latest` image.
 
 Create a separately reviewed plan to update the application database secret to the verified recovery instance, deploy a compatible Cloud Run revision from the resolved image digest, and test before shifting normal traffic.
