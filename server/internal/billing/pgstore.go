@@ -202,29 +202,67 @@ func (s *PGStore) SetStripeCustomer(ctx context.Context, userID string, customer
 }
 
 func (s *PGStore) UpdateSubscription(ctx context.Context, userID string, update SubscriptionUpdate) error {
-	return updateSubscription(ctx, s.db, userID, update)
+	_, err := updateSubscription(ctx, s.db, userID, update)
+	return err
 }
 
 func (s *PGStore) RefreshSubscription(ctx context.Context, userID string, load func(context.Context) (SubscriptionUpdate, error)) error {
+	// Reserve an order before calling Stripe, without holding a database
+	// connection while the network request is in flight.
+	var generation int64
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO billing_accounts (user_id, stripe_refresh_generation)
+		VALUES ($1, 1)
+		ON CONFLICT (user_id) DO UPDATE
+		SET stripe_refresh_generation = billing_accounts.stripe_refresh_generation + 1
+		RETURNING stripe_refresh_generation
+	`, userID).Scan(&generation)
+	if err != nil {
+		return err
+	}
+
+	update, err := load(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Only the newest completed refresh may update the account. A failed newer
+	// refresh leaves room for an older successful request to apply.
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "passage:billing:"+userID); err != nil {
+	var appliedGeneration int64
+	if err := tx.QueryRow(ctx, `
+		SELECT stripe_refresh_applied_generation
+		FROM billing_accounts
+		WHERE user_id = $1
+		FOR UPDATE
+	`, userID).Scan(&appliedGeneration); err != nil {
 		return err
 	}
-	update, err := load(ctx)
-	if err != nil {
-		return err
+	if generation <= appliedGeneration {
+		return tx.Commit(ctx)
 	}
 	var refreshedAt time.Time
 	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&refreshedAt); err != nil {
 		return err
 	}
 	update.EventCreated = &refreshedAt
-	if err := updateSubscription(ctx, tx, userID, update); err != nil {
+	applied, err := updateSubscription(ctx, tx, userID, update)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return tx.Commit(ctx)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE billing_accounts
+		SET stripe_refresh_applied_generation = $2
+		WHERE user_id = $1
+	`, userID, generation); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -234,8 +272,8 @@ type subscriptionExecutor interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
-func updateSubscription(ctx context.Context, executor subscriptionExecutor, userID string, update SubscriptionUpdate) error {
-	_, err := executor.Exec(ctx, `
+func updateSubscription(ctx context.Context, executor subscriptionExecutor, userID string, update SubscriptionUpdate) (bool, error) {
+	tag, err := executor.Exec(ctx, `
 		INSERT INTO billing_accounts (
 			user_id,
 			stripe_customer_id,
@@ -291,7 +329,7 @@ func updateSubscription(ctx context.Context, executor subscriptionExecutor, user
 		    )
 		  )
 	`, userID, emptyToNil(update.CustomerID), update.SubscriptionID, update.SubscriptionCreatedAt, update.Status, emptyToNil(update.PriceID), update.CurrentPeriodEnd, update.CancelAtPeriodEnd, update.EventCreated)
-	return err
+	return tag.RowsAffected() > 0, err
 }
 
 func (s *PGStore) CountSavedDocs(ctx context.Context, userID string) (int, error) {
