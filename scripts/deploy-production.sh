@@ -102,30 +102,15 @@ if [[ ! "${revision_ready_poll_seconds}" =~ ^[0-9]+$ ]]; then
 fi
 
 for ((attempt = 1; attempt <= revision_ready_max_attempts; attempt++)); do
-  revision_state="$(
-    gcloud run revisions describe "${deployed_revision}" \
+  latest_ready_revision="$(
+    gcloud run services describe "${CLOUD_RUN_SERVICE}" \
       --project="${GCP_PROJECT_ID}" \
       --region="${GCP_REGION}" \
-      --format='csv[no-heading](metadata.generation,status.observedGeneration,status.conditions[?type="Ready"].status)'
+      --format='value(status.latestReadyRevisionName)'
   )"
-  IFS=',' read -r revision_generation revision_observed_generation revision_ready <<<"${revision_state}"
 
-  if [[ -n "${revision_generation}" && "${revision_generation}" == "${revision_observed_generation}" ]]; then
-    case "${revision_ready}" in
-      True)
-        break
-        ;;
-      False)
-        echo "Cloud Run revision ${deployed_revision} reported Ready=False after reconciling generation ${revision_generation}" >&2
-        exit 1
-        ;;
-      Unknown | "")
-        ;;
-      *)
-        echo "Cloud Run revision ${deployed_revision} returned unexpected Ready status: ${revision_ready}" >&2
-        exit 1
-        ;;
-    esac
+  if [[ "${latest_ready_revision}" == "${deployed_revision}" ]]; then
+    break
   fi
 
   if ((attempt == revision_ready_max_attempts)); then
