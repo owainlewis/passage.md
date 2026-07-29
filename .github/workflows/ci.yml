@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      stripe_billing_mode:
+        description: Preserve, enable, or disable live Stripe billing
+        required: true
+        default: preserve
+        type: choice
+        options:
+          - preserve
+          - enable
+          - disable
 
 permissions:
   contents: read
@@ -19,6 +29,11 @@ env:
   CLOUD_RUN_MAX_INSTANCES: 4
   DATABASE_MAX_CONNS: 3
   PUBLIC_SIGNUP_ENABLED: 'false'
+  STRIPE_MONTHLY_PRICE_ID: price_1TxulyLIRVH1hzohfJBV5lRz
+  STRIPE_SECRET_KEY_SECRET: passage-stripe-secret-key
+  STRIPE_SECRET_KEY_VERSION: '1'
+  STRIPE_WEBHOOK_SECRET_SECRET: passage-stripe-webhook-secret
+  STRIPE_WEBHOOK_SECRET_VERSION: '1'
   DATABASE_SECRET: passage-database-url
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
   IMAGE_NAME: passage-md
@@ -130,7 +145,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Authenticate to Google Cloud
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
@@ -138,11 +153,11 @@ jobs:
           service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure Artifact Registry auth
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
       - name: Test production deployment gate
@@ -155,15 +170,21 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
           tags: |
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
 
       - name: Migrate and deploy to Cloud Run
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           COMMIT_SHA: ${{ github.sha }}
           PUBLIC_SIGNUP_ENABLED: ${{ env.PUBLIC_SIGNUP_ENABLED }}
+          STRIPE_BILLING_MODE: ${{ inputs.stripe_billing_mode || 'preserve' }}
+          STRIPE_MONTHLY_PRICE_ID: ${{ env.STRIPE_MONTHLY_PRICE_ID }}
+          STRIPE_SECRET_KEY_SECRET: ${{ env.STRIPE_SECRET_KEY_SECRET }}
+          STRIPE_SECRET_KEY_VERSION: ${{ env.STRIPE_SECRET_KEY_VERSION }}
+          STRIPE_WEBHOOK_SECRET_SECRET: ${{ env.STRIPE_WEBHOOK_SECRET_SECRET }}
+          STRIPE_WEBHOOK_SECRET_VERSION: ${{ env.STRIPE_WEBHOOK_SECRET_VERSION }}
         run: scripts/deploy-production.sh
