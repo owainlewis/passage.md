@@ -163,6 +163,9 @@ jobs:
       - name: Test production deployment gate
         run: scripts/deploy-production.test.sh
 
+      - name: Test production community operation gate
+        run: scripts/run-production-community-op.test.sh
+
       - name: Test monitoring configuration
         run: ops/monitoring/validate.test.sh
 

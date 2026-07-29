@@ -122,6 +122,20 @@ func (s *PGStore) DisableReferral(ctx context.Context, id string, now time.Time)
 	return nil
 }
 
+func (s *PGStore) DisableReferralBySlug(ctx context.Context, slug string, now time.Time) error {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE community_referrals SET disabled_at = $2
+		WHERE slug = $1 AND disabled_at IS NULL
+	`, slug, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrReferralNotFound
+	}
+	return nil
+}
+
 func (s *PGStore) RevokeGrant(ctx context.Context, email string, reason string, now time.Time) error {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE community_grants AS grants

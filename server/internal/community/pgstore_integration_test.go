@@ -195,6 +195,28 @@ func TestPGStoreReferralLifecycleAndCommunityEntitlement(t *testing.T) {
 	}
 }
 
+func TestPGStoreDisablesReferralBySlug(t *testing.T) {
+	db := integrationDB(t)
+	store := NewPGStore(db)
+	ctx := context.Background()
+	stamp := time.Now().UnixNano()
+	slug := fmt.Sprintf("disable-by-slug-%d", stamp)
+	codeHash := HashCode(fmt.Sprintf("disable-code-%d", stamp))
+	if _, err := store.CreateReferral(ctx, slug, "Disable by slug", codeHash); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.DisableReferralBySlug(ctx, slug, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FindActiveReferral(ctx, slug, codeHash); !errors.Is(err, ErrReferralNotFound) {
+		t.Fatalf("disabled referral lookup error = %v", err)
+	}
+	if err := store.DisableReferralBySlug(ctx, slug, time.Now()); !errors.Is(err, ErrReferralNotFound) {
+		t.Fatalf("second disable error = %v", err)
+	}
+}
+
 func integrationDB(t *testing.T) *database.Pool {
 	t.Helper()
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")

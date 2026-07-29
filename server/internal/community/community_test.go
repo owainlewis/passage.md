@@ -22,7 +22,7 @@ func TestCreateReferralReturnsPlaintextOnceAndStoresOnlyHash(t *testing.T) {
 	if referral.Slug != "aiengineer" || referral.Name != "AI Engineer" || !strings.HasPrefix(referral.Code, "PASS-") {
 		t.Fatalf("referral = %#v", referral)
 	}
-	if referral.SignupURL != "/signup?ref=aiengineer&code="+referral.Code {
+	if referral.SignupURL != "/signup#ref=aiengineer&code="+referral.Code {
 		t.Fatalf("signup URL = %q", referral.SignupURL)
 	}
 	if store.codeHash == referral.Code || store.codeHash != HashCode(referral.Code) {
@@ -35,6 +35,37 @@ func TestCreateReferralValidatesSlugAndName(t *testing.T) {
 	for _, input := range []struct{ slug, name string }{{"ai engineer", "AI Engineer"}, {"ai--engineer", "AI Engineer"}, {"aiengineer", ""}} {
 		if _, err := service.CreateReferral(context.Background(), input.slug, input.name); err == nil {
 			t.Fatalf("CreateReferral(%q, %q) succeeded", input.slug, input.name)
+		}
+	}
+}
+
+func TestCreateReferralFromCodeHashNeverNeedsPlaintext(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store, auth.NewService(nil, "secret", false))
+	codeHash := strings.Repeat("a1", 32)
+
+	referral, err := service.CreateReferralFromCodeHash(context.Background(), " Launch-Test ", " Launch test ", codeHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if referral.Slug != "launch-test" || referral.Name != "Launch test" || referral.CodeHash != codeHash {
+		t.Fatalf("referral = %#v", referral)
+	}
+	if store.codeHash != codeHash {
+		t.Fatalf("stored hash = %q", store.codeHash)
+	}
+}
+
+func TestCreateReferralFromCodeHashRejectsPlaintextAndMalformedHashes(t *testing.T) {
+	service := NewService(&memoryStore{}, auth.NewService(nil, "secret", false))
+	for _, codeHash := range []string{
+		"PASS-0123-4567-89AB-CDEF",
+		strings.Repeat("a", 63),
+		strings.Repeat("A", 64),
+		strings.Repeat("g", 64),
+	} {
+		if _, err := service.CreateReferralFromCodeHash(context.Background(), "launch-test", "Launch test", codeHash); err == nil {
+			t.Fatalf("CreateReferralFromCodeHash accepted %q", codeHash)
 		}
 	}
 }
@@ -134,16 +165,19 @@ func TestReferralLifecycleAndGrantRevocationDelegateToStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rotated.SignupURL != "/signup?ref=aiengineer&code="+rotated.Code || store.rotatedID != id {
+	if rotated.SignupURL != "/signup#ref=aiengineer&code="+rotated.Code || store.rotatedID != id {
 		t.Fatalf("rotated/store = %#v/%#v", rotated, store)
 	}
 	if err := service.DisableReferral(context.Background(), id); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.DisableReferralBySlug(context.Background(), " AIEngineer "); err != nil {
+		t.Fatal(err)
+	}
 	if err := service.RevokeGrant(context.Background(), " MEMBER@example.com ", " membership ended "); err != nil {
 		t.Fatal(err)
 	}
-	if store.disabledID != id || store.revokedEmail != "member@example.com" || store.reason != "membership ended" {
+	if store.disabledID != id || store.disabledSlug != "aiengineer" || store.revokedEmail != "member@example.com" || store.reason != "membership ended" {
 		t.Fatalf("store = %#v", store)
 	}
 }
@@ -157,18 +191,21 @@ func TestReferralLifecycleRejectsMalformedIDsBeforeStore(t *testing.T) {
 	if err := service.DisableReferral(context.Background(), "not-a-uuid"); !errors.Is(err, ErrReferralNotFound) {
 		t.Fatalf("disable error = %v", err)
 	}
-	if store.rotatedID != "" || store.disabledID != "" {
+	if err := service.DisableReferralBySlug(context.Background(), "not a slug"); !errors.Is(err, ErrReferralNotFound) {
+		t.Fatalf("disable by slug error = %v", err)
+	}
+	if store.rotatedID != "" || store.disabledID != "" || store.disabledSlug != "" {
 		t.Fatalf("store called: %#v", store)
 	}
 }
 
 type memoryStore struct {
-	slug, codeHash, passwordHash                string
-	findErr, redeemErr                          error
-	redeemCalls                                 int
-	rotatedID, disabledID, revokedEmail, reason string
-	policyVersion                               string
-	acceptedAt                                  time.Time
+	slug, codeHash, passwordHash                              string
+	findErr, redeemErr                                        error
+	redeemCalls                                               int
+	rotatedID, disabledID, disabledSlug, revokedEmail, reason string
+	policyVersion                                             string
+	acceptedAt                                                time.Time
 }
 
 func (s *memoryStore) CreateReferral(_ context.Context, slug, name, codeHash string) (StoredReferral, error) {
@@ -201,6 +238,10 @@ func (s *memoryStore) RotateReferral(_ context.Context, id, codeHash string, _ t
 
 func (s *memoryStore) DisableReferral(_ context.Context, id string, _ time.Time) error {
 	s.disabledID = id
+	return nil
+}
+func (s *memoryStore) DisableReferralBySlug(_ context.Context, slug string, _ time.Time) error {
+	s.disabledSlug = slug
 	return nil
 }
 func (s *memoryStore) RevokeGrant(_ context.Context, email, reason string, _ time.Time) error {

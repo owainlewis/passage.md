@@ -32,6 +32,9 @@ func TestWriteFenceBlocksMutationCommands(t *testing.T) {
 		{"user", "user@example.com"},
 		{"account", "delete", "user@example.com", "--confirm", "user@example.com"},
 		{"account", "cleanup-stripe", "cus_pending"},
+		{"community", "referral", "create", "launch-test", "Launch test", "--code-sha256", strings.Repeat("a", 64)},
+		{"community", "referral", "disable", "launch-test"},
+		{"community", "grant", "revoke", "user@example.com", "--reason", "launch test complete"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			err := run(append([]string{"passage"}, args...))
@@ -39,6 +42,17 @@ func TestWriteFenceBlocksMutationCommands(t *testing.T) {
 				t.Fatalf("run error = %v", err)
 			}
 		})
+	}
+}
+
+func TestCommunityCommandsRequireDatabaseWithoutEchoingCodeHash(t *testing.T) {
+	codeHash := strings.Repeat("a1", 32)
+	err := run([]string{"passage", "community", "referral", "create", "launch-test", "Launch test", "--code-sha256", codeHash})
+	if err == nil || err.Error() != "DATABASE_URL is required" {
+		t.Fatalf("run error = %v", err)
+	}
+	if strings.Contains(err.Error(), codeHash) {
+		t.Fatal("error exposed the referral code hash")
 	}
 }
 

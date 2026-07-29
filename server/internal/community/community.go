@@ -26,6 +26,7 @@ var (
 	ErrGrantNotFound    = errors.New("community grant not found")
 	ErrPolicyRequired   = errors.New("Terms and Privacy acceptance is required")
 	referralSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	codeHashPattern     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 type Referral struct {
@@ -51,6 +52,7 @@ type Store interface {
 	Redeem(ctx context.Context, slug string, codeHash string, email string, passwordHash string, policyVersion string, session auth.PreparedSession, now time.Time) (auth.User, error)
 	RotateReferral(ctx context.Context, id string, codeHash string, now time.Time) (StoredReferral, error)
 	DisableReferral(ctx context.Context, id string, now time.Time) error
+	DisableReferralBySlug(ctx context.Context, slug string, now time.Time) error
 	RevokeGrant(ctx context.Context, email string, reason string, now time.Time) error
 }
 
@@ -74,13 +76,9 @@ func NewService(store Store, authService *auth.Service) *Service {
 }
 
 func (s *Service) CreateReferral(ctx context.Context, slug string, name string) (Referral, error) {
-	slug = normalizeSlug(slug)
-	name = strings.TrimSpace(name)
-	if !referralSlugPattern.MatchString(slug) {
-		return Referral{}, errors.New("referral slug must contain lowercase letters, numbers, and single hyphens")
-	}
-	if name == "" {
-		return Referral{}, errors.New("referral name is required")
+	slug, name, err := validateReferralIdentity(slug, name)
+	if err != nil {
+		return Referral{}, err
 	}
 	code, err := randomCode()
 	if err != nil {
@@ -91,6 +89,17 @@ func (s *Service) CreateReferral(ctx context.Context, slug string, name string) 
 		return Referral{}, err
 	}
 	return referralWithCode(stored, code), nil
+}
+
+func (s *Service) CreateReferralFromCodeHash(ctx context.Context, slug string, name string, codeHash string) (StoredReferral, error) {
+	slug, name, err := validateReferralIdentity(slug, name)
+	if err != nil {
+		return StoredReferral{}, err
+	}
+	if !codeHashPattern.MatchString(codeHash) {
+		return StoredReferral{}, errors.New("referral code hash must be 64 lowercase hexadecimal characters")
+	}
+	return s.store.CreateReferral(ctx, slug, name, codeHash)
 }
 
 func (s *Service) RotateReferral(ctx context.Context, id string) (Referral, error) {
@@ -113,6 +122,14 @@ func (s *Service) DisableReferral(ctx context.Context, id string) error {
 		return ErrReferralNotFound
 	}
 	return s.store.DisableReferral(ctx, id, s.now())
+}
+
+func (s *Service) DisableReferralBySlug(ctx context.Context, slug string) error {
+	slug = normalizeSlug(slug)
+	if !referralSlugPattern.MatchString(slug) {
+		return ErrReferralNotFound
+	}
+	return s.store.DisableReferralBySlug(ctx, slug, s.now())
 }
 
 func (s *Service) ValidateReferral(ctx context.Context, slug string, code string) (StoredReferral, error) {
@@ -173,13 +190,25 @@ func (s *Service) RevokeGrant(ctx context.Context, email string, reason string) 
 func referralWithCode(stored StoredReferral, code string) Referral {
 	return Referral{
 		ID: stored.ID, Slug: stored.Slug, Name: stored.Name, Code: code,
-		SignupURL: "/signup?ref=" + stored.Slug + "&code=" + code,
+		SignupURL: "/signup#ref=" + stored.Slug + "&code=" + code,
 		CreatedAt: stored.CreatedAt,
 	}
 }
 
 func normalizeSlug(slug string) string {
 	return strings.ToLower(strings.TrimSpace(slug))
+}
+
+func validateReferralIdentity(slug string, name string) (string, string, error) {
+	slug = normalizeSlug(slug)
+	name = strings.TrimSpace(name)
+	if !referralSlugPattern.MatchString(slug) {
+		return "", "", errors.New("referral slug must contain lowercase letters, numbers, and single hyphens")
+	}
+	if name == "" {
+		return "", "", errors.New("referral name is required")
+	}
+	return slug, name, nil
 }
 
 func validUUID(value string) bool {

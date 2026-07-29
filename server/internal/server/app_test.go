@@ -425,6 +425,9 @@ func (s *routeCommunityStore) DisableReferral(_ context.Context, id string, _ ti
 	s.disabledID = id
 	return nil
 }
+func (s *routeCommunityStore) DisableReferralBySlug(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
 func (s *routeCommunityStore) RevokeGrant(_ context.Context, email, reason string, _ time.Time) error {
 	s.revokedEmail, s.reason = email, reason
 	return nil

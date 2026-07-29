@@ -1,5 +1,54 @@
 # Production Runbook
 
+## Controlled private launch-test account
+
+Use this only for a reviewed launch smoke test while public signup remains closed.
+
+The production operation accepts only a SHA-256 digest.
+
+Never put the plaintext referral code in GitHub inputs, Actions logs, Cloud Run arguments, issue comments, or source control.
+
+1. Confirm `PASSAGE_PUBLIC_SIGNUP_ENABLED=false` and public registration returns `403`.
+2. Generate a dedicated code locally:
+
+   ```sh
+   passage_referral_code="PASS$(openssl rand -hex 16 | tr '[:lower:]' '[:upper:]')"
+   passage_referral_hash="$(printf '%s' "${passage_referral_code}" | shasum -a 256 | awk '{print $1}')"
+   ```
+
+3. Dispatch `Production community operation` from `main` with:
+   - operation: `create-referral`
+   - referral slug: a dedicated lowercase slug such as `launch-test`
+   - referral name: a non-secret label
+   - referral code SHA-256: `${passage_referral_hash}`
+4. Share only this private link with the intended user:
+
+   ```text
+   https://passage.md/signup#ref=launch-test&code=<locally generated code>
+   ```
+
+5. The user chooses their password and explicitly accepts the current Terms and Privacy Policy.
+6. Immediately dispatch `disable-referral` with the same referral slug so the link cannot be reused.
+7. Immediately dispatch `revoke-grant` with the account email repeated in the confirmation field and an audit reason.
+8. Verify the authenticated account reports `plan=free`, `source=default`, and no Stripe customer or subscription before starting Checkout.
+9. Clear the local variables:
+
+    ```sh
+    unset passage_referral_code passage_referral_hash
+    ```
+
+The workflow resolves the exact dispatched `main` image tag to an immutable digest and uses that digest in a uniquely named ephemeral Cloud Run job.
+
+It resolves the single revision receiving 100 percent of production traffic, verifies that revision belongs to the dispatched commit, checks its write-fence and public-signup settings, and repeats those checks immediately before execution.
+
+It does not receive application or Stripe secrets, does not change the serving revision, and deletes the job after execution.
+
+If signup does not complete, disable the referral and clear the local code.
+
+If grant revocation or referral disablement fails, do not start Checkout.
+
+Keep public signup closed until the separate go-live gate is approved.
+
 ## Scope
 
 This runbook covers the initial single-region Passage deployment in `passage-md-prod`.
