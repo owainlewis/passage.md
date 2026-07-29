@@ -17,6 +17,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/accountdata"
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
+	"github.com/owainlewis/passage.md/server/internal/community"
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
@@ -67,13 +68,18 @@ func run(args []string) error {
 			return errors.New("account mutation is disabled while PASSAGE_WRITES_DISABLED is enabled")
 		}
 		return account(cfg, args[2:])
+	case "community":
+		if cfg.WritesDisabled {
+			return errors.New("community mutation is disabled while PASSAGE_WRITES_DISABLED is enabled")
+		}
+		return communityCommand(cfg, args[2:])
 	default:
 		return usage()
 	}
 }
 
 func usage() error {
-	return errors.New("usage: passage serve|migrate|user <email>|account export <email> <output.zip>|account delete <email> --confirm <email> [--stripe-verified-no-active-subscription]|account cleanup-stripe <customer-id>")
+	return errors.New("usage: passage serve|migrate|user <email>|account export <email> <output.zip>|account delete <email> --confirm <email> [--stripe-verified-no-active-subscription]|account cleanup-stripe <customer-id>|community referral create <slug> <name> --code-sha256 <hash>|community referral disable <slug>|community grant revoke <email> --reason <reason>")
 }
 
 func serve(cfg config.Config) error {
@@ -279,6 +285,43 @@ func account(cfg config.Config, args []string) error {
 
 func accountCommandWrites(args []string) bool {
 	return len(args) == 0 || args[0] != "export"
+}
+
+func communityCommand(cfg config.Config, args []string) error {
+	if cfg.DatabaseURL == "" {
+		return errors.New("DATABASE_URL is required")
+	}
+	ctx := context.Background()
+	db, err := database.Open(ctx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	defer db.Close()
+
+	service := community.NewService(community.NewPGStore(db), nil)
+	switch {
+	case len(args) == 6 && args[0] == "referral" && args[1] == "create" && args[4] == "--code-sha256":
+		referral, err := service.CreateReferralFromCodeHash(ctx, args[2], args[3], args[5])
+		if err != nil {
+			return fmt.Errorf("create community referral: %w", err)
+		}
+		fmt.Printf("community referral created: id=%s slug=%s\n", referral.ID, referral.Slug)
+		return nil
+	case len(args) == 3 && args[0] == "referral" && args[1] == "disable":
+		if err := service.DisableReferralBySlug(ctx, args[2]); err != nil {
+			return fmt.Errorf("disable community referral: %w", err)
+		}
+		fmt.Printf("community referral disabled: slug=%s\n", strings.ToLower(strings.TrimSpace(args[2])))
+		return nil
+	case len(args) == 5 && args[0] == "grant" && args[1] == "revoke" && args[3] == "--reason":
+		if err := service.RevokeGrant(ctx, args[2], args[4]); err != nil {
+			return fmt.Errorf("revoke community grant: %w", err)
+		}
+		fmt.Printf("community grant revoked: email=%s\n", strings.ToLower(strings.TrimSpace(args[2])))
+		return nil
+	default:
+		return usage()
+	}
 }
 
 func cleanupStripeCustomerResult(customerID string, err error) error {

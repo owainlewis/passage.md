@@ -1,0 +1,88 @@
+name: Production community operation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to run
+        required: true
+        type: choice
+        options:
+          - create-referral
+          - disable-referral
+          - revoke-grant
+      referral_slug:
+        description: Referral slug for create-referral
+        required: false
+        type: string
+      referral_name:
+        description: Public referral name for create-referral
+        required: false
+        type: string
+      referral_code_sha256:
+        description: Lowercase SHA-256 of the private referral code
+        required: false
+        type: string
+      account_email:
+        description: Account email for revoke-grant
+        required: false
+        type: string
+      confirm_email:
+        description: Repeat account email for revoke-grant
+        required: false
+        type: string
+      revocation_reason:
+        description: Audit reason for revoke-grant
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-community-operations
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    name: Run production community operation
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: passage-md-prod
+      GCP_REGION: us-central1
+      CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: passage-md-run@passage-md-prod.iam.gserviceaccount.com
+      CLOUD_RUN_SERVICE: passage-md
+      CLOUD_SQL_INSTANCE: passage-md-prod:us-central1:passage-md-postgres
+      DATABASE_SECRET: passage-database-url
+      IMAGE: us-central1-docker.pkg.dev/passage-md-prod/passage-md/passage-md:${{ github.sha }}
+      COMMIT_SHA: ${{ github.sha }}
+      OPERATION: ${{ inputs.operation }}
+      REFERRAL_SLUG: ${{ inputs.referral_slug }}
+      REFERRAL_NAME: ${{ inputs.referral_name }}
+      REFERRAL_CODE_SHA256: ${{ inputs.referral_code_sha256 }}
+      ACCOUNT_EMAIL: ${{ inputs.account_email }}
+      CONFIRM_EMAIL: ${{ inputs.confirm_email }}
+      REVOCATION_REASON: ${{ inputs.revocation_reason }}
+      WORKLOAD_IDENTITY_PROVIDER: projects/311711068171/locations/global/workloadIdentityPools/github/providers/passage-md
+      DEPLOY_SERVICE_ACCOUNT: passage-md-build@passage-md-prod.iam.gserviceaccount.com
+    steps:
+      - name: Check out exact main commit
+        uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Run validated ephemeral operation
+        run: scripts/run-production-community-op.sh

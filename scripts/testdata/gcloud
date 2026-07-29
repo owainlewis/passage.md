@@ -3,11 +3,38 @@ set -euo pipefail
 
 printf '%s\n' "$*" >>"${PASSAGE_GCLOUD_LOG:?}"
 
+if [[ "$*" == "artifacts docker images describe "* ]]; then
+  printf '{"image_summary":{"digest":"%s"}}\n' "${PASSAGE_IMAGE_DIGEST:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+fi
+
+if [[ "$*" == "run services describe "* ]]; then
+  printf '{"status":{"traffic":[{"revisionName":"%s","percent":%s}]}}\n' \
+    "${PASSAGE_SERVING_REVISION:-passage-test-00001-test}" \
+    "${PASSAGE_SERVICE_TRAFFIC_PERCENT:-100}"
+fi
+
+if [[ "$*" == "run revisions describe "* ]]; then
+  printf '{"metadata":{"labels":{"commit-sha":"%s"}},"spec":{"containers":[{"env":[' "${PASSAGE_SERVICE_COMMIT_SHA:-${COMMIT_SHA:-0123456789abcdef0123456789abcdef01234567}}"
+  separator=""
+  if [[ -n "${PASSAGE_SERVICE_WRITES_DISABLED:-}" ]]; then
+    printf '%s{"name":"PASSAGE_WRITES_DISABLED","value":"%s"}' "${separator}" "${PASSAGE_SERVICE_WRITES_DISABLED}"
+    separator=","
+  fi
+  if [[ -n "${PASSAGE_SERVICE_PUBLIC_SIGNUP_ENABLED:-}" ]]; then
+    printf '%s{"name":"PASSAGE_PUBLIC_SIGNUP_ENABLED","value":"%s"}' "${separator}" "${PASSAGE_SERVICE_PUBLIC_SIGNUP_ENABLED}"
+  fi
+  printf '] }]}}\n'
+fi
+
 if [[ "${PASSAGE_FAIL_MIGRATION:-false}" == "true" && "$*" == "run jobs execute "* ]]; then
   exit 1
 fi
 
 if [[ "${PASSAGE_FAIL_SERVICE_DEPLOY:-false}" == "true" && "$*" == "run deploy "* ]]; then
+  exit 1
+fi
+
+if [[ "${PASSAGE_FAIL_JOB_DELETE:-false}" == "true" && "$*" == "run jobs delete "* ]]; then
   exit 1
 fi
 

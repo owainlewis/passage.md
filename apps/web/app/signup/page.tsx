@@ -33,9 +33,10 @@ function SignupForm() {
 
   useEffect(() => {
     if (capturedCredentials.current === undefined) {
-      const params = new URLSearchParams(window.location.search);
-      const ref = params.get("ref")?.trim() ?? "";
-      const code = params.get("code")?.trim() ?? "";
+      const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const query = new URLSearchParams(window.location.search);
+      const ref = (fragment.get("ref") ?? query.get("ref"))?.trim() ?? "";
+      const code = (fragment.get("code") ?? query.get("code"))?.trim() ?? "";
       capturedCredentials.current = ref && code ? { ref, code } : null;
       window.history.replaceState({}, "", "/signup");
     }

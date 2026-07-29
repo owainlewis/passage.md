@@ -3,7 +3,7 @@ import Signup from "./page";
 
 describe("community signup policy acceptance", () => {
   it("requires explicit acceptance and submits the server policy version", async () => {
-    window.history.replaceState({}, "", "/signup?ref=community&code=private-code");
+    window.history.replaceState({}, "", "/signup#ref=community&code=private-code");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/v1/me") {
@@ -27,6 +27,9 @@ describe("community signup policy acceptance", () => {
     render(<Signup />);
 
     await screen.findByRole("heading", { name: "Create your account" });
+    expect(window.location.pathname).toBe("/signup");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "member@example.com" }
     });
