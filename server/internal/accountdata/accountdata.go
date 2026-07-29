@@ -37,6 +37,8 @@ type Account struct {
 	Email                    string     `json:"email"`
 	CreatedAt                time.Time  `json:"createdAt"`
 	UpdatedAt                time.Time  `json:"updatedAt"`
+	PolicyVersion            *string    `json:"policyVersion,omitempty"`
+	PolicyAcceptedAt         *time.Time `json:"policyAcceptedAt,omitempty"`
 	ManualPlan               *string    `json:"manualPlan,omitempty"`
 	MaxSavedDocs             *int       `json:"maxSavedDocs,omitempty"`
 	CommunityAccess          bool       `json:"communityAccess"`
@@ -379,6 +381,8 @@ func loadAccount(ctx context.Context, tx pgx.Tx, email string, lock string) (Acc
 		       users.email,
 		       users.created_at,
 		       users.updated_at,
+		       users.policy_version,
+		       users.policy_accepted_at,
 		       billing_accounts.manual_plan,
 		       billing_accounts.max_saved_docs,
 		       EXISTS (
@@ -400,6 +404,8 @@ func loadAccount(ctx context.Context, tx pgx.Tx, email string, lock string) (Acc
 		&account.Email,
 		&account.CreatedAt,
 		&account.UpdatedAt,
+		&account.PolicyVersion,
+		&account.PolicyAcceptedAt,
 		&account.ManualPlan,
 		&account.MaxSavedDocs,
 		&account.CommunityAccess,

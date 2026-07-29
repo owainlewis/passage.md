@@ -38,7 +38,7 @@ func newRouteAuthStore() *routeAuthStore {
 	}
 }
 
-func (s *routeAuthStore) CreateUser(ctx context.Context, email string, passwordHash string) (auth.User, error) {
+func (s *routeAuthStore) CreateUser(ctx context.Context, email string, passwordHash string, policyVersion string, policyAcceptedAt time.Time) (auth.User, error) {
 	return auth.User{}, errors.New("not implemented")
 }
 
@@ -365,6 +365,8 @@ type routeCommunityStore struct {
 	authSessions                                *routeAuthStore
 	billingStore                                *routeBillingStore
 	createdSlug, receivedSlug, receivedHash     string
+	receivedPolicyVersion                       string
+	receivedPolicyAcceptedAt                    time.Time
 	findErr, redeemErr                          error
 	rotatedID, disabledID, revokedEmail, reason string
 }
@@ -386,8 +388,9 @@ func (s *routeCommunityStore) FindActiveReferral(_ context.Context, slug, codeHa
 	return community.StoredReferral{ID: "11111111-1111-1111-1111-111111111111", Slug: slug, Name: "AI Engineer", CodeHash: codeHash}, nil
 }
 
-func (s *routeCommunityStore) Redeem(_ context.Context, slug, codeHash, email, _ string, session auth.PreparedSession, _ time.Time) (auth.User, error) {
+func (s *routeCommunityStore) Redeem(_ context.Context, slug, codeHash, email, _, policyVersion string, session auth.PreparedSession, acceptedAt time.Time) (auth.User, error) {
 	s.receivedSlug, s.receivedHash = slug, codeHash
+	s.receivedPolicyVersion, s.receivedPolicyAcceptedAt = policyVersion, acceptedAt
 	if s.redeemErr != nil {
 		return auth.User{}, s.redeemErr
 	}

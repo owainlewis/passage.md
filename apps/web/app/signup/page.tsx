@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthBoundary, useAuth } from "../auth";
 import { Brand } from "../brand";
 
-type Referral = { ref: string; code: string; name: string };
+type Referral = { ref: string; code: string; name: string; policyVersion: string };
 
 export default function Signup() {
   return (
@@ -20,6 +20,7 @@ function SignupForm() {
   const [referral, setReferral] = useState<Referral | null>();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const capturedCredentials = useRef<{ ref: string; code: string } | null | undefined>(undefined);
@@ -53,9 +54,16 @@ function SignupForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ref, code })
         });
-        const body = (await response.json().catch(() => ({}))) as { name?: string };
+        const body = (await response.json().catch(() => ({}))) as {
+          name?: string;
+          policyVersion?: string;
+        };
         if (!cancelled) {
-          setReferral(response.ok && body.name ? { ref, code, name: body.name } : null);
+          setReferral(
+            response.ok && body.name && body.policyVersion
+              ? { ref, code, name: body.name, policyVersion: body.policyVersion }
+              : null
+          );
         }
       } catch {
         if (!cancelled) setReferral(null);
@@ -69,10 +77,20 @@ function SignupForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!referral) return;
+    if (!acceptedPolicies) {
+      setError("Terms and Privacy acceptance is required");
+      return;
+    }
     setError("");
     setSubmitting(true);
     try {
-      await auth.referralSignup(referral.ref, referral.code, email, password);
+      await auth.referralSignup(
+        referral.ref,
+        referral.code,
+        email,
+        password,
+        referral.policyVersion
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Account could not be created");
       setSubmitting(false);
@@ -133,6 +151,18 @@ function SignupForm() {
                 minLength={8}
                 required
               />
+            </label>
+            <label className="policyConsent">
+              <input
+                type="checkbox"
+                checked={acceptedPolicies}
+                onChange={(event) => setAcceptedPolicies(event.target.checked)}
+                required
+              />
+              <span>
+                I agree to the <Link href="/terms">Terms</Link> and{" "}
+                <Link href="/privacy">Privacy Policy</Link>.
+              </span>
             </label>
             {error && <p className="authError">{error}</p>}
             <button

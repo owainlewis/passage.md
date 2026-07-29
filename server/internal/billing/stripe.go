@@ -34,6 +34,7 @@ type CheckoutParams struct {
 	MonthlyPriceID string
 	SuccessURL     string
 	CancelURL      string
+	PolicyVersion  string
 }
 
 type PortalParams struct {
@@ -93,8 +94,11 @@ func (c *StripeClient) CreateCheckoutSession(ctx context.Context, params Checkou
 	values.Set("line_items[0][quantity]", "1")
 	values.Set("success_url", params.SuccessURL)
 	values.Set("cancel_url", params.CancelURL)
+	values.Set("consent_collection[terms_of_service]", "required")
 	values.Set("metadata[passage_user_id]", params.UserID)
+	values.Set("metadata[passage_policy_version]", params.PolicyVersion)
 	values.Set("subscription_data[metadata][passage_user_id]", params.UserID)
+	values.Set("subscription_data[metadata][passage_policy_version]", params.PolicyVersion)
 	var out stripeObject
 	if err := c.postForm(ctx, "/v1/checkout/sessions", values, &out); err != nil {
 		return "", err

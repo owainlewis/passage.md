@@ -7,6 +7,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/community"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 )
 
 func (a *App) me(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +60,10 @@ func (a *App) validateReferral(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteInternalError(w, r, "validate community referral", err, "referral could not be validated")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"name": referral.Name})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"name":          referral.Name,
+		"policyVersion": policy.CurrentVersion,
+	})
 }
 
 func (a *App) referralSignup(w http.ResponseWriter, r *http.Request) {
@@ -74,13 +78,17 @@ func (a *App) referralSignup(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	user, session, err := a.community.Redeem(r.Context(), input.Ref, input.Code, input.Email, input.Password)
+	user, session, err := a.community.Redeem(r.Context(), input.Ref, input.Code, input.Email, input.Password, input.PolicyVersion)
 	if errors.Is(err, community.ErrInvalidReferral) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": community.InvalidReferralMessage()})
 		return
 	}
 	if errors.Is(err, community.ErrEmailTaken) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "email already registered"})
+		return
+	}
+	if errors.Is(err, community.ErrPolicyRequired) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if err != nil {
@@ -142,10 +150,11 @@ func (a *App) requireAuthService(w http.ResponseWriter) bool {
 }
 
 type communityReferralSignupInput struct {
-	Ref      string `json:"ref"`
-	Code     string `json:"code"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Ref           string `json:"ref"`
+	Code          string `json:"code"`
+	Email         string `json:"email"`
+	Password      string `json:"password"`
+	PolicyVersion string `json:"policyVersion"`
 }
 
 type communityReferralCredentials struct {

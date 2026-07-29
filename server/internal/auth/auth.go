@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/httpx"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -70,7 +71,7 @@ type PasswordResetRequest struct {
 }
 
 type Store interface {
-	CreateUser(ctx context.Context, email string, passwordHash string) (User, error)
+	CreateUser(ctx context.Context, email string, passwordHash string, policyVersion string, policyAcceptedAt time.Time) (User, error)
 	FindUserByEmail(ctx context.Context, email string) (UserWithPassword, error)
 	FindUserBySessionHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
 	CreateSession(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error
@@ -148,6 +149,10 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if input.PolicyVersion != policy.CurrentVersion {
+		writeError(w, http.StatusBadRequest, "Terms and Privacy acceptance is required")
+		return
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -155,7 +160,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.store.CreateUser(r.Context(), email, string(hash))
+	user, err := s.store.CreateUser(r.Context(), email, string(hash), input.PolicyVersion, s.now())
 	if err != nil {
 		if errors.Is(err, ErrEmailTaken) {
 			writeError(w, http.StatusConflict, "email already registered")
@@ -649,8 +654,9 @@ func clearSessionCookie(w http.ResponseWriter, secure bool) {
 }
 
 type credentials struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email         string `json:"email"`
+	Password      string `json:"password"`
+	PolicyVersion string `json:"policyVersion"`
 }
 
 type meResponse struct {

@@ -11,6 +11,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/community"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 )
 
 func TestRegisterIsClosedBeta(t *testing.T) {
@@ -107,12 +108,12 @@ func TestReusableReferralSignupWorksWhilePublicRegistrationStaysClosed(t *testin
 	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/referral/validate", strings.NewReader(`{"ref":"aiengineer","code":"pass-valid-code"}`))
 	validateReq.Header.Set("Content-Type", "application/json")
 	app.Routes().ServeHTTP(validate, validateReq)
-	if validate.Code != http.StatusOK || !strings.Contains(validate.Body.String(), `"name":"AI Engineer"`) {
+	if validate.Code != http.StatusOK || !strings.Contains(validate.Body.String(), `"name":"AI Engineer"`) || !strings.Contains(validate.Body.String(), `"policyVersion":"`+policy.CurrentVersion+`"`) {
 		t.Fatalf("validate status/body = %d/%s", validate.Code, validate.Body.String())
 	}
 
 	signup := httptest.NewRecorder()
-	signupReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/referral-signup", strings.NewReader(`{"ref":"aiengineer","code":"pass-valid-code","email":"community@example.com","password":"password123"}`))
+	signupReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/referral-signup", strings.NewReader(`{"ref":"aiengineer","code":"pass-valid-code","email":"community@example.com","password":"password123","policyVersion":"`+policy.CurrentVersion+`"}`))
 	signupReq.Header.Set("Content-Type", "application/json")
 	app.Routes().ServeHTTP(signup, signupReq)
 	if signup.Code != http.StatusCreated {
@@ -124,6 +125,9 @@ func TestReusableReferralSignupWorksWhilePublicRegistrationStaysClosed(t *testin
 	}
 	if communityStore.receivedSlug != "aiengineer" || communityStore.receivedHash != community.HashCode("pass-valid-code") || strings.Contains(signup.Body.String(), "pass-valid-code") {
 		t.Fatalf("slug/hash/body = %q/%q/%s", communityStore.receivedSlug, communityStore.receivedHash, signup.Body.String())
+	}
+	if communityStore.receivedPolicyVersion != policy.CurrentVersion || communityStore.receivedPolicyAcceptedAt.IsZero() {
+		t.Fatalf("policy acceptance = %q/%s", communityStore.receivedPolicyVersion, communityStore.receivedPolicyAcceptedAt)
 	}
 
 	me := httptest.NewRecorder()
@@ -152,7 +156,7 @@ func TestReferralValidationAndSignupReturnSafeInvalidError(t *testing.T) {
 		status     int
 	}{
 		{"/api/v1/auth/referral/validate", `{"ref":"aiengineer","code":"` + plain + `"}`, http.StatusNotFound},
-		{"/api/v1/auth/referral-signup", `{"ref":"aiengineer","code":"` + plain + `","email":"community@example.com","password":"password123"}`, http.StatusBadRequest},
+		{"/api/v1/auth/referral-signup", `{"ref":"aiengineer","code":"` + plain + `","email":"community@example.com","password":"password123","policyVersion":"` + policy.CurrentVersion + `"}`, http.StatusBadRequest},
 	} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))

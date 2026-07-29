@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -64,7 +65,7 @@ func TestRedeemHashesPasswordAfterReferralValidation(t *testing.T) {
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
 	plain := "PASS-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF"
-	user, session, err := service.Redeem(context.Background(), "aiengineer", plain, " USER@example.com ", "password123")
+	user, session, err := service.Redeem(context.Background(), "aiengineer", plain, " USER@example.com ", "password123", policy.CurrentVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +78,9 @@ func TestRedeemHashesPasswordAfterReferralValidation(t *testing.T) {
 	if session.TokenHash == "" || session.CookieValue == "" || !session.ExpiresAt.After(service.now()) {
 		t.Fatalf("session = %#v", session)
 	}
+	if store.policyVersion != policy.CurrentVersion || !store.acceptedAt.Equal(service.now()) {
+		t.Fatalf("policy acceptance = %q/%s", store.policyVersion, store.acceptedAt)
+	}
 }
 
 func TestInvalidOrDisabledReferralSkipsPasswordHashing(t *testing.T) {
@@ -84,7 +88,7 @@ func TestInvalidOrDisabledReferralSkipsPasswordHashing(t *testing.T) {
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	hashCalls := 0
 	service.hashPassword = func(string) (string, error) { hashCalls++; return "hash", nil }
-	_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-INVALID", "member@example.com", "password123")
+	_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-INVALID", "member@example.com", "password123", policy.CurrentVersion)
 	if !errors.Is(err, ErrInvalidReferral) {
 		t.Fatalf("error = %v", err)
 	}
@@ -97,9 +101,27 @@ func TestRedeemKeepsTransactionalRecheckAsFinalAuthority(t *testing.T) {
 	store := &memoryStore{redeemErr: ErrInvalidReferral}
 	service := NewService(store, auth.NewService(nil, "secret", false))
 	service.hashPassword = func(string) (string, error) { return "hash", nil }
-	_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-RACE", "race@example.com", "password123")
+	_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-RACE", "race@example.com", "password123", policy.CurrentVersion)
 	if !errors.Is(err, ErrInvalidReferral) || store.redeemCalls != 1 {
 		t.Fatalf("error/calls = %v/%d", err, store.redeemCalls)
+	}
+}
+
+func TestRedeemRejectsMissingOrStalePolicyAcceptanceBeforeReferralLookup(t *testing.T) {
+	for _, version := range []string{"", "2025-01-01"} {
+		store := &memoryStore{}
+		service := NewService(store, auth.NewService(nil, "secret", false))
+		hashCalls := 0
+		service.hashPassword = func(string) (string, error) { hashCalls++; return "hash", nil }
+
+		_, _, err := service.Redeem(context.Background(), "aiengineer", "PASS-VALID", "member@example.com", "password123", version)
+
+		if !errors.Is(err, ErrPolicyRequired) {
+			t.Fatalf("version %q error = %v", version, err)
+		}
+		if store.slug != "" || hashCalls != 0 || store.redeemCalls != 0 {
+			t.Fatalf("version %q touched referral/password/store: %#v/%d", version, store, hashCalls)
+		}
 	}
 }
 
@@ -145,6 +167,8 @@ type memoryStore struct {
 	findErr, redeemErr                          error
 	redeemCalls                                 int
 	rotatedID, disabledID, revokedEmail, reason string
+	policyVersion                               string
+	acceptedAt                                  time.Time
 }
 
 func (s *memoryStore) CreateReferral(_ context.Context, slug, name, codeHash string) (StoredReferral, error) {
@@ -160,9 +184,10 @@ func (s *memoryStore) FindActiveReferral(_ context.Context, slug, codeHash strin
 	return StoredReferral{ID: "11111111-1111-1111-1111-111111111111", Slug: slug, Name: "AI Engineer", CodeHash: codeHash}, nil
 }
 
-func (s *memoryStore) Redeem(_ context.Context, slug, codeHash, email, passwordHash string, _ auth.PreparedSession, _ time.Time) (auth.User, error) {
+func (s *memoryStore) Redeem(_ context.Context, slug, codeHash, email, passwordHash, policyVersion string, _ auth.PreparedSession, acceptedAt time.Time) (auth.User, error) {
 	s.redeemCalls++
 	s.slug, s.codeHash, s.passwordHash = slug, codeHash, passwordHash
+	s.policyVersion, s.acceptedAt = policyVersion, acceptedAt
 	if s.redeemErr != nil {
 		return auth.User{}, s.redeemErr
 	}

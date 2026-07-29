@@ -46,7 +46,7 @@ func (s *PGStore) FindActiveReferral(ctx context.Context, slug string, codeHash 
 	return referral, err
 }
 
-func (s *PGStore) Redeem(ctx context.Context, slug string, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error) {
+func (s *PGStore) Redeem(ctx context.Context, slug string, codeHash string, email string, passwordHash string, policyVersion string, session auth.PreparedSession, now time.Time) (auth.User, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return auth.User{}, err
@@ -68,9 +68,10 @@ func (s *PGStore) Redeem(ctx context.Context, slug string, codeHash string, emai
 
 	var user auth.User
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash) VALUES ($1, $2)
+		INSERT INTO users (email, password_hash, policy_version, policy_accepted_at)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id::text, email
-	`, email, passwordHash).Scan(&user.ID, &user.Email)
+	`, email, passwordHash, policyVersion, now).Scan(&user.ID, &user.Email)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
