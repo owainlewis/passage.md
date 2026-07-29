@@ -4,6 +4,7 @@ WORKDIR /src
 
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
+COPY scripts/patch-brace-expansion-commonjs.cjs scripts/patch-brace-expansion-commonjs.cjs
 RUN npm ci
 
 COPY apps/web apps/web
