@@ -24,12 +24,13 @@ func TestExportAndDeleteAccount(t *testing.T) {
 	ctx := context.Background()
 	stamp := time.Now().UnixNano()
 	email := fmt.Sprintf("account-data-%d@example.com", stamp)
+	policyAcceptedAt := time.Date(2026, time.July, 27, 11, 0, 0, 0, time.UTC)
 	var userID string
 	err := db.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash)
-		VALUES ($1, 'test-hash')
+		INSERT INTO users (email, password_hash, policy_version, policy_accepted_at)
+		VALUES ($1, 'test-hash', '2026-07-27', $2)
 		RETURNING id::text
-	`, email).Scan(&userID)
+	`, email, policyAcceptedAt).Scan(&userID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +79,14 @@ func TestExportAndDeleteAccount(t *testing.T) {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("missing %s", name)
 		}
+	}
+	var exported accountExport
+	if err := json.Unmarshal(files["account.json"], &exported); err != nil {
+		t.Fatal(err)
+	}
+	if exported.Account.PolicyVersion == nil || *exported.Account.PolicyVersion != "2026-07-27" ||
+		exported.Account.PolicyAcceptedAt == nil || !exported.Account.PolicyAcceptedAt.Equal(policyAcceptedAt) {
+		t.Fatalf("exported policy acceptance = %#v/%#v", exported.Account.PolicyVersion, exported.Account.PolicyAcceptedAt)
 	}
 	var manifest []Document
 	if err := json.Unmarshal(files["documents.json"], &manifest); err != nil {

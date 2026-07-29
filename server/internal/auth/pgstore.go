@@ -19,13 +19,13 @@ func NewPGStore(db *database.Pool) *PGStore {
 	return &PGStore{db: db}
 }
 
-func (s *PGStore) CreateUser(ctx context.Context, email string, passwordHash string) (User, error) {
+func (s *PGStore) CreateUser(ctx context.Context, email string, passwordHash string, policyVersion string, policyAcceptedAt time.Time) (User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash)
-		VALUES ($1, $2)
+		INSERT INTO users (email, password_hash, policy_version, policy_accepted_at)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id::text, email
-	`, email, passwordHash).Scan(&user.ID, &user.Email)
+	`, email, passwordHash, policyVersion, policyAcceptedAt).Scan(&user.ID, &user.Email)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

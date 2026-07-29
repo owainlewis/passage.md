@@ -10,6 +10,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 )
 
 func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +69,7 @@ func (a *App) createCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			MonthlyPriceID: a.billingConfig.StripeMonthlyPrice,
 			SuccessURL:     absoluteAppURL(a.billingConfig.AppBaseURL, "/account?billing=success"),
 			CancelURL:      absoluteAppURL(a.billingConfig.AppBaseURL, "/account?billing=cancel"),
+			PolicyVersion:  policy.CurrentVersion,
 		})
 		if err != nil {
 			httpx.WriteInternalError(w, r, "create Stripe Checkout session", err, "Stripe Checkout could not be created")

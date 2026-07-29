@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -23,6 +24,7 @@ var (
 	ErrReferralExists   = errors.New("community referral already exists")
 	ErrReferralNotFound = errors.New("community referral not found")
 	ErrGrantNotFound    = errors.New("community grant not found")
+	ErrPolicyRequired   = errors.New("Terms and Privacy acceptance is required")
 	referralSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 
@@ -46,7 +48,7 @@ type StoredReferral struct {
 type Store interface {
 	CreateReferral(ctx context.Context, slug string, name string, codeHash string) (StoredReferral, error)
 	FindActiveReferral(ctx context.Context, slug string, codeHash string) (StoredReferral, error)
-	Redeem(ctx context.Context, slug string, codeHash string, email string, passwordHash string, session auth.PreparedSession, now time.Time) (auth.User, error)
+	Redeem(ctx context.Context, slug string, codeHash string, email string, passwordHash string, policyVersion string, session auth.PreparedSession, now time.Time) (auth.User, error)
 	RotateReferral(ctx context.Context, id string, codeHash string, now time.Time) (StoredReferral, error)
 	DisableReferral(ctx context.Context, id string, now time.Time) error
 	RevokeGrant(ctx context.Context, email string, reason string, now time.Time) error
@@ -125,7 +127,7 @@ func (s *Service) ValidateReferral(ctx context.Context, slug string, code string
 	return referral, err
 }
 
-func (s *Service) Redeem(ctx context.Context, slug string, code string, email string, password string) (auth.User, auth.PreparedSession, error) {
+func (s *Service) Redeem(ctx context.Context, slug string, code string, email string, password string, policyVersion string) (auth.User, auth.PreparedSession, error) {
 	slug = normalizeSlug(slug)
 	email = strings.ToLower(strings.TrimSpace(email))
 	if !strings.Contains(email, "@") {
@@ -133,6 +135,9 @@ func (s *Service) Redeem(ctx context.Context, slug string, code string, email st
 	}
 	if len(password) < 8 {
 		return auth.User{}, auth.PreparedSession{}, errors.New("password must be at least 8 characters")
+	}
+	if policyVersion != policy.CurrentVersion {
+		return auth.User{}, auth.PreparedSession{}, ErrPolicyRequired
 	}
 	if _, err := s.ValidateReferral(ctx, slug, code); err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
@@ -146,7 +151,7 @@ func (s *Service) Redeem(ctx context.Context, slug string, code string, email st
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}
-	user, err := s.store.Redeem(ctx, slug, codeHash, email, passwordHash, session, s.now())
+	user, err := s.store.Redeem(ctx, slug, codeHash, email, passwordHash, policyVersion, session, s.now())
 	if err != nil {
 		return auth.User{}, auth.PreparedSession{}, err
 	}

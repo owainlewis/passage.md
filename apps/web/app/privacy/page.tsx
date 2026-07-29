@@ -13,7 +13,7 @@ export default function Privacy() {
         <h2>Data Passage handles</h2>
         <p>
           Passage stores your email address, password hash, account and subscription status, sessions, API-token
-          metadata, and account dates.
+          metadata, account dates, and the policy version and time you accepted at signup.
           It stores the Markdown documents you save, including document titles, sharing state, and timestamps.
         </p>
         <p>

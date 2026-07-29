@@ -335,7 +335,10 @@ describe("Referral signup", () => {
         return new Response(JSON.stringify({ authenticated: false }), { status: 200 });
       }
       if (url === "/api/v1/auth/referral/validate" && init?.method === "POST") {
-		return new Response(JSON.stringify({ name: "AI Engineer" }), { status: 200 });
+		return new Response(
+          JSON.stringify({ name: "AI Engineer", policyVersion: "2026-07-27" }),
+          { status: 200 }
+        );
 	  }
       if (url === "/api/v1/auth/referral-signup" && init?.method === "POST") {
         return new Response(JSON.stringify({ authenticated: true, user: { id: "user-1", email: "community@example.com" } }), { status: 201 });
@@ -356,6 +359,7 @@ describe("Referral signup", () => {
     expect(screen.getByLabelText("Password")).toHaveAttribute("minlength", "8");
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "community@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
@@ -363,7 +367,13 @@ describe("Referral signup", () => {
       expect.objectContaining({
         method: "POST",
         credentials: "include",
-        body: JSON.stringify({ ref: "aiengineer", code: "pass-test-code", email: "community@example.com", password: "password123" })
+        body: JSON.stringify({
+          ref: "aiengineer",
+          code: "pass-test-code",
+          email: "community@example.com",
+          password: "password123",
+          policyVersion: "2026-07-27"
+        })
       })
     ));
   });

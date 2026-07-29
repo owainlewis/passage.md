@@ -15,6 +15,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 )
 
 func TestPGStoreReferralIsReusableAndAtomic(t *testing.T) {
@@ -39,7 +40,7 @@ func TestPGStoreReferralIsReusableAndAtomic(t *testing.T) {
 			t.Fatal(err)
 		}
 		email := fmt.Sprintf("rollback-%d@example.com", stamp)
-		if _, err := store.Redeem(ctx, slug, hash, email, "hash", collision, time.Now()); err == nil {
+		if _, err := store.Redeem(ctx, slug, hash, email, "hash", policy.CurrentVersion, collision, time.Now()); err == nil {
 			t.Fatal("redeem succeeded")
 		}
 		var users, grants int
@@ -64,7 +65,7 @@ func TestPGStoreReferralIsReusableAndAtomic(t *testing.T) {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				_, err := store.Redeem(ctx, slug, hash, fmt.Sprintf("member-%d-%d@example.com", stamp, i), "hash", auth.PreparedSession{TokenHash: fmt.Sprintf("member-session-%d-%d", stamp, i), ExpiresAt: time.Now().Add(time.Hour)}, time.Now())
+				_, err := store.Redeem(ctx, slug, hash, fmt.Sprintf("member-%d-%d@example.com", stamp, i), "hash", policy.CurrentVersion, auth.PreparedSession{TokenHash: fmt.Sprintf("member-session-%d-%d", stamp, i), ExpiresAt: time.Now().Add(time.Hour)}, time.Now())
 				if err != nil {
 					t.Errorf("redeem %d: %v", i, err)
 					return
@@ -96,7 +97,7 @@ func TestPGStoreReferralIsReusableAndAtomic(t *testing.T) {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				_, err := store.Redeem(ctx, slug, hash, email, "hash", auth.PreparedSession{TokenHash: fmt.Sprintf("duplicate-session-%d-%d", stamp, i), ExpiresAt: time.Now().Add(time.Hour)}, time.Now())
+				_, err := store.Redeem(ctx, slug, hash, email, "hash", policy.CurrentVersion, auth.PreparedSession{TokenHash: fmt.Sprintf("duplicate-session-%d-%d", stamp, i), ExpiresAt: time.Now().Add(time.Hour)}, time.Now())
 				if err == nil {
 					successes.Add(1)
 				} else if errors.Is(err, ErrEmailTaken) {
@@ -125,9 +126,18 @@ func TestPGStoreReferralLifecycleAndCommunityEntitlement(t *testing.T) {
 		t.Fatal(err)
 	}
 	email := fmt.Sprintf("member-%d@example.com", stamp)
-	user, err := store.Redeem(ctx, slug, oldHash, email, "hash", auth.PreparedSession{TokenHash: fmt.Sprintf("lifecycle-session-%d", stamp), ExpiresAt: time.Now().Add(time.Hour)}, time.Now())
+	acceptedAt := time.Now().UTC().Truncate(time.Microsecond)
+	user, err := store.Redeem(ctx, slug, oldHash, email, "hash", policy.CurrentVersion, auth.PreparedSession{TokenHash: fmt.Sprintf("lifecycle-session-%d", stamp), ExpiresAt: time.Now().Add(time.Hour)}, acceptedAt)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var storedPolicyVersion string
+	var storedAcceptedAt time.Time
+	if err := db.QueryRow(ctx, `SELECT policy_version, policy_accepted_at FROM users WHERE id = $1`, user.ID).Scan(&storedPolicyVersion, &storedAcceptedAt); err != nil {
+		t.Fatal(err)
+	}
+	if storedPolicyVersion != policy.CurrentVersion || !storedAcceptedAt.Equal(acceptedAt) {
+		t.Fatalf("stored policy acceptance = %q/%s, want %q/%s", storedPolicyVersion, storedAcceptedAt, policy.CurrentVersion, acceptedAt)
 	}
 
 	var billingRows int

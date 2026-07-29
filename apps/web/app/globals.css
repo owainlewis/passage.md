@@ -2199,6 +2199,27 @@ button {
   font-size: 0.9rem;
 }
 
+.loginForm .policyConsent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.45;
+}
+
+.policyConsent input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.policyConsent a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .loginTextLink {
   width: fit-content;
   color: var(--ink-soft);

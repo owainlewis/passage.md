@@ -37,7 +37,7 @@ type AuthValue = {
     shouldCommitError?: () => boolean;
   }) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<void>;
-  referralSignup: (ref: string, code: string, email: string, password: string) => Promise<void>;
+  referralSignup: (ref: string, code: string, email: string, password: string, policyVersion: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -130,7 +130,7 @@ export function AuthProvider({
     [submitCredentials]
   );
 
-  const referralSignup = useCallback(async (ref: string, code: string, email: string, password: string) => {
+  const referralSignup = useCallback(async (ref: string, code: string, email: string, password: string, policyVersion: string) => {
     authMutationsInFlight.current += 1;
     requestVersion.current += 1;
     try {
@@ -138,7 +138,7 @@ export function AuthProvider({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ref, code, email, password })
+        body: JSON.stringify({ ref, code, email, password, policyVersion })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {

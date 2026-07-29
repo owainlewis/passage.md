@@ -22,7 +22,7 @@ func TestRegisterCreatesHttpOnlySessionAndMeReadsIt(t *testing.T) {
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"USER@example.com","password":"password123"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"USER@example.com","password":"password123","policyVersion":"2026-07-27"}`))
 	req.Header.Set("Content-Type", "application/json")
 	service.Register(rec, req)
 
@@ -54,13 +54,16 @@ func TestRegisterCreatesHttpOnlySessionAndMeReadsIt(t *testing.T) {
 	if !strings.Contains(me.Body.String(), `"email":"user@example.com"`) {
 		t.Fatalf("me body = %s", me.Body.String())
 	}
+	if store.policyVersion != "2026-07-27" || !store.policyAcceptedAt.Equal(service.now()) {
+		t.Fatalf("policy acceptance = %q/%s", store.policyVersion, store.policyAcceptedAt)
+	}
 }
 
 func TestLoginRejectsWrongPassword(t *testing.T) {
 	store := newMemoryStore()
 	service := NewService(store, "test-secret", false)
 	register := httptest.NewRecorder()
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-27"}`))
 	registerReq.Header.Set("Content-Type", "application/json")
 	service.Register(register, registerReq)
 
@@ -71,6 +74,28 @@ func TestLoginRejectsWrongPassword(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRegisterRejectsMissingOrStalePolicyAcceptanceBeforeHashing(t *testing.T) {
+	for _, body := range []string{
+		`{"email":"u@example.com","password":"password123"}`,
+		`{"email":"u@example.com","password":"password123","policyVersion":"2025-01-01"}`,
+	} {
+		store := newMemoryStore()
+		service := NewService(store, "test-secret", false)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		service.Register(rec, req)
+
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Terms and Privacy acceptance is required") {
+			t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
+		}
+		if len(store.users) != 0 {
+			t.Fatalf("users = %#v", store.users)
+		}
 	}
 }
 
@@ -307,7 +332,7 @@ func TestRegisterRequiresJSONContentTypeAndSameOrigin(t *testing.T) {
 	service := NewService(newMemoryStore(), "test-secret", false)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-27"}`))
 	req.Header.Set("Content-Type", "text/plain")
 	service.Register(rec, req)
 	if rec.Code != http.StatusUnsupportedMediaType {
@@ -315,7 +340,7 @@ func TestRegisterRequiresJSONContentTypeAndSameOrigin(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	req = httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-27"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://evil.test")
 	service.Register(rec, req)
@@ -329,7 +354,7 @@ func TestLogoutDeletesServerSession(t *testing.T) {
 	service := NewService(store, "test-secret", false)
 
 	register := httptest.NewRecorder()
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-27"}`))
 	registerReq.Header.Set("Content-Type", "application/json")
 	service.Register(register, registerReq)
 	cookie := register.Result().Cookies()[0]
@@ -356,7 +381,7 @@ func TestLogoutReportsDeleteFailure(t *testing.T) {
 	service := NewService(store, "test-secret", false)
 
 	register := httptest.NewRecorder()
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123"}`))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-27"}`))
 	registerReq.Header.Set("Content-Type", "application/json")
 	service.Register(register, registerReq)
 	cookie := register.Result().Cookies()[0]
@@ -533,6 +558,8 @@ type memoryStore struct {
 	readOnlyTokenReads int
 	findErr            error
 	deleteErr          error
+	policyVersion      string
+	policyAcceptedAt   time.Time
 }
 
 type recordingPasswordResetSender struct {
@@ -645,10 +672,12 @@ type memoryAPIToken struct {
 	revoked   bool
 }
 
-func (s *memoryStore) CreateUser(ctx context.Context, email string, passwordHash string) (User, error) {
+func (s *memoryStore) CreateUser(ctx context.Context, email string, passwordHash string, policyVersion string, policyAcceptedAt time.Time) (User, error) {
 	if _, exists := s.users[email]; exists {
 		return User{}, ErrEmailTaken
 	}
+	s.policyVersion = policyVersion
+	s.policyAcceptedAt = policyAcceptedAt
 	user := User{ID: string(rune('0' + s.nextID)), Email: email}
 	s.nextID++
 	s.users[email] = UserWithPassword{User: user, PasswordHash: passwordHash}
