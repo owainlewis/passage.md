@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { Brand } from "./brand";
 
-export const MERCHANT_NAME = "Owain Lewis";
+export const MERCHANT_NAME = "Gradientwork Limited";
+export const MERCHANT_URL = "https://gradientwork.com";
 export const SUPPORT_EMAIL = "owain@owainlewis.com";
-export const POLICY_DATE = "27 July 2026";
+export const POLICY_DATE = "29 July 2026";
+
+export function MerchantLink() {
+  return <a href={MERCHANT_URL}>{MERCHANT_NAME}</a>;
+}
 
 export function SupportLink() {
   return <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
@@ -32,7 +37,9 @@ export function PolicyPage({
         <div className="policyBody">{children}</div>
       </main>
       <footer className="policyFooter">
-        <span>Passage is operated by {MERCHANT_NAME}.</span>
+        <span>
+          Passage is operated by <MerchantLink />.
+        </span>
         <nav aria-label="Policy links">
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>

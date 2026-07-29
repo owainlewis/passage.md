@@ -11,7 +11,7 @@ describe("community signup policy acceptance", () => {
       }
       if (url === "/api/v1/auth/referral/validate") {
         return new Response(
-          JSON.stringify({ name: "Community", policyVersion: "2026-07-27" }),
+          JSON.stringify({ name: "Community", policyVersion: "2026-07-29" }),
           { status: 200 }
         );
       }
@@ -58,7 +58,7 @@ describe("community signup policy acceptance", () => {
         code: "private-code",
         email: "member@example.com",
         password: "password123",
-        policyVersion: "2026-07-27"
+        policyVersion: "2026-07-29"
       });
     });
   });
@@ -72,7 +72,7 @@ describe("community signup policy acceptance", () => {
           JSON.stringify({
             authenticated: false,
             publicSignupEnabled: true,
-            policyVersion: "2026-07-27"
+            policyVersion: "2026-07-29"
           }),
           { status: 200 }
         );
@@ -108,7 +108,7 @@ describe("community signup policy acceptance", () => {
       expect(JSON.parse(String(call?.[1]?.body))).toEqual({
         email: "free@example.com",
         password: "password123",
-        policyVersion: "2026-07-27"
+        policyVersion: "2026-07-29"
       });
     });
   });

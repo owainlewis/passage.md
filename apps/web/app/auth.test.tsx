@@ -26,7 +26,7 @@ function AuthActionsProbe() {
         type="button"
         onClick={() =>
           void auth
-            .referralSignup("community", "code", "member@example.com", "password123", "2026-07-27")
+            .referralSignup("community", "code", "member@example.com", "password123", "2026-07-29")
             .catch((err) => setError(err.message))
         }
       >

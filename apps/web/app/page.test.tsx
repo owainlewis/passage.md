@@ -143,7 +143,10 @@ describe("Landing", () => {
     expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
     expect(screen.getByText("$6.99")).toHaveTextContent("$6.99 USD / month");
     expect(screen.getByText(/Renews monthly until cancelled/)).toBeInTheDocument();
-    expect(screen.getByText("Operated by Owain Lewis.")).toBeInTheDocument();
+    expect(screen.getByText(/Operated by/)).toBeInTheDocument();
+    for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
+      expect(merchantLink).toHaveAttribute("href", "https://gradientwork.com");
+    }
     expect(screen.getByRole("link", { name: "owain@owainlewis.com" })).toHaveAttribute(
       "href",
       "mailto:owain@owainlewis.com"
@@ -166,7 +169,7 @@ describe("Landing", () => {
           JSON.stringify({
             authenticated: false,
             publicSignupEnabled: true,
-            policyVersion: "2026-07-27"
+            policyVersion: "2026-07-29"
           }),
           { status: 200 }
         )
@@ -193,6 +196,10 @@ describe("Policy pages", () => {
     render(<Page />);
 
     expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    expect(screen.getByText("Effective 29 July 2026")).toBeInTheDocument();
+    for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
+      expect(merchantLink).toHaveAttribute("href", "https://gradientwork.com");
+    }
     expect(screen.getAllByRole("link", { name: "owain@owainlewis.com" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("navigation", { name: "Policy links" })).toBeInTheDocument();
   });
@@ -360,7 +367,7 @@ describe("Referral signup", () => {
       }
       if (url === "/api/v1/auth/referral/validate" && init?.method === "POST") {
 		return new Response(
-          JSON.stringify({ name: "AI Engineer", policyVersion: "2026-07-27" }),
+          JSON.stringify({ name: "AI Engineer", policyVersion: "2026-07-29" }),
           { status: 200 }
         );
 	  }
@@ -396,7 +403,7 @@ describe("Referral signup", () => {
           code: "pass-test-code",
           email: "community@example.com",
           password: "password123",
-          policyVersion: "2026-07-27"
+          policyVersion: "2026-07-29"
         })
       })
     ));
@@ -1193,7 +1200,7 @@ describe("Write (editor)", () => {
           JSON.stringify({
             authenticated: false,
             publicSignupEnabled: true,
-            policyVersion: "2026-07-27"
+            policyVersion: "2026-07-29"
           }),
           { status: 200 }
         )

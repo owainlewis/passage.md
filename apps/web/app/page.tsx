@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AuthBoundary, useAuth } from "./auth";
 import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
-import { MERCHANT_NAME, SupportLink } from "./legal";
+import { MerchantLink, SupportLink } from "./legal";
 
 function PenIcon() {
   return (
@@ -229,7 +229,9 @@ function LandingContent() {
         <div className="footerBrand">
           <Brand />
           <span className="footerTag">Markdown writing for humans and agents.</span>
-          <span className="footerTag">Operated by {MERCHANT_NAME}.</span>
+          <span className="footerTag">
+            Operated by <MerchantLink />.
+          </span>
           <span className="footerTag">
             Support: <SupportLink />
           </span>
