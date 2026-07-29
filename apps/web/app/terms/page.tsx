@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PolicyPage, SupportLink } from "../legal";
+import { MerchantLink, PolicyPage, SupportLink } from "../legal";
 
 export const metadata: Metadata = {
   title: "Terms of Service | passage.md",
@@ -12,7 +12,7 @@ export default function Terms() {
       <section>
         <h2>Using Passage</h2>
         <p>
-          Passage is a hosted Markdown writing service operated by Owain Lewis.
+          Passage is a hosted Markdown writing service operated by <MerchantLink />.
           You must provide accurate account information, keep your login and API tokens secure, and be legally able to
           agree to these terms.
         </p>

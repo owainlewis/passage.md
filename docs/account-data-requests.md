@@ -8,7 +8,9 @@ The process is manual for launch.
 
 ## Support identity
 
-Passage is operated by Owain Lewis.
+Passage is operated by Gradientwork Limited.
+
+Its business website is `https://gradientwork.com`.
 
 The monitored support address published by Passage is `owain@owainlewis.com`.
 
@@ -161,9 +163,9 @@ Live Stripe billing was not configured in production.
 
 Before public paid signup:
 
-1. Set the live Stripe public business name and legal or invoice identity to the founder-confirmed merchant details.
+1. Confirm the live Stripe legal identity is `Gradientwork Limited`, the public business name is `Gradientwork`, and the business website is `https://gradientwork.com`.
 2. Set `owain@owainlewis.com` as the live support email and set the public support URL.
-3. Confirm the statement descriptor is recognisable and consistent with `PASSAGE.MD`.
+3. Confirm the statement descriptor is recognisable and consistent with the Gradientwork merchant identity.
 4. Confirm the live product has one recurring price of $6.99 USD per month.
 5. Confirm the portal schedules cancellation for the end of the current period and lets customers view invoices and payment methods.
 6. Confirm Checkout, receipts, invoices, and the portal identify the same merchant and support contact as the site.

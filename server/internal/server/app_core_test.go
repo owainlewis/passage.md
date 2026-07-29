@@ -78,7 +78,7 @@ func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
 	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
 	}
-	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-27\",\"publicSignupEnabled\":false}\n" {
+	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-29\",\"publicSignupEnabled\":false}\n" {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -95,7 +95,7 @@ func TestMeAdvertisesPublicSignupWhenEnabled(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-27\",\"publicSignupEnabled\":true}\n" {
+	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-29\",\"publicSignupEnabled\":true}\n" {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -112,7 +112,7 @@ func TestMeHidesPublicSignupWhenWritesAreDisabled(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-27\",\"publicSignupEnabled\":false}\n" {
+	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-29\",\"publicSignupEnabled\":false}\n" {
 		t.Fatalf("body = %q", body)
 	}
 }
