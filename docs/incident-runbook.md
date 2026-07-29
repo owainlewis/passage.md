@@ -135,7 +135,10 @@ gcloud run services update passage-md \
 
 Confirm `/api/health` stays healthy and the billing endpoints no longer return the disabled response.
 
-Normal deployments preserve Cloud Run environment variables they do not manage, so deploying alone does not undo the emergency toggle.
+Normal `main` deployments use Stripe billing mode `preserve`.
+They do not write `STRIPE_BILLING_ENABLED`, so deploying alone does not undo the emergency toggle.
+Only an explicit `workflow_dispatch` with mode `enable` or `disable`, or the reviewed `gcloud` commands above, changes the toggle.
+Restore billing only after Stripe delivery and stored entitlements are reconciled.
 
 In Stripe Workbench, check webhook delivery status by event ID, confirm the endpoint URL, and retry only events whose database effect is understood.
 

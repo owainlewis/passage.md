@@ -10,3 +10,7 @@ fi
 if [[ "${PASSAGE_EMPTY_REVISION:-false}" != "true" && "$*" == "run deploy "* ]]; then
   printf '%s\n' "${PASSAGE_DEPLOYED_REVISION:-passage-test-00001-test}"
 fi
+
+if [[ "$*" == "run revisions describe "* ]]; then
+  printf '%s\n' "${PASSAGE_REVISION_READY:-True}"
+fi

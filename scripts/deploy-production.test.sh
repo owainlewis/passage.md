@@ -22,13 +22,20 @@ export PUBLIC_SIGNUP_ENABLED="false"
 export PASSAGE_GCLOUD_LOG="${temporary_dir}/gcloud.log"
 export PATH="${script_dir}/testdata:${PATH}"
 export RESEND_FROM="passage.test <mail@passage.test>"
+export STRIPE_BILLING_MODE="preserve"
+export STRIPE_MONTHLY_PRICE_ID="price_live_monthly"
+export STRIPE_SECRET_KEY_SECRET="passage-test-stripe-secret-key"
+export STRIPE_SECRET_KEY_VERSION="1"
+export STRIPE_WEBHOOK_SECRET_SECRET="passage-test-stripe-webhook-secret"
+export STRIPE_WEBHOOK_SECRET_VERSION="1"
 
 "${script_dir}/deploy-production.sh"
-[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 4 ]]
+[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 5 ]]
 job_deploy="$(sed -n '1p' "${PASSAGE_GCLOUD_LOG}")"
 job_execute="$(sed -n '2p' "${PASSAGE_GCLOUD_LOG}")"
 service_deploy="$(sed -n '3p' "${PASSAGE_GCLOUD_LOG}")"
-traffic_update="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
+revision_describe="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
+traffic_update="$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")"
 
 [[ "${job_deploy}" == "run jobs deploy ${CLOUD_RUN_MIGRATION_JOB} "* ]]
 [[ "${job_deploy}" == *"--project=${GCP_PROJECT_ID}"* ]]
@@ -52,14 +59,20 @@ traffic_update="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
 [[ "${service_deploy}" == *"--project=${GCP_PROJECT_ID}"* ]]
 [[ "${service_deploy}" == *"--region=${GCP_REGION}"* ]]
 [[ "${service_deploy}" == *"--image=${IMAGE}"* ]]
-[[ "${service_deploy}" == *"--update-env-vars=APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},RESEND_FROM=${RESEND_FROM}"* ]]
-[[ "${service_deploy}" == *"--update-secrets=RESEND_API_KEY=passage-resend-api-key:latest"* ]]
+[[ "${service_deploy}" == *"--update-env-vars=APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=false,RESEND_FROM=${RESEND_FROM},STRIPE_MONTHLY_PRICE_ID=${STRIPE_MONTHLY_PRICE_ID}"* ]]
+[[ "${service_deploy}" != *"STRIPE_BILLING_ENABLED="* ]]
+[[ "${service_deploy}" == *"--update-secrets=RESEND_API_KEY=passage-resend-api-key:latest,STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY_SECRET}:1,STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET_SECRET}:1"* ]]
 [[ "${service_deploy}" == *"--no-cpu-throttling"* ]]
 [[ "${service_deploy}" == *"--min=1"* ]]
 [[ "${service_deploy}" == *"--max=${CLOUD_RUN_MAX_INSTANCES}"* ]]
 [[ "${service_deploy}" == *"--update-labels=commit-sha=${COMMIT_SHA}"* ]]
 [[ "${service_deploy}" == *"--no-traffic"* ]]
 [[ "${service_deploy}" == *"--format=value(status.latestCreatedRevisionName)"* ]]
+
+[[ "${revision_describe}" == "run revisions describe ${PASSAGE_DEPLOYED_REVISION} "* ]]
+[[ "${revision_describe}" == *"--project=${GCP_PROJECT_ID}"* ]]
+[[ "${revision_describe}" == *"--region=${GCP_REGION}"* ]]
+[[ "${revision_describe}" == *'--format=value(status.conditions[?type="Ready"].status)'* ]]
 
 [[ "${traffic_update}" == "run services update-traffic ${CLOUD_RUN_SERVICE} "* ]]
 [[ "${traffic_update}" == *"--project=${GCP_PROJECT_ID}"* ]]
@@ -85,3 +98,43 @@ if "${script_dir}/deploy-production.sh"; then
 fi
 [[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 3 ]]
 [[ "$(sed -n '3p' "${PASSAGE_GCLOUD_LOG}")" == "run deploy "* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+unset PASSAGE_EMPTY_REVISION
+export PASSAGE_REVISION_READY=false
+if "${script_dir}/deploy-production.sh"; then
+  echo "deployment succeeded with a revision that was not Ready" >&2
+  exit 1
+fi
+[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 4 ]]
+[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+unset PASSAGE_REVISION_READY
+unset STRIPE_WEBHOOK_SECRET_SECRET
+if "${script_dir}/deploy-production.sh"; then
+  echo "deployment succeeded without the Stripe webhook secret name" >&2
+  exit 1
+fi
+[[ ! -s "${PASSAGE_GCLOUD_LOG}" ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export STRIPE_WEBHOOK_SECRET_SECRET="passage-test-stripe-webhook-secret"
+export STRIPE_BILLING_MODE="enable"
+"${script_dir}/deploy-production.sh"
+enabled_service_deploy="$(sed -n '3p' "${PASSAGE_GCLOUD_LOG}")"
+[[ "${enabled_service_deploy}" == *"STRIPE_BILLING_ENABLED=true"* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export STRIPE_BILLING_MODE="disable"
+"${script_dir}/deploy-production.sh"
+disabled_service_deploy="$(sed -n '3p' "${PASSAGE_GCLOUD_LOG}")"
+[[ "${disabled_service_deploy}" == *"STRIPE_BILLING_ENABLED=false"* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export STRIPE_BILLING_MODE="invalid"
+if "${script_dir}/deploy-production.sh"; then
+  echo "deployment succeeded with an invalid Stripe billing mode" >&2
+  exit 1
+fi
+[[ ! -s "${PASSAGE_GCLOUD_LOG}" ]]
