@@ -12,7 +12,7 @@ Passage is operated by Gradientwork Limited.
 
 Its business website is `https://gradientwork.com`.
 
-The monitored support address published by Passage is `owain@owainlewis.com`.
+The monitored support address published by Passage is `owain@gradientwork.com`.
 
 Only act on a request sent from the email address on the Passage account.
 
@@ -164,7 +164,7 @@ Live Stripe billing was not configured in production.
 Before public paid signup:
 
 1. Confirm the live Stripe legal identity is `Gradientwork Limited`, the public business name is `Gradientwork`, and the business website is `https://gradientwork.com`.
-2. Set `owain@owainlewis.com` as the live support email and set the public support URL.
+2. Set `owain@gradientwork.com` as the live support email and set the public support URL.
 3. Confirm the statement descriptor is recognisable and consistent with the Gradientwork merchant identity.
 4. Confirm the live product has one recurring price of $6.99 USD per month.
 5. Confirm the portal schedules cancellation for the end of the current period and lets customers view invoices and payment methods.
