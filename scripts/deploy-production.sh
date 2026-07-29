@@ -79,6 +79,7 @@ deployed_revision="$(
     --max="${CLOUD_RUN_MAX_INSTANCES}" \
     --update-labels="commit-sha=${COMMIT_SHA}" \
     --no-traffic \
+    --deploy-health-check \
     --format='value(status.latestCreatedRevisionName)' \
     --quiet
 )"
@@ -87,38 +88,6 @@ if [[ -z "${deployed_revision}" ]]; then
   echo "Cloud Run did not return the deployed revision name" >&2
   exit 1
 fi
-
-revision_ready_max_attempts="${PASSAGE_REVISION_READY_MAX_ATTEMPTS:-30}"
-revision_ready_poll_seconds="${PASSAGE_REVISION_READY_POLL_SECONDS:-2}"
-
-if [[ ! "${revision_ready_max_attempts}" =~ ^[1-9][0-9]*$ ]]; then
-  echo "PASSAGE_REVISION_READY_MAX_ATTEMPTS must be a positive integer" >&2
-  exit 1
-fi
-
-if [[ ! "${revision_ready_poll_seconds}" =~ ^[0-9]+$ ]]; then
-  echo "PASSAGE_REVISION_READY_POLL_SECONDS must be a non-negative integer" >&2
-  exit 1
-fi
-
-for ((attempt = 1; attempt <= revision_ready_max_attempts; attempt++)); do
-  latest_ready_revision="$(
-    gcloud run services describe "${CLOUD_RUN_SERVICE}" \
-      --project="${GCP_PROJECT_ID}" \
-      --region="${GCP_REGION}" \
-      --format='value(status.latestReadyRevisionName)'
-  )"
-
-  if [[ "${latest_ready_revision}" == "${deployed_revision}" ]]; then
-    break
-  fi
-
-  if ((attempt == revision_ready_max_attempts)); then
-    echo "Timed out waiting for Cloud Run revision ${deployed_revision} to become Ready after ${revision_ready_max_attempts} attempts" >&2
-    exit 1
-  fi
-  sleep "${revision_ready_poll_seconds}"
-done
 
 gcloud run services update-traffic "${CLOUD_RUN_SERVICE}" \
   --project="${GCP_PROJECT_ID}" \
