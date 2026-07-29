@@ -25,21 +25,23 @@ type Options struct {
 	Proxy               config.ProxyConfig
 	GCPProjectID        string
 	WritesDisabled      bool
+	PublicSignupEnabled bool
 }
 
 type App struct {
-	static         fs.FS
-	databaseHealth databasePinger
-	auth           *auth.Service
-	docs           *documents.Handler
-	billing        *billing.Service
-	community      *community.Service
-	stripe         *billing.StripeClient
-	billingConfig  config.BillingConfig
-	rateLimiters   appRateLimiters
-	clientIP       httpx.ClientIPResolver
-	gcpProjectID   string
-	writesDisabled bool
+	static              fs.FS
+	databaseHealth      databasePinger
+	auth                *auth.Service
+	docs                *documents.Handler
+	billing             *billing.Service
+	community           *community.Service
+	stripe              *billing.StripeClient
+	billingConfig       config.BillingConfig
+	rateLimiters        appRateLimiters
+	clientIP            httpx.ClientIPResolver
+	gcpProjectID        string
+	writesDisabled      bool
+	publicSignupEnabled bool
 }
 
 type databasePinger interface {
@@ -64,13 +66,14 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 		rateLimiters = newPersistentAppRateLimiters(options.RateLimits, newPGRateLimitStore(db), options.SessionSecret)
 	}
 	app := &App{
-		static:         static,
-		billingConfig:  options.Billing,
-		gcpProjectID:   options.GCPProjectID,
-		stripe:         billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
-		rateLimiters:   rateLimiters,
-		clientIP:       clientIP,
-		writesDisabled: options.WritesDisabled,
+		static:              static,
+		billingConfig:       options.Billing,
+		gcpProjectID:        options.GCPProjectID,
+		stripe:              billing.NewStripeClient(options.Billing.StripeSecretKey, "", nil),
+		rateLimiters:        rateLimiters,
+		clientIP:            clientIP,
+		writesDisabled:      options.WritesDisabled,
+		publicSignupEnabled: options.PublicSignupEnabled,
 	}
 	if db != nil {
 		app.databaseHealth = db

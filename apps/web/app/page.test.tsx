@@ -157,6 +157,30 @@ describe("Landing", () => {
       expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     }
   });
+
+  it("shows public signup actions only when the server enables them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            authenticated: false,
+            publicSignupEnabled: true,
+            policyVersion: "2026-07-27"
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    render(<Landing />);
+
+    expect(await screen.findByText("Free signup is open. No card required.")).toBeInTheDocument();
+    for (const link of screen.getAllByRole("link", { name: "Create free account" })) {
+      expect(link).toHaveAttribute("href", "/signup");
+    }
+    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/signup");
+  });
 });
 
 describe("Policy pages", () => {
@@ -1128,11 +1152,11 @@ describe("Write (editor)", () => {
       </AuthProvider>
     );
 
-    await screen.findByText("Closed beta");
+    await screen.findByText("Launch preview");
     expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
   });
 
-  it("signs in from the closed beta login page without showing sign up", async () => {
+  it("signs in while public signup is closed without showing sign up", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: false }), { status: 200 }))
@@ -1145,8 +1169,10 @@ describe("Write (editor)", () => {
 
     render(<Login />);
 
-    expect(await screen.findByText("Closed beta")).toBeInTheDocument();
+    expect(await screen.findByText("Launch preview")).toBeInTheDocument();
+    expect(screen.getByText("Public signup is not open yet. Existing account holders can sign in.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create account" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create a free account" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "writer@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
@@ -1156,6 +1182,30 @@ describe("Write (editor)", () => {
         "/api/v1/auth/login",
         expect.objectContaining({ method: "POST", credentials: "include" })
       )
+    );
+  });
+
+  it("links to free signup when the server enables it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            authenticated: false,
+            publicSignupEnabled: true,
+            policyVersion: "2026-07-27"
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    render(<Login />);
+
+    expect(await screen.findByText("Welcome back")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create a free account" })).toHaveAttribute(
+      "href",
+      "/signup"
     );
   });
 

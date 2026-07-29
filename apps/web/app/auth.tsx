@@ -29,6 +29,8 @@ export type Account = {
 type AuthValue = {
   user: User | null;
   account: Account | null;
+  publicSignupEnabled: boolean;
+  policyVersion: string;
   loading: boolean;
   routeRevalidating: boolean;
   sessionStatus: "loading" | "authenticated" | "anonymous" | "unknown" | "error";
@@ -37,6 +39,7 @@ type AuthValue = {
     shouldCommitError?: () => boolean;
   }) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, policyVersion: string) => Promise<void>;
   referralSignup: (ref: string, code: string, email: string, password: string, policyVersion: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -54,6 +57,8 @@ export function AuthProvider({
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
+  const [publicSignupEnabled, setPublicSignupEnabled] = useState(false);
+  const [policyVersion, setPolicyVersion] = useState("");
   const [loading, setLoading] = useState(true);
   const [sessionStatus, setSessionStatus] = useState<AuthValue["sessionStatus"]>("loading");
   const requestVersion = useRef(0);
@@ -64,10 +69,18 @@ export function AuthProvider({
     try {
       const res = await fetch("/api/v1/me", { credentials: "include" });
       if (!res.ok) throw new Error("Account could not be loaded");
-      const body = (await res.json()) as { authenticated?: boolean; user?: User; account?: Account };
+      const body = (await res.json()) as {
+        authenticated?: boolean;
+        user?: User;
+        account?: Account;
+        publicSignupEnabled?: boolean;
+        policyVersion?: string;
+      };
       if (version !== requestVersion.current) throw new SupersededSessionRequest();
       setUser(body.authenticated ? body.user ?? null : null);
       setAccount(body.authenticated ? body.account ?? null : null);
+      setPublicSignupEnabled(body.publicSignupEnabled === true);
+      setPolicyVersion(body.policyVersion ?? "");
       setSessionStatus(body.authenticated ? "authenticated" : "anonymous");
       return body.authenticated === true;
     } catch (error) {
@@ -95,7 +108,12 @@ export function AuthProvider({
     };
   }, [loadMe]);
 
-  const submitCredentials = useCallback(async (path: string, email: string, password: string) => {
+  const submitCredentials = useCallback(async (
+    path: string,
+    email: string,
+    password: string,
+    extra: Record<string, string> = {}
+  ) => {
     authMutationsInFlight.current += 1;
     requestVersion.current += 1;
     try {
@@ -103,7 +121,7 @@ export function AuthProvider({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, ...extra })
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -127,6 +145,14 @@ export function AuthProvider({
 
   const signIn = useCallback(
     (email: string, password: string) => submitCredentials("/api/v1/auth/login", email, password),
+    [submitCredentials]
+  );
+
+  const signUp = useCallback(
+    (email: string, password: string, acceptedPolicyVersion: string) =>
+      submitCredentials("/api/v1/auth/register", email, password, {
+        policyVersion: acceptedPolicyVersion
+      }),
     [submitCredentials]
   );
 
@@ -198,8 +224,34 @@ export function AuthProvider({
   }, [loadMe]);
 
   const value = useMemo(
-    () => ({ user, account, loading, routeRevalidating, sessionStatus, refreshAccount, signIn, referralSignup, signOut }),
-    [user, account, loading, routeRevalidating, sessionStatus, refreshAccount, signIn, referralSignup, signOut]
+    () => ({
+      user,
+      account,
+      publicSignupEnabled,
+      policyVersion,
+      loading,
+      routeRevalidating,
+      sessionStatus,
+      refreshAccount,
+      signIn,
+      signUp,
+      referralSignup,
+      signOut
+    }),
+    [
+      user,
+      account,
+      publicSignupEnabled,
+      policyVersion,
+      loading,
+      routeRevalidating,
+      sessionStatus,
+      refreshAccount,
+      signIn,
+      signUp,
+      referralSignup,
+      signOut
+    ]
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

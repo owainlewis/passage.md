@@ -18,6 +18,7 @@ env:
   CLOUD_SQL_INSTANCE: passage-md-prod:us-central1:passage-md-postgres
   CLOUD_RUN_MAX_INSTANCES: 4
   DATABASE_MAX_CONNS: 3
+  PUBLIC_SIGNUP_ENABLED: 'false'
   DATABASE_SECRET: passage-database-url
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
   IMAGE_NAME: passage-md
@@ -164,4 +165,5 @@ jobs:
         env:
           IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           COMMIT_SHA: ${{ github.sha }}
+          PUBLIC_SIGNUP_ENABLED: ${{ env.PUBLIC_SIGNUP_ENABLED }}
         run: scripts/deploy-production.sh

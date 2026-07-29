@@ -114,6 +114,7 @@ func serve(cfg config.Config) error {
 		Proxy:               cfg.Proxy,
 		GCPProjectID:        os.Getenv("GCP_PROJECT_ID"),
 		WritesDisabled:      cfg.WritesDisabled,
+		PublicSignupEnabled: cfg.PublicSignupEnabled,
 	})
 	go app.RunPasswordResetWorker(ctx)
 	server := newHTTPServer(cfg.Port, app.Routes())

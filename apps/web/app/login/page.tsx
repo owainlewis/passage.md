@@ -44,10 +44,18 @@ function LoginForm() {
         <Link href="/">Home</Link>
       </header>
       <section className="loginShell" aria-labelledby="login-title">
-        <p className="betaLabel">Closed beta</p>
+        <p className="betaLabel">{auth.publicSignupEnabled ? "Welcome back" : "Launch preview"}</p>
         <h1 id="login-title">Sign in to passage.md</h1>
-        <p className="loginCopy">Passage is invite-only while the hosted editor and billing are being finished.</p>
-		<form className="loginForm" onSubmit={submit}>
+        <p className="loginCopy">
+          {auth.publicSignupEnabled ? (
+            <>
+              New to Passage? <Link href="/signup">Create a free account</Link>.
+            </>
+          ) : (
+            "Public signup is not open yet. Existing account holders can sign in."
+          )}
+        </p>
+        <form className="loginForm" onSubmit={submit}>
             <label>
               <span>Email</span>
               <input
@@ -79,7 +87,7 @@ function LoginForm() {
             <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading || auth.routeRevalidating}>
               Sign in
             </button>
-		</form>
+        </form>
       </section>
     </main>
   );

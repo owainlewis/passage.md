@@ -62,4 +62,54 @@ describe("community signup policy acceptance", () => {
       });
     });
   });
+
+  it("creates a free account when the server opens public signup", async () => {
+    window.history.replaceState({}, "", "/signup");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({
+            authenticated: false,
+            publicSignupEnabled: true,
+            policyVersion: "2026-07-27"
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/auth/register" && init?.method === "POST") {
+        return new Response(JSON.stringify({ error: "test stopped after request" }), {
+          status: 400
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Signup />);
+
+    await screen.findByText("Free account");
+    expect(screen.getByText(/Start free with five saved Markdown documents/)).toBeInTheDocument();
+    expect(screen.queryByText(/sharing, CLI, and API access/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "free@example.com" }
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" }
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([input]) => String(input) === "/api/v1/auth/register"
+      );
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+        email: "free@example.com",
+        password: "password123",
+        policyVersion: "2026-07-27"
+      });
+    });
+  });
 });

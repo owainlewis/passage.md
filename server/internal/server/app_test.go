@@ -22,9 +22,13 @@ import (
 )
 
 type routeAuthStore struct {
-	users    map[string]auth.User
-	sessions map[string]auth.User
-	revoked  map[string]bool
+	users                   map[string]auth.User
+	sessions                map[string]auth.User
+	revoked                 map[string]bool
+	createdUser             auth.User
+	createdPasswordHash     string
+	createdPolicyVersion    string
+	createdPolicyAcceptedAt time.Time
 }
 
 func newRouteAuthStore() *routeAuthStore {
@@ -39,7 +43,14 @@ func newRouteAuthStore() *routeAuthStore {
 }
 
 func (s *routeAuthStore) CreateUser(ctx context.Context, email string, passwordHash string, policyVersion string, policyAcceptedAt time.Time) (auth.User, error) {
-	return auth.User{}, errors.New("not implemented")
+	if s.createdUser.Email == email {
+		return auth.User{}, auth.ErrEmailTaken
+	}
+	s.createdUser = auth.User{ID: "registered-user", Email: email}
+	s.createdPasswordHash = passwordHash
+	s.createdPolicyVersion = policyVersion
+	s.createdPolicyAcceptedAt = policyAcceptedAt
+	return s.createdUser, nil
 }
 
 func (s *routeAuthStore) FindUserByEmail(ctx context.Context, email string) (auth.UserWithPassword, error) {
@@ -55,6 +66,10 @@ func (s *routeAuthStore) FindUserBySessionHash(ctx context.Context, tokenHash st
 }
 
 func (s *routeAuthStore) CreateSession(ctx context.Context, userID string, tokenHash string, expiresAt time.Time) error {
+	if userID == s.createdUser.ID {
+		s.sessions[tokenHash] = s.createdUser
+		return nil
+	}
 	return errors.New("not implemented")
 }
 

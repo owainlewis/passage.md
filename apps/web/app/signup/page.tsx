@@ -76,21 +76,30 @@ function SignupForm() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!referral) return;
+    if (!referral && !auth.publicSignupEnabled) return;
     if (!acceptedPolicies) {
       setError("Terms and Privacy acceptance is required");
+      return;
+    }
+    const acceptedPolicyVersion = referral?.policyVersion ?? auth.policyVersion;
+    if (!acceptedPolicyVersion) {
+      setError("Signup policy could not be loaded");
       return;
     }
     setError("");
     setSubmitting(true);
     try {
-      await auth.referralSignup(
-        referral.ref,
-        referral.code,
-        email,
-        password,
-        referral.policyVersion
-      );
+      if (referral) {
+        await auth.referralSignup(
+          referral.ref,
+          referral.code,
+          email,
+          password,
+          acceptedPolicyVersion
+        );
+      } else {
+        await auth.signUp(email, password, acceptedPolicyVersion);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Account could not be created");
       setSubmitting(false);
@@ -103,14 +112,14 @@ function SignupForm() {
         <Brand href="/" />
         <Link href="/login">Sign in</Link>
       </header>
-      {referral === undefined ? (
+      {referral === undefined || (referral === null && auth.loading) ? (
         <section className="loginShell" aria-label="Checking referral">
-          <p className="betaLabel">Community access</p>
-          <h1>Checking your invitation</h1>
+          <p className="betaLabel">{referral === undefined ? "Community access" : "Signup"}</p>
+          <h1>{referral === undefined ? "Checking your invitation" : "Checking availability"}</h1>
         </section>
-      ) : referral === null ? (
+      ) : referral === null && !auth.publicSignupEnabled ? (
         <section className="loginShell" aria-labelledby="signup-closed-title">
-          <p className="betaLabel">Closed beta</p>
+          <p className="betaLabel">Launch preview</p>
           <h1 id="signup-closed-title">Passage is not open for signup yet</h1>
           <p className="loginCopy">
             If your community includes Passage Pro, use the private signup link they shared with you.
@@ -121,10 +130,12 @@ function SignupForm() {
         </section>
       ) : (
         <section className="loginShell" aria-labelledby="signup-title">
-          <p className="betaLabel">{referral.name}</p>
+          <p className="betaLabel">{referral?.name ?? "Free account"}</p>
           <h1 id="signup-title">Create your account</h1>
           <p className="loginCopy">
-            Passage Pro is included with your community membership. No card or checkout is required.
+            {referral
+              ? "Passage Pro is included with your community membership. No card or checkout is required."
+              : "Start free with five saved Markdown documents, preview, Mermaid, and dark mode. No card is required."}
           </p>
           <form className="loginForm" onSubmit={submit}>
             <label>

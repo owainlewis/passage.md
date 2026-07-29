@@ -24,6 +24,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/config"
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/migrations"
+	"github.com/owainlewis/passage.md/server/internal/policy"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -45,6 +46,85 @@ func testRelease(signal chan struct{}) func() {
 		once.Do(func() {
 			close(signal)
 		})
+	}
+}
+
+func TestPublicSignupWithPostgres(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	email := fmt.Sprintf("public-signup-%d@example.com", time.Now().UnixNano())
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, email)
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{
+		SessionSecret:       "test-secret",
+		PublicSignupEnabled: true,
+		Billing:             config.BillingConfig{FreeMaxSavedDocs: 5, ProMaxSavedDocs: 1000},
+	})
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		server.URL+"/api/v1/auth/register",
+		strings.NewReader(`{"email":"`+email+`","password":"password123","policyVersion":"`+policy.CurrentVersion+`"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	responseBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("register status/body = %d/%s", res.StatusCode, responseBody)
+	}
+	cookies := res.Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly {
+		t.Fatalf("session cookies = %#v", cookies)
+	}
+
+	meBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/me", "", cookies, "")
+	for _, want := range []string{
+		`"authenticated":true`,
+		`"publicSignupEnabled":true`,
+		`"policyVersion":"` + policy.CurrentVersion + `"`,
+		`"plan":"free"`,
+		`"source":"default"`,
+		`"maxSavedDocs":5`,
+	} {
+		if !strings.Contains(meBody, want) {
+			t.Fatalf("me body = %s, missing %s", meBody, want)
+		}
+	}
+
+	var acceptedVersion string
+	var acceptedAt time.Time
+	if err := db.QueryRow(ctx, `
+		SELECT policy_version, policy_accepted_at
+		FROM users
+		WHERE email = $1
+	`, email).Scan(&acceptedVersion, &acceptedAt); err != nil {
+		t.Fatal(err)
+	}
+	if acceptedVersion != policy.CurrentVersion || acceptedAt.IsZero() {
+		t.Fatalf("policy acceptance = %q/%s", acceptedVersion, acceptedAt)
 	}
 }
 

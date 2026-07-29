@@ -11,19 +11,23 @@ import (
 )
 
 func (a *App) me(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	response := map[string]any{
+		"authenticated":       false,
+		"publicSignupEnabled": a.publicSignupEnabled && !a.writesDisabled,
+		"policyVersion":       policy.CurrentVersion,
+	}
 	if a.auth == nil {
-		writeJSON(w, http.StatusOK, map[string]bool{"authenticated": false})
+		writeJSON(w, http.StatusOK, response)
 		return
 	}
 	user, ok := a.auth.UserFromRequest(r)
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]bool{"authenticated": false})
+		writeJSON(w, http.StatusOK, response)
 		return
 	}
-	response := map[string]any{
-		"authenticated": true,
-		"user":          user,
-	}
+	response["authenticated"] = true
+	response["user"] = user
 	if a.billing != nil {
 		account, err := a.billing.Account(r.Context(), user)
 		if err != nil {
@@ -36,7 +40,14 @@ func (a *App) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) register(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusForbidden, map[string]string{"error": "Passage is in closed beta"})
+	if !a.publicSignupEnabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Public signup is not open"})
+		return
+	}
+	if !a.requireAuthService(w) {
+		return
+	}
+	a.auth.Register(w, r)
 }
 
 func (a *App) validateReferral(w http.ResponseWriter, r *http.Request) {
