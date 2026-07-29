@@ -37,7 +37,7 @@ export STRIPE_WEBHOOK_SECRET_VERSION="1"
 job_deploy="$(sed -n '1p' "${PASSAGE_GCLOUD_LOG}")"
 job_execute="$(sed -n '2p' "${PASSAGE_GCLOUD_LOG}")"
 service_deploy="$(sed -n '3p' "${PASSAGE_GCLOUD_LOG}")"
-revision_describe="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
+service_describe="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
 traffic_update="$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")"
 
 [[ "${job_deploy}" == "run jobs deploy ${CLOUD_RUN_MIGRATION_JOB} "* ]]
@@ -72,10 +72,10 @@ traffic_update="$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")"
 [[ "${service_deploy}" == *"--no-traffic"* ]]
 [[ "${service_deploy}" == *"--format=value(status.latestCreatedRevisionName)"* ]]
 
-[[ "${revision_describe}" == "run revisions describe ${PASSAGE_DEPLOYED_REVISION} "* ]]
-[[ "${revision_describe}" == *"--project=${GCP_PROJECT_ID}"* ]]
-[[ "${revision_describe}" == *"--region=${GCP_REGION}"* ]]
-[[ "${revision_describe}" == *'--format=csv[no-heading](metadata.generation,status.observedGeneration,status.conditions[?type="Ready"].status)'* ]]
+[[ "${service_describe}" == "run services describe ${CLOUD_RUN_SERVICE} "* ]]
+[[ "${service_describe}" == *"--project=${GCP_PROJECT_ID}"* ]]
+[[ "${service_describe}" == *"--region=${GCP_REGION}"* ]]
+[[ "${service_describe}" == *"--format=value(status.latestReadyRevisionName)"* ]]
 
 [[ "${traffic_update}" == "run services update-traffic ${CLOUD_RUN_SERVICE} "* ]]
 [[ "${traffic_update}" == *"--project=${GCP_PROJECT_ID}"* ]]
@@ -104,48 +104,29 @@ fi
 
 : >"${PASSAGE_GCLOUD_LOG}"
 unset PASSAGE_EMPTY_REVISION
-export PASSAGE_REVISION_STATE_SEQUENCE="1,1,Unknown;1,1,True"
+export PASSAGE_LATEST_READY_REVISION_SEQUENCE="passage-test-00000-old;${PASSAGE_DEPLOYED_REVISION}"
 rm -f "${PASSAGE_REVISION_READY_COUNTER_FILE}"
 "${script_dir}/deploy-production.sh"
 [[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 6 ]]
-[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
-[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run services describe "* ]]
+[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run services describe "* ]]
 [[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run services update-traffic "* ]]
 
 : >"${PASSAGE_GCLOUD_LOG}"
-export PASSAGE_REVISION_STATE_SEQUENCE="1,0,False;1,1,True"
-rm -f "${PASSAGE_REVISION_READY_COUNTER_FILE}"
-"${script_dir}/deploy-production.sh"
-[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 6 ]]
-[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
-[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
-[[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run services update-traffic "* ]]
-
-: >"${PASSAGE_GCLOUD_LOG}"
-export PASSAGE_REVISION_STATE_SEQUENCE="1,1,Unknown"
+export PASSAGE_LATEST_READY_REVISION_SEQUENCE="passage-test-00000-old"
 rm -f "${PASSAGE_REVISION_READY_COUNTER_FILE}"
 if "${script_dir}/deploy-production.sh" 2>"${temporary_dir}/readiness-timeout.log"; then
   echo "deployment succeeded after revision readiness timed out" >&2
   exit 1
 fi
 [[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 6 ]]
-[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
-[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
-[[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run services describe "* ]]
+[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run services describe "* ]]
+[[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run services describe "* ]]
 grep -q "Timed out waiting for Cloud Run revision ${PASSAGE_DEPLOYED_REVISION} to become Ready after 3 attempts" "${temporary_dir}/readiness-timeout.log"
 
 : >"${PASSAGE_GCLOUD_LOG}"
-unset PASSAGE_REVISION_STATE_SEQUENCE
-export PASSAGE_REVISION_STATE="1,1,False"
-if "${script_dir}/deploy-production.sh" 2>"${temporary_dir}/readiness-failed.log"; then
-  echo "deployment succeeded with a revision that reported Ready=False" >&2
-  exit 1
-fi
-[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 4 ]]
-grep -q "Cloud Run revision ${PASSAGE_DEPLOYED_REVISION} reported Ready=False after reconciling generation 1" "${temporary_dir}/readiness-failed.log"
-
-: >"${PASSAGE_GCLOUD_LOG}"
-unset PASSAGE_REVISION_STATE
+unset PASSAGE_LATEST_READY_REVISION_SEQUENCE
 unset STRIPE_WEBHOOK_SECRET_SECRET
 if "${script_dir}/deploy-production.sh"; then
   echo "deployment succeeded without the Stripe webhook secret name" >&2
