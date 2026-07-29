@@ -20,6 +20,9 @@ export IMAGE="us-central1-docker.pkg.dev/passage-test/passage/passage:0123456789
 export PASSAGE_DEPLOYED_REVISION="passage-test-00001-test"
 export PUBLIC_SIGNUP_ENABLED="false"
 export PASSAGE_GCLOUD_LOG="${temporary_dir}/gcloud.log"
+export PASSAGE_REVISION_READY_COUNTER_FILE="${temporary_dir}/revision-ready-count"
+export PASSAGE_REVISION_READY_MAX_ATTEMPTS="3"
+export PASSAGE_REVISION_READY_POLL_SECONDS="0"
 export PATH="${script_dir}/testdata:${PATH}"
 export RESEND_FROM="passage.test <mail@passage.test>"
 export STRIPE_BILLING_MODE="preserve"
@@ -72,7 +75,7 @@ traffic_update="$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")"
 [[ "${revision_describe}" == "run revisions describe ${PASSAGE_DEPLOYED_REVISION} "* ]]
 [[ "${revision_describe}" == *"--project=${GCP_PROJECT_ID}"* ]]
 [[ "${revision_describe}" == *"--region=${GCP_REGION}"* ]]
-[[ "${revision_describe}" == *'--format=value(status.conditions[?type="Ready"].status)'* ]]
+[[ "${revision_describe}" == *'--format=csv[no-heading](metadata.generation,status.observedGeneration,status.conditions[?type="Ready"].status)'* ]]
 
 [[ "${traffic_update}" == "run services update-traffic ${CLOUD_RUN_SERVICE} "* ]]
 [[ "${traffic_update}" == *"--project=${GCP_PROJECT_ID}"* ]]
@@ -101,16 +104,48 @@ fi
 
 : >"${PASSAGE_GCLOUD_LOG}"
 unset PASSAGE_EMPTY_REVISION
-export PASSAGE_REVISION_READY=false
-if "${script_dir}/deploy-production.sh"; then
-  echo "deployment succeeded with a revision that was not Ready" >&2
+export PASSAGE_REVISION_STATE_SEQUENCE="1,1,Unknown;1,1,True"
+rm -f "${PASSAGE_REVISION_READY_COUNTER_FILE}"
+"${script_dir}/deploy-production.sh"
+[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 6 ]]
+[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run services update-traffic "* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export PASSAGE_REVISION_STATE_SEQUENCE="1,0,False;1,1,True"
+rm -f "${PASSAGE_REVISION_READY_COUNTER_FILE}"
+"${script_dir}/deploy-production.sh"
+[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 6 ]]
+[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run services update-traffic "* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export PASSAGE_REVISION_STATE_SEQUENCE="1,1,Unknown"
+rm -f "${PASSAGE_REVISION_READY_COUNTER_FILE}"
+if "${script_dir}/deploy-production.sh" 2>"${temporary_dir}/readiness-timeout.log"; then
+  echo "deployment succeeded after revision readiness timed out" >&2
+  exit 1
+fi
+[[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 6 ]]
+[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '5p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+[[ "$(sed -n '6p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+grep -q "Timed out waiting for Cloud Run revision ${PASSAGE_DEPLOYED_REVISION} to become Ready after 3 attempts" "${temporary_dir}/readiness-timeout.log"
+
+: >"${PASSAGE_GCLOUD_LOG}"
+unset PASSAGE_REVISION_STATE_SEQUENCE
+export PASSAGE_REVISION_STATE="1,1,False"
+if "${script_dir}/deploy-production.sh" 2>"${temporary_dir}/readiness-failed.log"; then
+  echo "deployment succeeded with a revision that reported Ready=False" >&2
   exit 1
 fi
 [[ "$(wc -l <"${PASSAGE_GCLOUD_LOG}" | tr -d ' ')" -eq 4 ]]
-[[ "$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")" == "run revisions describe "* ]]
+grep -q "Cloud Run revision ${PASSAGE_DEPLOYED_REVISION} reported Ready=False after reconciling generation 1" "${temporary_dir}/readiness-failed.log"
 
 : >"${PASSAGE_GCLOUD_LOG}"
-unset PASSAGE_REVISION_READY
+unset PASSAGE_REVISION_STATE
 unset STRIPE_WEBHOOK_SECRET_SECRET
 if "${script_dir}/deploy-production.sh"; then
   echo "deployment succeeded without the Stripe webhook secret name" >&2

@@ -88,17 +88,52 @@ if [[ -z "${deployed_revision}" ]]; then
   exit 1
 fi
 
-revision_ready="$(
-  gcloud run revisions describe "${deployed_revision}" \
-    --project="${GCP_PROJECT_ID}" \
-    --region="${GCP_REGION}" \
-    --format='value(status.conditions[?type="Ready"].status)'
-)"
+revision_ready_max_attempts="${PASSAGE_REVISION_READY_MAX_ATTEMPTS:-30}"
+revision_ready_poll_seconds="${PASSAGE_REVISION_READY_POLL_SECONDS:-2}"
 
-if [[ "${revision_ready}" != "True" ]]; then
-  echo "Cloud Run revision ${deployed_revision} is not Ready" >&2
+if [[ ! "${revision_ready_max_attempts}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "PASSAGE_REVISION_READY_MAX_ATTEMPTS must be a positive integer" >&2
   exit 1
 fi
+
+if [[ ! "${revision_ready_poll_seconds}" =~ ^[0-9]+$ ]]; then
+  echo "PASSAGE_REVISION_READY_POLL_SECONDS must be a non-negative integer" >&2
+  exit 1
+fi
+
+for ((attempt = 1; attempt <= revision_ready_max_attempts; attempt++)); do
+  revision_state="$(
+    gcloud run revisions describe "${deployed_revision}" \
+      --project="${GCP_PROJECT_ID}" \
+      --region="${GCP_REGION}" \
+      --format='csv[no-heading](metadata.generation,status.observedGeneration,status.conditions[?type="Ready"].status)'
+  )"
+  IFS=',' read -r revision_generation revision_observed_generation revision_ready <<<"${revision_state}"
+
+  if [[ -n "${revision_generation}" && "${revision_generation}" == "${revision_observed_generation}" ]]; then
+    case "${revision_ready}" in
+      True)
+        break
+        ;;
+      False)
+        echo "Cloud Run revision ${deployed_revision} reported Ready=False after reconciling generation ${revision_generation}" >&2
+        exit 1
+        ;;
+      Unknown | "")
+        ;;
+      *)
+        echo "Cloud Run revision ${deployed_revision} returned unexpected Ready status: ${revision_ready}" >&2
+        exit 1
+        ;;
+    esac
+  fi
+
+  if ((attempt == revision_ready_max_attempts)); then
+    echo "Timed out waiting for Cloud Run revision ${deployed_revision} to become Ready after ${revision_ready_max_attempts} attempts" >&2
+    exit 1
+  fi
+  sleep "${revision_ready_poll_seconds}"
+done
 
 gcloud run services update-traffic "${CLOUD_RUN_SERVICE}" \
   --project="${GCP_PROJECT_ID}" \
