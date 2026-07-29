@@ -3,7 +3,7 @@ import { Brand } from "./brand";
 
 export const MERCHANT_NAME = "Gradientwork Limited";
 export const MERCHANT_URL = "https://gradientwork.com";
-export const SUPPORT_EMAIL = "owain@owainlewis.com";
+export const SUPPORT_EMAIL = "owain@gradientwork.com";
 export const POLICY_DATE = "29 July 2026";
 
 export function MerchantLink() {

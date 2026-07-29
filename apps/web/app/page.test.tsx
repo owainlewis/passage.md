@@ -147,9 +147,9 @@ describe("Landing", () => {
     for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
       expect(merchantLink).toHaveAttribute("href", "https://gradientwork.com");
     }
-    expect(screen.getByRole("link", { name: "owain@owainlewis.com" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "owain@gradientwork.com" })).toHaveAttribute(
       "href",
-      "mailto:owain@owainlewis.com"
+      "mailto:owain@gradientwork.com"
     );
     for (const [name, href] of [
       ["Terms", "/terms"],
@@ -200,7 +200,7 @@ describe("Policy pages", () => {
     for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
       expect(merchantLink).toHaveAttribute("href", "https://gradientwork.com");
     }
-    expect(screen.getAllByRole("link", { name: "owain@owainlewis.com" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "owain@gradientwork.com" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("navigation", { name: "Policy links" })).toBeInTheDocument();
   });
 });
