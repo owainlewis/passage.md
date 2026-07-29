@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { AuthBoundary, useAuth } from "./auth";
 import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
 import { MERCHANT_NAME, SupportLink } from "./legal";
@@ -66,14 +69,27 @@ const features = [
 
 export default function Landing() {
   return (
+    <AuthBoundary>
+      <LandingContent />
+    </AuthBoundary>
+  );
+}
+
+function LandingContent() {
+  const auth = useAuth();
+  const publicSignup = auth.publicSignupEnabled && !auth.user;
+  const primaryHref = publicSignup ? "/signup" : "/write";
+  const primaryLabel = publicSignup ? "Create free account" : "Start writing";
+
+  return (
     <div className="landing">
       <header className="landingNav">
         <Brand />
         <nav className="landingNavLinks">
           <Link href="/cli">CLI</Link>
           <a href="#pricing">Go Pro</a>
-          <Link className="landingNavCta" href="/write">
-            Start writing
+          <Link className="landingNavCta" href={primaryHref}>
+            {primaryLabel}
           </Link>
         </nav>
       </header>
@@ -87,14 +103,16 @@ export default function Landing() {
             without copying files around.
           </p>
           <div className="heroActions">
-            <Link className="btnPrimary" href="/write">
-              Start writing
+            <Link className="btnPrimary" href={primaryHref}>
+              {primaryLabel}
             </Link>
             <a className="btnGhost" href="#story">
               Read the story
             </a>
           </div>
-          <p className="heroNote">Closed beta for now.</p>
+          <p className="heroNote">
+            {publicSignup ? "Free signup is open. No card required." : "Public signup is not open yet."}
+          </p>
         </div>
         <div className="heroDocWrap" aria-hidden="true">
           <div className="heroDoc">
@@ -175,8 +193,8 @@ export default function Landing() {
                   <li key={feature}>{feature}</li>
                 ))}
               </ul>
-              <Link className="btnGhost planCta" href="/write">
-                Start writing
+              <Link className="btnGhost planCta" href={primaryHref}>
+                {primaryLabel}
               </Link>
             </div>
             <div className="planCard planCardPro">
@@ -192,8 +210,8 @@ export default function Landing() {
                   <li key={feature}>{feature}</li>
                 ))}
               </ul>
-              <Link className="btnPrimary planCta" href="/account">
-                Upgrade
+              <Link className="btnPrimary planCta" href={publicSignup ? "/signup" : "/account"}>
+                {publicSignup ? "Get started" : "Upgrade"}
               </Link>
               <p className="planRenewal">
                 Renews monthly until cancelled.
@@ -217,7 +235,7 @@ export default function Landing() {
           </span>
         </div>
         <nav className="footerLinks" aria-label="Footer links">
-          <Link href="/write">Start writing</Link>
+          <Link href={primaryHref}>{primaryLabel}</Link>
           <Link href="/cli">CLI</Link>
           <a href="#pricing">Pricing</a>
           <Link href="/terms">Terms</Link>

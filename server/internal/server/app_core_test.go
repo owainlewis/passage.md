@@ -75,7 +75,44 @@ func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if body := rec.Body.String(); body != "{\"authenticated\":false}\n" {
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
+	}
+	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-27\",\"publicSignupEnabled\":false}\n" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestMeAdvertisesPublicSignupWhenEnabled(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil, Options{PublicSignupEnabled: true})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-27\",\"publicSignupEnabled\":true}\n" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestMeHidesPublicSignupWhenWritesAreDisabled(t *testing.T) {
+	app := NewApp(fstest.MapFS{
+		"index.html": {Data: []byte("<main>passage</main>")},
+	}, nil, Options{WritesDisabled: true, PublicSignupEnabled: true})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	app.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if body := rec.Body.String(); body != "{\"authenticated\":false,\"policyVersion\":\"2026-07-27\",\"publicSignupEnabled\":false}\n" {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -83,7 +120,7 @@ func TestMeReturnsAnonymousWithoutDatabase(t *testing.T) {
 func TestWriteFenceBlocksEveryMutationRoute(t *testing.T) {
 	app := NewApp(fstest.MapFS{
 		"index.html": {Data: []byte("<main>passage</main>")},
-	}, nil, Options{WritesDisabled: true})
+	}, nil, Options{WritesDisabled: true, PublicSignupEnabled: true})
 
 	routes := []struct {
 		method string

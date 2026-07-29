@@ -12,9 +12,10 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/billing"
 	"github.com/owainlewis/passage.md/server/internal/community"
 	"github.com/owainlewis/passage.md/server/internal/policy"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func TestRegisterIsClosedBeta(t *testing.T) {
+func TestRegisterIsClosedByDefault(t *testing.T) {
 	app := NewApp(fstest.MapFS{
 		"index.html": {Data: []byte("<main>passage</main>")},
 	}, nil)
@@ -27,8 +28,65 @@ func TestRegisterIsClosedBeta(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if body := rec.Body.String(); body != "{\"error\":\"Passage is in closed beta\"}\n" {
+	if body := rec.Body.String(); body != "{\"error\":\"Public signup is not open\"}\n" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestPublicRegistrationCreatesFreeAccountWithPolicyAcceptance(t *testing.T) {
+	authStore := newRouteAuthStore()
+	billingStore := newRouteBillingStore()
+	billingStore.users["public@example.com"] = auth.User{ID: "registered-user", Email: "public@example.com"}
+	app := &App{
+		static:              fstest.MapFS{"index.html": {Data: []byte("ok")}},
+		auth:                auth.NewService(authStore, "test-secret", false),
+		billing:             billing.NewService(billingStore, routeBillingConfig()),
+		publicSignupEnabled: true,
+	}
+
+	missingConsent := httptest.NewRecorder()
+	missingConsentReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"public@example.com","password":"password123"}`))
+	missingConsentReq.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(missingConsent, missingConsentReq)
+	if missingConsent.Code != http.StatusBadRequest || !strings.Contains(missingConsent.Body.String(), "Terms and Privacy acceptance is required") {
+		t.Fatalf("missing consent status/body = %d/%s", missingConsent.Code, missingConsent.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"public@example.com","password":"password123","policyVersion":"`+policy.CurrentVersion+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	app.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly {
+		t.Fatalf("session cookies = %#v", cookies)
+	}
+	if authStore.createdPolicyVersion != policy.CurrentVersion || authStore.createdPolicyAcceptedAt.IsZero() {
+		t.Fatalf("policy acceptance = %q/%s", authStore.createdPolicyVersion, authStore.createdPolicyAcceptedAt)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(authStore.createdPasswordHash), []byte("password123")) != nil {
+		t.Fatal("registration password was not hashed")
+	}
+
+	me := httptest.NewRecorder()
+	meReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	meReq.AddCookie(cookies[0])
+	app.Routes().ServeHTTP(me, meReq)
+	if me.Code != http.StatusOK {
+		t.Fatalf("me status/body = %d/%s", me.Code, me.Body.String())
+	}
+	for _, want := range []string{
+		`"authenticated":true`,
+		`"publicSignupEnabled":true`,
+		`"policyVersion":"` + policy.CurrentVersion + `"`,
+		`"plan":"free"`,
+		`"source":"default"`,
+	} {
+		if !strings.Contains(me.Body.String(), want) {
+			t.Fatalf("me body = %s, missing %s", me.Body.String(), want)
+		}
 	}
 }
 

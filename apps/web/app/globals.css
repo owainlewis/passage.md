@@ -2187,6 +2187,12 @@ button {
   line-height: 1.6;
 }
 
+.loginCopy a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
 .loginForm {
   display: grid;
   gap: 16px;

@@ -14,6 +14,7 @@ required_variables=(
   GCP_PROJECT_ID
   GCP_REGION
   IMAGE
+  PUBLIC_SIGNUP_ENABLED
   RESEND_FROM
 )
 
@@ -49,7 +50,7 @@ deployed_revision="$(
     --project="${GCP_PROJECT_ID}" \
     --region="${GCP_REGION}" \
     --image="${IMAGE}" \
-    --update-env-vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},RESEND_FROM=${RESEND_FROM}" \
+    --update-env-vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},RESEND_FROM=${RESEND_FROM}" \
     --update-secrets="RESEND_API_KEY=passage-resend-api-key:latest" \
     --no-cpu-throttling \
     --min=1 \

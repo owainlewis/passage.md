@@ -95,6 +95,7 @@ The Go server runs at `http://localhost:3000` by default and serves `/api/health
 
 `DATABASE_URL` is required for `serve`; the dev command defaults it to `postgres://localhost:5432/passage_dev?sslmode=disable`.
 `PASSAGE_DATABASE_MAX_CONNS` sets the per-process Postgres pool limit and defaults to `3`.
+`PASSAGE_PUBLIC_SIGNUP_ENABLED` gates public account creation and defaults to `false`.
 
 `SESSION_SECRET` must be set explicitly when `APP_ENV=production`.
 

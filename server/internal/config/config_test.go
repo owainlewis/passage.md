@@ -163,6 +163,18 @@ func TestFromEnvLeavesWriteFenceDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestFromEnvRequiresPublicSignupToBeEnabledExplicitly(t *testing.T) {
+	t.Setenv("PASSAGE_PUBLIC_SIGNUP_ENABLED", "")
+	if FromEnv().PublicSignupEnabled {
+		t.Fatal("PublicSignupEnabled = true by default")
+	}
+
+	t.Setenv("PASSAGE_PUBLIC_SIGNUP_ENABLED", "true")
+	if !FromEnv().PublicSignupEnabled {
+		t.Fatal("PublicSignupEnabled = false after explicit enable")
+	}
+}
+
 func TestFromEnvLoadsPasswordResetConfiguration(t *testing.T) {
 	t.Setenv("APP_BASE_URL", "https://passage.md")
 	t.Setenv("RESEND_API_KEY", " re_secret ")

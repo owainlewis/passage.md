@@ -18,6 +18,7 @@ export GCP_PROJECT_ID="passage-test"
 export GCP_REGION="us-central1"
 export IMAGE="us-central1-docker.pkg.dev/passage-test/passage/passage:0123456789abcdef"
 export PASSAGE_DEPLOYED_REVISION="passage-test-00001-test"
+export PUBLIC_SIGNUP_ENABLED="false"
 export PASSAGE_GCLOUD_LOG="${temporary_dir}/gcloud.log"
 export PATH="${script_dir}/testdata:${PATH}"
 export RESEND_FROM="passage.test <mail@passage.test>"
@@ -51,7 +52,7 @@ traffic_update="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
 [[ "${service_deploy}" == *"--project=${GCP_PROJECT_ID}"* ]]
 [[ "${service_deploy}" == *"--region=${GCP_REGION}"* ]]
 [[ "${service_deploy}" == *"--image=${IMAGE}"* ]]
-[[ "${service_deploy}" == *"--update-env-vars=APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},RESEND_FROM=${RESEND_FROM}"* ]]
+[[ "${service_deploy}" == *"--update-env-vars=APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},RESEND_FROM=${RESEND_FROM}"* ]]
 [[ "${service_deploy}" == *"--update-secrets=RESEND_API_KEY=passage-resend-api-key:latest"* ]]
 [[ "${service_deploy}" == *"--no-cpu-throttling"* ]]
 [[ "${service_deploy}" == *"--min=1"* ]]
