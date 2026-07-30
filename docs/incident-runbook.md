@@ -125,7 +125,7 @@ Follow issue #153 for the tested recovery procedure and retention assumptions.
 
 ## Disable billing
 
-If checkout or webhook processing could create bad state, disable billing without deleting Stripe secrets:
+For an immediate emergency stop, disable billing before investigating:
 
 ```sh
 gcloud run services update passage-md \
@@ -136,21 +136,37 @@ gcloud run services update passage-md \
 
 Confirm checkout and webhook endpoints return service unavailable, while `/api/health` stays healthy.
 
-If billing was enabled before the incident and its Stripe secrets remain configured, explicitly restore it after Stripe delivery and stored entitlements are reconciled:
+Then run the audited full disable from exact `main`:
 
 ```sh
-gcloud run services update passage-md \
-  --project passage-md-prod \
-  --region us-central1 \
-  --update-env-vars STRIPE_BILLING_ENABLED=true
+gh workflow run CI \
+  --repo owainlewis/passage.md \
+  --ref main \
+  -f stripe_billing_mode=disable
 ```
 
-Confirm `/api/health` stays healthy and the billing endpoints no longer return the disabled response.
+The full disable deploys with `STRIPE_BILLING_ENABLED=false` and removes `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET` from the new Cloud Run revision.
+
+Confirm the workflow is green, `/api/health` stays healthy, public registration remains closed, and the billing endpoints return the disabled response.
 
 Normal `main` deployments use Stripe billing mode `preserve`.
-They do not write `STRIPE_BILLING_ENABLED`, so deploying alone does not undo the emergency toggle.
-Only an explicit `workflow_dispatch` with mode `enable` or `disable`, or the reviewed `gcloud` commands above, changes the toggle.
-Restore billing only after Stripe delivery and stored entitlements are reconciled.
+They do not write or bind Stripe configuration, so deploying alone does not undo the emergency toggle or reintroduce removed credentials.
+
+Do not restore billing with a direct `gcloud` toggle.
+
+The `enable` workflow mode requires all five repository variables to identify one reviewed Stripe account:
+
+- `STRIPE_MONTHLY_PRICE_ID`
+- `STRIPE_SECRET_KEY_SECRET`
+- `STRIPE_SECRET_KEY_VERSION`
+- `STRIPE_WEBHOOK_SECRET_SECRET`
+- `STRIPE_WEBHOOK_SECRET_VERSION`
+
+Secret values remain only in Secret Manager.
+
+Versions must be fixed positive integers, not `latest`.
+
+Restore billing only after the variables point to the intended account, Stripe delivery and stored entitlements are reconciled, the change is reviewed, and activation is explicitly approved.
 
 In Stripe Workbench, check webhook delivery status by event ID, confirm the endpoint URL, and retry only events whose database effect is understood.
 

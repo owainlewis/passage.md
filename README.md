@@ -107,6 +107,11 @@ To send real local email, set both `RESEND_API_KEY` and `RESEND_FROM` in `.env`.
 Stripe billing is off by default.
 Set `STRIPE_BILLING_ENABLED=true` only after `STRIPE_SECRET_KEY`, `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and `APP_BASE_URL` are configured.
 
+Production Stripe account identifiers are not committed to the repository.
+The deployment workflow reads the monthly price ID, Secret Manager names, and fixed secret versions from the matching GitHub repository variables only when an explicitly approved `enable` dispatch runs.
+An explicit `disable` dispatch removes the Stripe price and secret bindings from the new Cloud Run revision.
+Normal `main` deployments preserve the current billing state without adding Stripe configuration.
+
 ### Abuse rate limits
 
 The Go server applies fixed-window limits before handling auth mutations, authenticated document mutations, API-token requests, shared HTML, and raw Markdown.

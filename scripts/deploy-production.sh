@@ -17,11 +17,6 @@ required_variables=(
   PUBLIC_SIGNUP_ENABLED
   RESEND_FROM
   STRIPE_BILLING_MODE
-  STRIPE_MONTHLY_PRICE_ID
-  STRIPE_SECRET_KEY_SECRET
-  STRIPE_SECRET_KEY_VERSION
-  STRIPE_WEBHOOK_SECRET_SECRET
-  STRIPE_WEBHOOK_SECRET_VERSION
 )
 
 for variable in "${required_variables[@]}"; do
@@ -31,15 +26,58 @@ for variable in "${required_variables[@]}"; do
   fi
 done
 
-service_env_vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},RESEND_FROM=${RESEND_FROM},STRIPE_MONTHLY_PRICE_ID=${STRIPE_MONTHLY_PRICE_ID}"
+service_env_vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},RESEND_FROM=${RESEND_FROM}"
+service_secrets="RESEND_API_KEY=passage-resend-api-key:latest"
+service_extra_args=()
+
 case "${STRIPE_BILLING_MODE}" in
   preserve)
     ;;
   enable)
-    service_env_vars+=",STRIPE_BILLING_ENABLED=true"
+    stripe_variables=(
+      STRIPE_MONTHLY_PRICE_ID
+      STRIPE_SECRET_KEY_SECRET
+      STRIPE_SECRET_KEY_VERSION
+      STRIPE_WEBHOOK_SECRET_SECRET
+      STRIPE_WEBHOOK_SECRET_VERSION
+    )
+    for variable in "${stripe_variables[@]}"; do
+      if [[ -z "${!variable:-}" ]]; then
+        echo "${variable} is required when Stripe billing is enabled" >&2
+        exit 1
+      fi
+    done
+
+    if [[ ! "${STRIPE_MONTHLY_PRICE_ID}" =~ ^price_[[:alnum:]]+$ ]]; then
+      echo "STRIPE_MONTHLY_PRICE_ID must be a Stripe price ID" >&2
+      exit 1
+    fi
+    if [[ ! "${STRIPE_SECRET_KEY_SECRET}" =~ ^[[:alnum:]_-]+$ || "${#STRIPE_SECRET_KEY_SECRET}" -gt 255 ]]; then
+      echo "STRIPE_SECRET_KEY_SECRET must be a Secret Manager secret name" >&2
+      exit 1
+    fi
+    if [[ ! "${STRIPE_WEBHOOK_SECRET_SECRET}" =~ ^[[:alnum:]_-]+$ || "${#STRIPE_WEBHOOK_SECRET_SECRET}" -gt 255 ]]; then
+      echo "STRIPE_WEBHOOK_SECRET_SECRET must be a Secret Manager secret name" >&2
+      exit 1
+    fi
+    if [[ ! "${STRIPE_SECRET_KEY_VERSION}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "STRIPE_SECRET_KEY_VERSION must be a fixed numeric version" >&2
+      exit 1
+    fi
+    if [[ ! "${STRIPE_WEBHOOK_SECRET_VERSION}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "STRIPE_WEBHOOK_SECRET_VERSION must be a fixed numeric version" >&2
+      exit 1
+    fi
+
+    service_env_vars+=",STRIPE_BILLING_ENABLED=true,STRIPE_MONTHLY_PRICE_ID=${STRIPE_MONTHLY_PRICE_ID}"
+    service_secrets+=",STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY_SECRET}:${STRIPE_SECRET_KEY_VERSION},STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET_SECRET}:${STRIPE_WEBHOOK_SECRET_VERSION}"
     ;;
   disable)
     service_env_vars+=",STRIPE_BILLING_ENABLED=false"
+    service_extra_args+=(
+      "--remove-env-vars=STRIPE_MONTHLY_PRICE_ID"
+      "--remove-secrets=STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET"
+    )
     ;;
   *)
     echo "STRIPE_BILLING_MODE must be preserve, enable, or disable" >&2
@@ -73,7 +111,8 @@ deployed_revision="$(
     --region="${GCP_REGION}" \
     --image="${IMAGE}" \
     --update-env-vars="${service_env_vars}" \
-    --update-secrets="RESEND_API_KEY=passage-resend-api-key:latest,STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY_SECRET}:${STRIPE_SECRET_KEY_VERSION},STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET_SECRET}:${STRIPE_WEBHOOK_SECRET_VERSION}" \
+    --update-secrets="${service_secrets}" \
+    ${service_extra_args[@]+"${service_extra_args[@]}"} \
     --no-cpu-throttling \
     --min=1 \
     --max="${CLOUD_RUN_MAX_INSTANCES}" \
