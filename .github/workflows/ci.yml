@@ -166,6 +166,9 @@ jobs:
       - name: Test production community operation gate
         run: scripts/run-production-community-op.test.sh
 
+      - name: Test production Checkout diagnostics
+        run: scripts/query-production-checkout-errors.test.sh
+
       - name: Test monitoring configuration
         run: ops/monitoring/validate.test.sh
 

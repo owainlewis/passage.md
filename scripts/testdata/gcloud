@@ -3,6 +3,10 @@ set -euo pipefail
 
 printf '%s\n' "$*" >>"${PASSAGE_GCLOUD_LOG:?}"
 
+if [[ "$*" == "logging read "* ]]; then
+  printf '%s\n' "${PASSAGE_GCLOUD_LOGGING_RESPONSE:-[]}"
+fi
+
 if [[ "$*" == "artifacts docker images describe "* ]]; then
   printf '{"image_summary":{"digest":"%s"}}\n' "${PASSAGE_IMAGE_DIGEST:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
 fi
