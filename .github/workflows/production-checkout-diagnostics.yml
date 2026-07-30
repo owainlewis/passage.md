@@ -1,0 +1,45 @@
+name: Production Checkout diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_minutes:
+        description: Recent minutes to inspect, from 1 to 120
+        required: true
+        default: "30"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Read recent Checkout errors
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: passage-md-prod
+      GITHUB_REF: ${{ github.ref }}
+      LOOKBACK_MINUTES: ${{ inputs.lookback_minutes }}
+      WORKLOAD_IDENTITY_PROVIDER: projects/311711068171/locations/global/workloadIdentityPools/github/providers/passage-md
+      DIAGNOSTICS_SERVICE_ACCOUNT: passage-md-build@passage-md-prod.iam.gserviceaccount.com
+    steps:
+      - name: Check out exact main commit
+        uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DIAGNOSTICS_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Read bounded Checkout errors
+        run: scripts/query-production-checkout-errors.sh

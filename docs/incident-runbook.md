@@ -48,6 +48,18 @@ Check the matching event in Stripe Workbench for its delivery attempts and respo
 
 Never copy the webhook payload into Passage logs.
 
+### Read only recent Checkout creation errors
+
+When direct Cloud access is unavailable, dispatch `Production Checkout diagnostics` from `main`.
+
+Set `lookback_minutes` from 1 to 120.
+
+The workflow uses the reviewed production workload identity and queries only structured errors whose operation is `create Stripe Checkout session`.
+
+It outputs only the timestamp, severity, serving revision, operation, redacted error text, and request ID.
+
+It does not read request bodies, headers, user accounts, Stripe secrets, webhook payloads, or database data.
+
 ## Roll back Cloud Run
 
 List known-good revisions and their commit labels:
