@@ -14,6 +14,19 @@ export function SupportLink() {
   return <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
 }
 
+export function documentLimitSupportHref(email: string, savedDocs: number, maxSavedDocs: number, purpose: string) {
+  const subject = "Passage document limit increase request";
+  const body = [
+    `Passage account: ${email}`,
+    `Current usage: ${savedDocs} of ${maxSavedDocs} saved documents`,
+    "Requested limit:",
+    `Purpose for the higher limit: ${purpose.trim()}`,
+    "",
+    "Please do not include document titles or content."
+  ].join("\n");
+  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 export function PolicyPage({
   title,
   summary,

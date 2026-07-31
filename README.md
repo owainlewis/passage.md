@@ -14,7 +14,7 @@ Anonymous users can write transient docs in the browser.
 
 Free accounts can save 5 hosted docs and use the CLI with those docs.
 
-Pro users can save 1,000 hosted docs, sync, export, share, use custom themes, and use higher-limit CLI/API workflows.
+Pro users can save thousands of hosted docs, sync, export, share, use custom themes, and use higher-limit CLI/API workflows.
 
 ## Product
 

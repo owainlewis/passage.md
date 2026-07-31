@@ -15,6 +15,7 @@ required_variables=(
   GCP_REGION
   IMAGE
   PUBLIC_SIGNUP_ENABLED
+  PRO_MAX_SAVED_DOCS
   RESEND_FROM
   STRIPE_BILLING_MODE
 )
@@ -26,7 +27,12 @@ for variable in "${required_variables[@]}"; do
   fi
 done
 
-service_env_vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},RESEND_FROM=${RESEND_FROM}"
+if [[ ! "${PRO_MAX_SAVED_DOCS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "PRO_MAX_SAVED_DOCS must be a positive integer" >&2
+  exit 1
+fi
+
+service_env_vars="APP_ENV=production,APP_BASE_URL=${APP_BASE_URL},GCP_PROJECT_ID=${GCP_PROJECT_ID},PASSAGE_DATABASE_MAX_CONNS=${DATABASE_MAX_CONNS},PASSAGE_PUBLIC_SIGNUP_ENABLED=${PUBLIC_SIGNUP_ENABLED},PASSAGE_PRO_MAX_SAVED_DOCS=${PRO_MAX_SAVED_DOCS},RESEND_FROM=${RESEND_FROM}"
 service_secrets="RESEND_API_KEY=passage-resend-api-key:latest"
 service_extra_args=()
 

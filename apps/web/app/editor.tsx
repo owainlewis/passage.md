@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
+import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { EditorSidebar } from "./editor-sidebar";
 import { firstDocInFolder, docMatchesFolder } from "./editor-list";
 import { isShared, Mode } from "./editor-model";
@@ -34,6 +35,7 @@ export default function Editor() {
     activeLoading,
     activeId,
     billingNotice,
+    billingNoticeAction,
     createDoc: createDocument,
     deleteDoc,
     docs,
@@ -153,6 +155,10 @@ export default function Editor() {
   const title = active ? titleOf(active.body) : "";
   const docsReady = saveState !== "loading";
   const showSaveState = saveState !== "saved";
+  const savedDocs = auth.account?.usage.savedDocs ?? 0;
+  const nearDocumentLimit =
+    entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
+  const nearDocumentLimitNotice = `You're using ${formatDocumentCount(savedDocs)} of ${formatDocumentCount(entitlements.maxSavedDocs)} saved documents.`;
 
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
@@ -240,12 +246,21 @@ export default function Editor() {
           </div>
         </header>
 
-        {billingNotice && (
+        {billingNotice ? (
           <div className="billingNotice">
             <span>{billingNotice}</span>
-            <Link href="/account">Upgrade</Link>
+            {billingNoticeAction === "limit" ? (
+              <Link href="/account#document-limit">Request more</Link>
+            ) : billingNoticeAction === "upgrade" ? (
+              <Link href="/account">Upgrade</Link>
+            ) : null}
           </div>
-        )}
+        ) : nearDocumentLimit ? (
+          <div className="billingNotice">
+            <span>{nearDocumentLimitNotice}</span>
+            <Link href="/account#document-limit">Request more</Link>
+          </div>
+        ) : null}
 
         <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
           {saveState === "loading" || activeLoading ? (
