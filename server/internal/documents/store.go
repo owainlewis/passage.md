@@ -32,6 +32,23 @@ type Document struct {
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
+type DocumentMetadata struct {
+	ID         string     `json:"id"`
+	PublicID   string     `json:"publicId"`
+	Title      string     `json:"title"`
+	Excerpt    string     `json:"excerpt"`
+	Tags       []string   `json:"tags"`
+	ShareToken *string    `json:"shareToken,omitempty"`
+	SharedAt   *time.Time `json:"sharedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+type ListCursor struct {
+	UpdatedAt time.Time
+	ID        string
+}
+
 type Store struct {
 	db *database.Pool
 }
@@ -59,6 +76,40 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 		if err != nil {
 			return nil, err
 		}
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}
+
+func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error) {
+	var cursorUpdatedAt *time.Time
+	var cursorID *string
+	if cursor != nil {
+		cursorUpdatedAt = &cursor.UpdatedAt
+		cursorID = &cursor.ID
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT id::text, public_id, left(body, 4096), share_token, shared_at, created_at, updated_at
+		FROM documents
+		WHERE owner_user_id = $1
+		  AND archived_at IS NULL
+		  AND ($2::timestamptz IS NULL OR (updated_at, id) < ($2, $3::uuid))
+		ORDER BY updated_at DESC, id DESC
+		LIMIT $4
+	`, ownerID, cursorUpdatedAt, cursorID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	docs := []DocumentMetadata{}
+	for rows.Next() {
+		var doc DocumentMetadata
+		if err := rows.Scan(&doc.ID, &doc.PublicID, &doc.Excerpt, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt); err != nil {
+			return nil, err
+		}
+		doc.Title = titleOf(doc.Excerpt)
+		doc.Tags = tagsOf(doc.Excerpt)
 		docs = append(docs, doc)
 	}
 	return docs, rows.Err()
@@ -275,6 +326,53 @@ func scanDocument(row scanner) (Document, error) {
 	return doc, err
 }
 
+func tagsOf(body string) []string {
+	if !strings.HasPrefix(body, "---\n") {
+		return []string{}
+	}
+	end := strings.Index(body[4:], "\n---")
+	if end < 0 {
+		return []string{}
+	}
+	for _, line := range strings.Split(body[4:4+end], "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "tags:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "tags:"))
+		if len(value) < 2 || value[0] != '[' || value[len(value)-1] != ']' {
+			return []string{}
+		}
+		seen := map[string]bool{}
+		tags := []string{}
+		for _, raw := range strings.Split(value[1:len(value)-1], ",") {
+			tag := strings.TrimSpace(raw)
+			if validTag(tag) && !seen[tag] {
+				seen[tag] = true
+				tags = append(tags, tag)
+			}
+		}
+		return tags
+	}
+	return []string{}
+}
+
+func validTag(tag string) bool {
+	if tag == "" {
+		return false
+	}
+	for index, char := range tag {
+		if char >= 'a' && char <= 'z' {
+			continue
+		}
+		if char == '-' && index > 0 && index < len(tag)-1 {
+			continue
+		}
+		return false
+	}
+	return !strings.Contains(tag, "--")
+}
+
 func randomPublicID() (string, error) {
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {
@@ -326,7 +424,7 @@ func validURLSafeID(value string) bool {
 }
 
 func titleOf(body string) string {
-	for _, raw := range strings.Split(body, "\n") {
+	for _, raw := range strings.Split(withoutFrontmatter(body), "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
@@ -343,4 +441,15 @@ func titleOf(body string) string {
 		}
 	}
 	return "Untitled"
+}
+
+func withoutFrontmatter(body string) string {
+	if !strings.HasPrefix(body, "---\n") {
+		return body
+	}
+	end := strings.Index(body[4:], "\n---")
+	if end < 0 {
+		return body
+	}
+	return strings.TrimLeft(body[4+end+4:], "\n")
 }

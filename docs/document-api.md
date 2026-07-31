@@ -234,9 +234,61 @@ Content-Type: application/json
 }
 ```
 
-Pagination is deferred for the MVP.
+This request remains the legacy compatibility form.
 
-The MVP response always returns all active documents for the user.
+It returns every active document, including each complete `body`, so released CLI clients continue to work.
+
+New browser and API clients should use the bounded metadata form below.
+
+### Paginated document metadata
+
+```http
+GET /api/v1/docs?limit=50
+GET /api/v1/docs?limit=50&cursor=<opaque-cursor>
+```
+
+`limit` must be an integer from `1` to `100`.
+
+If a `cursor` is supplied without a limit, the server uses `50`.
+
+The cursor is opaque.
+
+Clients must send it back unchanged and must not build or inspect cursor values.
+
+Paginated responses are ordered by `updatedAt` descending, with document ID as a stable tie-breaker.
+
+They include metadata and a bounded excerpt, but never the complete Markdown body:
+
+```json
+{
+  "documents": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "publicId": "abcdefghijklmnopqrstuv",
+      "title": "Example",
+      "excerpt": "# Example\n\nThe beginning of the document.",
+      "tags": ["agents", "notes"],
+      "createdAt": "2026-06-28T12:00:00Z",
+      "updatedAt": "2026-06-28T12:00:00Z"
+    }
+  ],
+  "nextCursor": "opaque-value"
+}
+```
+
+`excerpt` contains at most the first 4,096 characters and exists only to support bounded list search and previews.
+
+`tags` contains valid Passage tags parsed from frontmatter in that excerpt.
+
+`nextCursor` is omitted on the final page.
+
+An empty library returns `{"documents":[]}`.
+
+Invalid limits and cursors return `400`.
+
+Opening a metadata result requires `GET /api/v1/docs/{id}` to load the complete body.
+
+All list forms enforce the authenticated owner, so cursors never grant access to another account's documents.
 
 ## Create Document
 

@@ -11,6 +11,18 @@ export function docMatchesFolder(doc: Doc, folderId: string) {
   return !isShared(doc);
 }
 
+export function editorDocTitle(doc: Doc) {
+  return doc.bodyLoaded ? titleOf(doc.body) : (doc.title || titleOf(doc.excerpt ?? ""));
+}
+
+export function editorDocTags(doc: Doc) {
+  return doc.bodyLoaded ? parseTags(doc.body) : (doc.tags ?? []);
+}
+
+export function editorDocSearchText(doc: Doc) {
+  return bodyWithoutFrontmatter(doc.bodyLoaded ? doc.body : (doc.excerpt ?? ""));
+}
+
 export function compareDocsBySidebarOrder(a: IndexedDoc, b: IndexedDoc) {
   const pinned = Number(Boolean(b.doc.pinned)) - Number(Boolean(a.doc.pinned));
   if (pinned) return pinned;
@@ -38,13 +50,13 @@ export function visibleEditorDocs(
   const query = filter.trim().toLowerCase();
   return (docsReady ? docs.map((doc, index) => ({ doc, index })) : [])
     .filter(({ doc }) => {
-      const tags = parseTags(doc.body);
+      const tags = editorDocTags(doc);
       if (!docMatchesFolder(doc, selectedFolder)) return false;
       if (tagFilterQuery && !tags.some((tag) => tag.includes(tagFilterQuery))) return false;
       if (!query) return true;
       return (
-        titleOf(doc.body).toLowerCase().includes(query) ||
-        bodyWithoutFrontmatter(doc.body).toLowerCase().includes(query) ||
+        editorDocTitle(doc).toLowerCase().includes(query) ||
+        editorDocSearchText(doc).toLowerCase().includes(query) ||
         tags.some((tag) => tag.includes(query))
       );
     })

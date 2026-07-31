@@ -30,12 +30,18 @@ export default function Editor() {
   const { darkActive, theme, toggleDarkMode } = useEditorTheme();
   const {
     active,
+    activeLoadError,
+    activeLoading,
     activeId,
     billingNotice,
     createDoc: createDocument,
     deleteDoc,
     docs,
+    hasMoreDocs,
+    loadMoreDocs,
+    loadingMore,
     pendingSave,
+    retryActive,
     saveState,
     selectDoc,
     selectedFolder,
@@ -158,12 +164,15 @@ export default function Editor() {
         onClearTagFilter={clearTagFilter}
         onDeleteDoc={(id) => void deleteDoc(id)}
         onFilterChange={setFilter}
+        onLoadMore={() => void loadMoreDocs()}
         onSelectDoc={selectDoc}
         onSelectFolder={selectFolder}
         onTagFilterChange={setTagFilter}
         onToggleDarkMode={toggleDarkMode}
         onTogglePin={togglePin}
         saveState={saveState}
+        hasMoreDocs={hasMoreDocs}
+        loadingMore={loadingMore}
         selectedFolder={selectedFolder}
         sidebarOpen={sidebarOpen}
         tagFilter={tagFilter}
@@ -239,8 +248,16 @@ export default function Editor() {
         )}
 
         <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
-          {saveState === "loading" ? (
+          {saveState === "loading" || activeLoading ? (
             <PendingStatus label="Loading saved docs" />
+          ) : activeLoadError ? (
+            <div className="emptyDocuments" role="alert">
+              <h2>Document could not be loaded.</h2>
+              <p>Your saved Markdown has not been changed.</p>
+              <button type="button" className="emptyDocumentsCreate" onClick={retryActive}>
+                Try again
+              </button>
+            </div>
           ) : !active ? (
             <div className="emptyDocuments">
               <h2>No documents yet.</h2>
@@ -266,7 +283,7 @@ export default function Editor() {
           )}
         </section>
 
-        {docsReady && active && (
+        {docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
             mode={mode}

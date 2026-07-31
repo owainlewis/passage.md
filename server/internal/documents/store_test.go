@@ -9,16 +9,28 @@ import (
 
 func TestTitleOf(t *testing.T) {
 	tests := map[string]string{
-		"# Launch note\n\nBody":  "Launch note",
-		"   \nUntitled body":     "Untitled body",
-		"":                       "Untitled",
-		strings.Repeat("é", 121): strings.Repeat("é", 120),
+		"# Launch note\n\nBody":                     "Launch note",
+		"---\ntags: [agents]\n---\n\n# Tagged note": "Tagged note",
+		"   \nUntitled body":                        "Untitled body",
+		"":                                          "Untitled",
+		strings.Repeat("é", 121):                    strings.Repeat("é", 120),
 	}
 
 	for input, want := range tests {
 		if got := titleOf(input); got != want {
 			t.Fatalf("titleOf(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestTagsOf(t *testing.T) {
+	body := "---\ntags: [agents, product-notes, agents, Bad]\n---\n\n# One"
+	tags := tagsOf(body)
+	if strings.Join(tags, ",") != "agents,product-notes" {
+		t.Fatalf("tagsOf() = %q", tags)
+	}
+	if tags := tagsOf("# No frontmatter"); len(tags) != 0 {
+		t.Fatalf("tagsOf(no frontmatter) = %q", tags)
 	}
 }
 

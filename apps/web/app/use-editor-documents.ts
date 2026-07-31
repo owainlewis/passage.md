@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { apiArchiveDoc, apiCreateDoc, apiDocs, apiUpdateDoc } from "./editor-api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc } from "./editor-api";
 import { docMatchesFolder } from "./editor-list";
 import {
   Doc,
@@ -37,7 +37,13 @@ export function useEditorDocuments({
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [billingNotice, setBillingNotice] = useState("");
+  const [nextCursor, setNextCursor] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [documentLoadError, setDocumentLoadError] = useState("");
   const initialURLPublicId = useRef("");
+  const activeRequest = useRef(0);
+  const bodyRequests = useRef(new Set<string>());
+  const accountGeneration = useRef(0);
 
   useEffect(() => {
     initialURLPublicId.current = publicIdFromPath();
@@ -50,26 +56,73 @@ export function useEditorDocuments({
       return;
     }
     let cancelled = false;
+    const generation = ++accountGeneration.current;
     (async () => {
       setSaveState("loading");
+      setNextCursor("");
+      setLoadingMore(false);
       try {
-        const savedDocs = await apiDocs();
+        const firstPage = await apiDocsPage();
+        let savedDocs = firstPage.documents;
+        let cursor = firstPage.nextCursor;
+        while (initialURLPublicId.current && !savedDocs.some((doc) => doc.publicId === initialURLPublicId.current) && cursor) {
+          const page = await apiDocsPage(cursor);
+          savedDocs = [...savedDocs, ...page.documents];
+          cursor = page.nextCursor;
+        }
         if (cancelled) return;
         const urlDoc = savedDocs.find((doc) => doc.publicId === initialURLPublicId.current);
-        setDocs(savedDocs);
         const nextActive = urlDoc ?? savedDocs[0] ?? null;
+        setDocs(savedDocs);
+        setNextCursor(cursor);
         setActiveId(nextActive?.id ?? "");
         setSelectedFolder(nextActive && isShared(nextActive) ? SHARED_FOLDER : PRIVATE_FOLDER);
         setSaveState("saved");
         setPendingSave(null);
+        setLoadingMore(Boolean(cursor));
+        while (cursor && !cancelled) {
+          try {
+            const page = await apiDocsPage(cursor);
+            if (cancelled || accountGeneration.current !== generation) return;
+            setDocs((prev) => {
+              const known = new Set(prev.map((doc) => doc.id));
+              return [...prev, ...page.documents.filter((doc) => !known.has(doc.id))];
+            });
+            cursor = page.nextCursor;
+            setNextCursor(cursor);
+          } catch {
+            if (cancelled || accountGeneration.current !== generation) return;
+            setBillingNotice("Some documents could not be indexed. Load the next page to try again.");
+            break;
+          }
+        }
+        if (!cancelled) setLoadingMore(false);
       } catch {
         if (!cancelled) setSaveState("error");
       }
     })();
     return () => {
       cancelled = true;
+      accountGeneration.current += 1;
     };
   }, [userId]);
+
+  const loadDocBody = useCallback(async (doc: Doc) => {
+    if (doc.bodyLoaded || bodyRequests.current.has(doc.id)) return;
+    bodyRequests.current.add(doc.id);
+    const request = ++activeRequest.current;
+    setDocumentLoadError("");
+    try {
+      const loaded = await apiDoc(doc.id);
+      setDocs((prev) => prev.map((candidate) => (candidate.id === loaded.id ? { ...candidate, ...loaded } : candidate)));
+    } catch {
+      if (activeRequest.current === request) {
+        setDocumentLoadError(doc.id);
+      }
+    } finally {
+      bodyRequests.current.delete(doc.id);
+    }
+  }, []);
 
   useEffect(() => {
     if (!userId || !pendingSave) return;
@@ -99,6 +152,13 @@ export function useEditorDocuments({
   const active = docs.find((doc) => doc.id === activeId) ?? docs[0] ?? null;
 
   useEffect(() => {
+    if (userId && active && !active.bodyLoaded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void loadDocBody(active);
+    }
+  }, [active, loadDocBody, userId]);
+
+  useEffect(() => {
     if (!userId || saveState === "loading" || !active?.publicId) return;
     const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
     if (window.location.pathname !== nextPath) {
@@ -123,6 +183,27 @@ export function useEditorDocuments({
   function selectDoc(doc: Doc) {
     setActiveId(doc.id);
     updateEditorURL(doc, "push");
+    void loadDocBody(doc);
+  }
+
+  async function loadMoreDocs() {
+    if (!nextCursor || loadingMore) return;
+    const generation = accountGeneration.current;
+    setLoadingMore(true);
+    try {
+      const page = await apiDocsPage(nextCursor);
+      if (accountGeneration.current !== generation) return;
+      setDocs((prev) => {
+        const known = new Set(prev.map((doc) => doc.id));
+        return [...prev, ...page.documents.filter((doc) => !known.has(doc.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } catch {
+      if (accountGeneration.current !== generation) return;
+      setSaveState("error");
+    } finally {
+      if (accountGeneration.current === generation) setLoadingMore(false);
+    }
   }
 
   async function createDoc() {
@@ -200,12 +281,20 @@ export function useEditorDocuments({
 
   return {
     active,
+    activeLoadError: Boolean(active && !active.bodyLoaded && documentLoadError === active.id),
+    activeLoading: Boolean(active && !active.bodyLoaded && documentLoadError !== active.id),
     activeId,
     billingNotice,
     createDoc,
     deleteDoc,
     docs,
+    hasMoreDocs: Boolean(nextCursor),
+    loadMoreDocs,
+    loadingMore,
     pendingSave,
+    retryActive: () => {
+      if (active) void loadDocBody(active);
+    },
     saveState,
     selectDoc,
     selectedFolder,
