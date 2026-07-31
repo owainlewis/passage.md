@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
 import { Brand } from "../brand";
-import { SupportLink } from "../legal";
+import { formatDocumentCount, isNearDocumentLimit } from "../document-limits";
+import { documentLimitSupportHref, SupportLink } from "../legal";
 
 type APIToken = {
   id: string;
@@ -90,7 +91,17 @@ function AccountPage() {
   const isPro = account?.plan === "pro";
   const isCommunity = account?.source === "community";
   const hasStripeCustomer = Boolean(account?.subscription.stripeCustomerId);
+  const savedDocs = account?.usage.savedDocs ?? 0;
+  const maxSavedDocs = account?.limits.maxSavedDocs ?? 5;
+  const showLimitRequest = isPro && isNearDocumentLimit(savedDocs, maxSavedDocs);
   const [billingError, setBillingError] = useState("");
+  const [limitPurpose, setLimitPurpose] = useState("");
+  const limitSupportHref = documentLimitSupportHref(
+    auth.user?.email ?? "",
+    savedDocs,
+    maxSavedDocs,
+    limitPurpose
+  );
 
   async function startBilling(path: string) {
     setBillingError("");
@@ -137,7 +148,7 @@ function AccountPage() {
                 <div>
                   <dt>Saved documents</dt>
                   <dd>
-                    {account?.usage.savedDocs ?? 0} of {account?.limits.maxSavedDocs ?? 5}
+                    {formatDocumentCount(savedDocs)} of {formatDocumentCount(maxSavedDocs)}
                   </dd>
                 </div>
                 <div>
@@ -149,6 +160,31 @@ function AccountPage() {
                   <dd>{isCommunity ? "Included at no cost. No renewal." : formatDate(account?.subscription.currentPeriodEnd)}</dd>
                 </div>
               </dl>
+              {showLimitRequest && (
+                <div className="accountLimitRequest" id="document-limit">
+                  <p>
+                    Need more room? Higher limits are available after a short review.
+                  </p>
+                  <label htmlFor="limit-purpose">What do you need the higher limit for?</label>
+                  <textarea
+                    id="limit-purpose"
+                    className="accountLimitPurpose"
+                    value={limitPurpose}
+                    onChange={(event) => setLimitPurpose(event.target.value)}
+                    rows={3}
+                  />
+                  <a
+                    className="textButton"
+                    href={limitSupportHref}
+                    aria-disabled={!limitPurpose.trim()}
+                    onClick={(event) => {
+                      if (!limitPurpose.trim()) event.preventDefault();
+                    }}
+                  >
+                    Request a limit increase
+                  </a>
+                </div>
+              )}
               {isPro && hasStripeCustomer ? (
                 <button
                   type="button"

@@ -2480,6 +2480,53 @@ button {
   overflow-wrap: anywhere;
 }
 
+.accountLimitRequest {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--accent-tint);
+}
+
+.accountLimitRequest p {
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.accountLimitRequest label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.accountLimitPurpose {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  resize: vertical;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.4;
+}
+
+.accountLimitPurpose:focus {
+  outline: 2px solid var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.accountLimitRequest a[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .mutedLine {
   margin: 8px 0;
   color: var(--muted);

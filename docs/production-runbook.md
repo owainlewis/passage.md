@@ -49,6 +49,62 @@ If grant revocation or referral disablement fails, do not start Checkout.
 
 Keep public signup closed until the separate go-live gate is approved.
 
+## Reviewed document-limit increases
+
+The standard Pro allowance is 2,000 active documents.
+
+Free remains limited to five active documents.
+
+These stored-resource limits are independent from the shared request rate limits.
+
+Raising one account's document allowance must not change document mutation, shared HTML, or raw Markdown rate limits.
+
+Review a request before changing the account:
+
+1. Confirm the request came from the signed-in account email.
+2. Confirm the current active-document usage in the admin dashboard or account API.
+3. Ask for the intended use and requested limit, but never ask for document titles or content.
+4. Reject requests that appear to automate abuse, reselling, or request flooding.
+5. Choose the smallest reasonable higher limit.
+
+Use an authenticated owner session on `https://passage.md` to read the effective account first:
+
+```js
+await fetch("/api/v1/admin/users/customer%40example.com/account", {
+  credentials: "include"
+}).then((response) => response.json())
+```
+
+For Stripe, community, or owner Pro accounts, set only the reviewed document limit:
+
+```js
+await fetch("/api/v1/admin/users/customer%40example.com/account", {
+  method: "PATCH",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ maxSavedDocs: 5000 })
+}).then((response) => response.json())
+```
+
+For a manually managed Pro account, preserve its manual plan in the same update:
+
+```js
+await fetch("/api/v1/admin/users/customer%40example.com/account", {
+  method: "PATCH",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ plan: "pro", maxSavedDocs: 5000 })
+}).then((response) => response.json())
+```
+
+Verify the returned `limits.maxSavedDocs`, ask the customer to refresh Passage, and record the account email, approved limit, purpose, reviewer, and date in the support record.
+
+Do not record document titles, excerpts, tags, or bodies.
+
+To remove an override, first read the account source.
+
+Only clear both override fields when doing so will not remove manually granted Pro access.
+
 ## Scope
 
 This runbook covers the initial single-region Passage deployment in `passage-md-prod`.

@@ -35,6 +35,9 @@ func TestFromEnvDefaultsPort(t *testing.T) {
 	if cfg.CookieSecure {
 		t.Fatal("CookieSecure = true, want false")
 	}
+	if cfg.Billing.FreeMaxSavedDocs != 5 || cfg.Billing.ProMaxSavedDocs != 2000 {
+		t.Fatalf("saved document defaults = %d/%d, want 5/2000", cfg.Billing.FreeMaxSavedDocs, cfg.Billing.ProMaxSavedDocs)
+	}
 }
 
 func TestFromEnvLoadsPositiveDatabaseConnectionLimit(t *testing.T) {

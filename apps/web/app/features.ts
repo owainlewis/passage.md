@@ -23,7 +23,7 @@ export const FEATURE_REQUIREMENTS: Record<Feature, Plan> = {
 
 export const PLAN_FEATURES: Record<Plan, string[]> = {
   free: ["5 saved documents", "Preview, Mermaid, and copy", "Light and dark mode"],
-  pro: ["1,000 saved documents", "Share read-only links", "Export and raw .md URLs", "CLI and API for agents"]
+  pro: ["Save thousands of documents", "Share read-only links", "Export and raw .md URLs", "CLI and API for agents"]
 };
 
 const PLAN_RANK: Record<Plan, number> = {

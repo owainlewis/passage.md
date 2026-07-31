@@ -16,21 +16,21 @@ const defaultDocBody = "# Markdown for agents and humans\n\nWelcome to passage."
 const proAccount = {
   plan: "pro",
   source: "stripe",
-  limits: { maxSavedDocs: 1000 },
+  limits: { maxSavedDocs: 2000 },
   usage: { savedDocs: 1 },
   subscription: { stripeCustomerId: "cus_test", status: "active", cancelAtPeriodEnd: false }
 };
 const manualProAccount = {
   plan: "pro",
   source: "manual",
-  limits: { maxSavedDocs: 1000 },
+  limits: { maxSavedDocs: 2000 },
   usage: { savedDocs: 1 },
   subscription: { status: "active", cancelAtPeriodEnd: false }
 };
 const communityProAccount = {
   plan: "pro",
   source: "community",
-  limits: { maxSavedDocs: 1000 },
+  limits: { maxSavedDocs: 2000 },
   usage: { savedDocs: 1 },
   subscription: { cancelAtPeriodEnd: false }
 };
@@ -142,6 +142,7 @@ describe("Landing", () => {
     }
     expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
+    expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
     expect(screen.getByText(/Renews monthly until cancelled/)).toBeInTheDocument();
     expect(screen.getByText(/Operated by/)).toBeInTheDocument();
     for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
@@ -299,6 +300,38 @@ describe("Account", () => {
       "/api/v1/billing/portal",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("shows exact near-limit Pro usage and a private prefilled support request", async () => {
+    const nearLimitAccount = { ...proAccount, usage: { savedDocs: 1800 } };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: nearLimitAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/api-tokens" && !init?.method) {
+        return new Response(JSON.stringify({ tokens: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Account />);
+
+    expect(await screen.findByText("1,800 of 2,000")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("What do you need the higher limit for?"), {
+      target: { value: "A larger private research library" }
+    });
+    const requestLink = screen.getByRole("link", { name: "Request a limit increase" });
+    const href = decodeURIComponent(requestLink.getAttribute("href") ?? "");
+    expect(href).toContain("Passage account: writer@example.com");
+    expect(href).toContain("Current usage: 1800 of 2000 saved documents");
+    expect(href).toContain("Purpose for the higher limit: A larger private research library");
+    expect(href).not.toContain("# One");
+    expect(href).not.toContain("Private server draft");
   });
 
   it("shows when a cancelled Stripe subscription's access ends", async () => {
@@ -1077,6 +1110,68 @@ describe("Write (editor)", () => {
       "/api/v1/docs",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("offers a reviewed limit increase when the Pro quota response blocks creation", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({
+            authenticated: true,
+            user: { id: "user-1", email: "writer@example.com" },
+            account: { ...proAccount, usage: { savedDocs: 2000 } }
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.startsWith("/api/v1/docs?") && method === "GET") {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
+          status: 200
+        });
+      }
+      if (url === "/api/v1/docs" && method === "POST") {
+        return new Response(JSON.stringify({ error: "saved document limit reached" }), { status: 402 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+
+    expect(await screen.findByText(/reached your 2,000 saved-document limit/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Request more" })).toHaveAttribute("href", "/account#document-limit");
+  });
+
+  it("offers a reviewed limit increase in the editor before a Pro account reaches its limit", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({
+            authenticated: true,
+            user: { id: "user-1", email: "writer@example.com" },
+            account: { ...proAccount, usage: { savedDocs: 1800 } }
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.startsWith("/api/v1/docs?") && method === "GET") {
+        return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderWrite();
+
+    expect(screen.getByText("You're using 1,800 of 2,000 saved documents.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Request more" })).toHaveAttribute("href", "/account#document-limit");
   });
 
   it("blocks sharing for free users", async () => {

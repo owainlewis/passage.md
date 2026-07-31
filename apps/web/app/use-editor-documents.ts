@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc } from "./editor-api";
 import { docMatchesFolder } from "./editor-list";
 import {
@@ -17,6 +17,8 @@ export type PendingSave = {
   id: string;
   body: string;
 };
+
+export type BillingNoticeAction = "upgrade" | "limit" | null;
 
 type EditorDocumentsOptions = {
   userId?: string;
@@ -36,7 +38,8 @@ export function useEditorDocuments({
   const [selectedFolder, setSelectedFolder] = useState(PRIVATE_FOLDER);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
-  const [billingNotice, setBillingNotice] = useState("");
+  const [billingNotice, setBillingNoticeMessage] = useState("");
+  const [billingNoticeAction, setBillingNoticeAction] = useState<BillingNoticeAction>(null);
   const [nextCursor, setNextCursor] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [documentLoadError, setDocumentLoadError] = useState("");
@@ -44,6 +47,11 @@ export function useEditorDocuments({
   const activeRequest = useRef(0);
   const bodyRequests = useRef(new Set<string>());
   const accountGeneration = useRef(0);
+
+  const setBillingNotice: Dispatch<SetStateAction<string>> = useCallback((value) => {
+    setBillingNoticeAction(null);
+    setBillingNoticeMessage(value);
+  }, []);
 
   useEffect(() => {
     initialURLPublicId.current = publicIdFromPath();
@@ -105,7 +113,7 @@ export function useEditorDocuments({
       cancelled = true;
       accountGeneration.current += 1;
     };
-  }, [userId]);
+  }, [setBillingNotice, userId]);
 
   const loadDocBody = useCallback(async (doc: Doc) => {
     if (doc.bodyLoaded || bodyRequests.current.has(doc.id)) return;
@@ -208,8 +216,7 @@ export function useEditorDocuments({
 
   async function createDoc() {
     if (docs.length >= maxSavedDocs) {
-      const prefix = plan === "free" ? "Free includes" : "Your plan includes";
-      setBillingNotice(`${prefix} ${maxSavedDocs} saved documents. Upgrade for more.`);
+      showDocumentLimit();
       return;
     }
     setBillingNotice("");
@@ -224,9 +231,26 @@ export function useEditorDocuments({
       requestAnimationFrame(focusEditor);
       return doc;
     } catch (err) {
-      setBillingNotice(err instanceof Error ? err.message : "Document could not be created");
-      setSaveState("error");
+      const message = err instanceof Error ? err.message : "Document could not be created";
+      if (message.includes("saved document limit reached")) {
+        showDocumentLimit();
+        setSaveState("saved");
+      } else {
+        setBillingNotice(message);
+        setSaveState("error");
+      }
     }
+  }
+
+  function showDocumentLimit() {
+    setBillingNoticeAction(plan === "free" ? "upgrade" : "limit");
+    if (plan === "free") {
+      setBillingNoticeMessage(`Free includes ${maxSavedDocs} saved documents. Upgrade for more.`);
+      return;
+    }
+    setBillingNoticeMessage(
+      `You've reached your ${new Intl.NumberFormat("en-US").format(maxSavedDocs)} saved-document limit. Request a reviewed limit increase.`
+    );
   }
 
   function togglePin(id: string) {
@@ -285,6 +309,7 @@ export function useEditorDocuments({
     activeLoading: Boolean(active && !active.bodyLoaded && documentLoadError !== active.id),
     activeId,
     billingNotice,
+    billingNoticeAction,
     createDoc,
     deleteDoc,
     docs,

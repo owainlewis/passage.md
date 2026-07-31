@@ -551,6 +551,20 @@ func TestConcurrentDocumentCreatesHonorEffectiveLimits(t *testing.T) {
 			if savedDocs != test.wantDocs {
 				t.Fatalf("saved docs = %d, want %d", savedDocs, test.wantDocs)
 			}
+
+			var documentID string
+			if err := db.QueryRow(ctx, `SELECT id::text FROM documents WHERE owner_user_id = $1 AND archived_at IS NULL LIMIT 1`, userID).Scan(&documentID); err != nil {
+				t.Fatal(err)
+			}
+			if status := doIntegrationStatus(t, http.MethodPatch, server.URL+"/api/v1/docs/"+documentID, `{"body":"# Edited at limit"}`, cookies, ""); status != http.StatusOK {
+				t.Fatalf("edit-at-limit status = %d", status)
+			}
+			if status := doIntegrationStatus(t, http.MethodDelete, server.URL+"/api/v1/docs/"+documentID, "", cookies, ""); status != http.StatusNoContent {
+				t.Fatalf("delete-at-limit status = %d", status)
+			}
+			if status := doIntegrationStatus(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Replacement"}`, cookies, ""); status != http.StatusCreated {
+				t.Fatalf("replacement status = %d", status)
+			}
 		})
 	}
 }

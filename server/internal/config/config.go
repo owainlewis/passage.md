@@ -100,7 +100,7 @@ func FromEnv() Config {
 		Billing: BillingConfig{
 			StripeBillingEnabled: boolFromEnv(os.Getenv("STRIPE_BILLING_ENABLED")),
 			FreeMaxSavedDocs:     intOrDefault(os.Getenv("PASSAGE_FREE_MAX_SAVED_DOCS"), 5),
-			ProMaxSavedDocs:      intOrDefault(os.Getenv("PASSAGE_PRO_MAX_SAVED_DOCS"), 1000),
+			ProMaxSavedDocs:      intOrDefault(os.Getenv("PASSAGE_PRO_MAX_SAVED_DOCS"), 2000),
 			OwnerEmails:          emailListOrDefault(os.Getenv("PASSAGE_OWNER_EMAILS"), []string{"owain@owainlewis.com"}),
 			StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 			StripeMonthlyPrice:   valueOrDefault(os.Getenv("STRIPE_MONTHLY_PRICE_ID"), "price_1TpAeQRiiEo9jrWNlLdI9HwB"),
