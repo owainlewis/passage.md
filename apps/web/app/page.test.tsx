@@ -133,14 +133,23 @@ afterEach(() => {
 });
 
 describe("Landing", () => {
-  it("renders the hero and a call to action", () => {
+  it("shows the product loop, current pricing, and account actions for Pro users", async () => {
     render(<Landing />);
 
     expect(screen.getByText("Markdown writing for humans and agents")).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
-    expect(screen.getAllByRole("link", { name: "Start writing" }).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Passage Pro is active.")).toBeInTheDocument();
+    for (const workspaceLink of screen.getAllByRole("link", { name: "Open workspace" })) {
+      expect(workspaceLink).toHaveAttribute("href", "/write");
+    }
+    expect(screen.getAllByRole("link", { name: "Account" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Account settings" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "Go Pro" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Upgrade" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "One document. Three useful surfaces." })).toBeInTheDocument();
+    expect(screen.getAllByText("passage cat <doc-id>").length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
     expect(screen.getByText(/Renews monthly until cancelled/)).toBeInTheDocument();
@@ -160,6 +169,28 @@ describe("Landing", () => {
     ]) {
       expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     }
+  });
+
+  it("offers the account upgrade path to signed-in Free users", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            authenticated: true,
+            user: { id: "user-1", email: "writer@example.com" },
+            account: freeAccount
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    render(<Landing />);
+
+    expect(await screen.findByText("Free includes five saved documents.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "Go Pro" })).toHaveAttribute("href", "#pricing");
   });
 
   it("shows public signup actions only when the server enables them", async () => {
@@ -184,6 +215,58 @@ describe("Landing", () => {
       expect(link).toHaveAttribute("href", "/signup");
     }
     expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/signup");
+  });
+
+  it("offers sign in without advertising closed public signup", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            authenticated: false,
+            publicSignupEnabled: false,
+            policyVersion: "2026-07-31"
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    render(<Landing />);
+
+    expect(await screen.findByText("Public signup is not open yet. Existing customers can sign in.")).toBeInTheDocument();
+    for (const link of screen.getAllByRole("link", { name: "Sign in" })) {
+      expect(link.getAttribute("href")).toMatch(/^\/login\?next=/);
+    }
+    expect(screen.queryByRole("link", { name: "Create free account" })).not.toBeInTheDocument();
+  });
+
+  it("does not guess the signup state while the session check is pending", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+
+    render(<Landing />);
+
+    for (const link of screen.getAllByRole("link", { name: "Start writing" })) {
+      expect(link).toHaveAttribute("href", "/write");
+    }
+    expect(screen.queryByText(/Public signup is/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create free account" })).not.toBeInTheDocument();
+  });
+
+  it("does not claim signup is closed when the session check fails", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: "unavailable" }), { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Landing />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/me", { credentials: "include" }));
+    for (const link of screen.getAllByRole("link", { name: "Start writing" })) {
+      expect(link).toHaveAttribute("href", "/write");
+    }
+    expect(screen.queryByText(/Public signup is/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create free account" })).not.toBeInTheDocument();
   });
 });
 
