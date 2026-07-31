@@ -224,18 +224,17 @@ Pro makes it your writing system.
 
 The product should feel cheap enough that upgrading is obvious once someone likes it.
 
-Decision date: 2026-06-27.
+Decision date: 2026-07-31.
 
 The current target is:
 
 ```txt
-$6.99/month
-$59/year launch target or $69/year standard target
+$5/month
 ```
 
-Use one Pro product with monthly and annual billing.
+Use one monthly Pro product for the current launch.
 
-The annual price should save roughly twenty to thirty percent.
+Consider annual billing only after observing real customer demand and retention.
 
 The early posture should be low-friction.
 
@@ -245,18 +244,11 @@ It should not feel like enterprise software.
 
 It should not need procurement or a team budget.
 
-At $6.99/month:
+At $5/month:
 
 ```txt
-286 customers = about $2k/month
-715 customers = about $5k/month
-```
-
-At $59/year:
-
-```txt
-407 annual customers = about $2k/month equivalent
-1,017 annual customers = about $5k/month equivalent
+400 customers = about $2k/month
+1,000 customers = about $5k/month
 ```
 
 Those are hard numbers, but they are not absurd numbers for a creator-led software product.

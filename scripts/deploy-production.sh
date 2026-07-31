@@ -33,6 +33,13 @@ service_extra_args=()
 case "${STRIPE_BILLING_MODE}" in
   preserve)
     ;;
+  update-price)
+    if [[ ! "${STRIPE_MONTHLY_PRICE_ID:-}" =~ ^price_[[:alnum:]]+$ ]]; then
+      echo "STRIPE_MONTHLY_PRICE_ID must be a Stripe price ID when updating the price" >&2
+      exit 1
+    fi
+    service_env_vars+=",STRIPE_MONTHLY_PRICE_ID=${STRIPE_MONTHLY_PRICE_ID}"
+    ;;
   enable)
     stripe_variables=(
       STRIPE_MONTHLY_PRICE_ID
@@ -80,7 +87,7 @@ case "${STRIPE_BILLING_MODE}" in
     )
     ;;
   *)
-    echo "STRIPE_BILLING_MODE must be preserve, enable, or disable" >&2
+    echo "STRIPE_BILLING_MODE must be preserve, update-price, enable, or disable" >&2
     exit 1
     ;;
 esac

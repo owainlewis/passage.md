@@ -202,7 +202,7 @@ function LandingContent() {
                 Pro<span className="planTag">Monthly</span>
               </p>
               <p className="planPrice">
-                $6.99<span className="planPer"> USD / month</span>
+                $5<span className="planPer"> USD / month</span>
               </p>
               <ul className="planList">
                 <li>Everything in Free</li>

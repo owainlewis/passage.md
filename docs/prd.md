@@ -170,9 +170,10 @@ The current pricing direction is:
 | Plan | Price | Boundary |
 | --- | --- | --- |
 | Free | `$0` | Small hosted workflow. |
-| Pro monthly | `$6.99/month` | More docs, higher limits, and paid features. |
-| Pro annual | `$59/year` launch target, or `$69/year` standard target. | Same as Pro monthly with a discount. |
+| Pro monthly | `$5/month` | More docs, higher limits, and paid features. |
 
 Exact paid boundaries live in GitHub Issues.
+
+Annual billing is not part of the current launch offer.
 
 Do not treat this pricing section as implementation scope.
