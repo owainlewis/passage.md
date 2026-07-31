@@ -7,12 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       stripe_billing_mode:
-        description: Preserve, enable from repository variables, or fully disable live Stripe billing
+        description: Preserve, update the monthly price, enable from repository variables, or fully disable live Stripe billing
         required: true
         default: preserve
         type: choice
         options:
           - preserve
+          - update-price
           - enable
           - disable
 
@@ -34,6 +35,7 @@ env:
   IMAGE_NAME: passage-md
   APP_BASE_URL: https://passage.md
   RESEND_FROM: passage.md <mail@passage.md>
+  STRIPE_MONTHLY_PRICE_ID: price_1TzDrwRaE2nmr5cQ5JwLldXH
   WORKLOAD_IDENTITY_PROVIDER: projects/311711068171/locations/global/workloadIdentityPools/github/providers/passage-md
   DEPLOY_SERVICE_ACCOUNT: passage-md-build@passage-md-prod.iam.gserviceaccount.com
 
@@ -182,8 +184,8 @@ jobs:
           IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           COMMIT_SHA: ${{ github.sha }}
           PUBLIC_SIGNUP_ENABLED: ${{ env.PUBLIC_SIGNUP_ENABLED }}
-          STRIPE_BILLING_MODE: ${{ inputs.stripe_billing_mode || 'preserve' }}
-          STRIPE_MONTHLY_PRICE_ID: ${{ vars.STRIPE_MONTHLY_PRICE_ID }}
+          STRIPE_BILLING_MODE: ${{ inputs.stripe_billing_mode || 'update-price' }}
+          STRIPE_MONTHLY_PRICE_ID: ${{ env.STRIPE_MONTHLY_PRICE_ID }}
           STRIPE_SECRET_KEY_SECRET: ${{ vars.STRIPE_SECRET_KEY_SECRET }}
           STRIPE_SECRET_KEY_VERSION: ${{ vars.STRIPE_SECRET_KEY_VERSION }}
           STRIPE_WEBHOOK_SECRET_SECRET: ${{ vars.STRIPE_WEBHOOK_SECRET_SECRET }}

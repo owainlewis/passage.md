@@ -88,6 +88,34 @@ traffic_update="$(sed -n '4p' "${PASSAGE_GCLOUD_LOG}")"
 [[ "${traffic_update}" == *"--to-revisions=${PASSAGE_DEPLOYED_REVISION}=100"* ]]
 
 : >"${PASSAGE_GCLOUD_LOG}"
+export STRIPE_BILLING_MODE="update-price"
+export STRIPE_MONTHLY_PRICE_ID="price_123monthly"
+"${script_dir}/deploy-production.sh"
+price_update_service_deploy="$(sed -n '3p' "${PASSAGE_GCLOUD_LOG}")"
+[[ "${price_update_service_deploy}" == *"STRIPE_MONTHLY_PRICE_ID=${STRIPE_MONTHLY_PRICE_ID}"* ]]
+[[ "${price_update_service_deploy}" != *"STRIPE_BILLING_ENABLED="* ]]
+[[ "${price_update_service_deploy}" != *"STRIPE_SECRET_KEY="* ]]
+[[ "${price_update_service_deploy}" != *"STRIPE_WEBHOOK_SECRET="* ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+unset STRIPE_MONTHLY_PRICE_ID
+if "${script_dir}/deploy-production.sh"; then
+  echo "deployment updated Stripe without a monthly price ID" >&2
+  exit 1
+fi
+[[ ! -s "${PASSAGE_GCLOUD_LOG}" ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export STRIPE_MONTHLY_PRICE_ID="not-a-price"
+if "${script_dir}/deploy-production.sh"; then
+  echo "deployment updated Stripe with an invalid monthly price ID" >&2
+  exit 1
+fi
+[[ ! -s "${PASSAGE_GCLOUD_LOG}" ]]
+
+: >"${PASSAGE_GCLOUD_LOG}"
+export STRIPE_BILLING_MODE="preserve"
+unset STRIPE_MONTHLY_PRICE_ID
 export PASSAGE_FAIL_MIGRATION=true
 if "${script_dir}/deploy-production.sh"; then
   echo "deployment succeeded after a failed migration" >&2
@@ -120,6 +148,7 @@ fi
 : >"${PASSAGE_GCLOUD_LOG}"
 unset PASSAGE_FAIL_SERVICE_DEPLOY
 unset STRIPE_BILLING_MODE
+unset STRIPE_MONTHLY_PRICE_ID
 if "${script_dir}/deploy-production.sh"; then
   echo "deployment succeeded without a Stripe billing mode" >&2
   exit 1
