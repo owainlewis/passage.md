@@ -104,10 +104,10 @@ func TestBillingCheckoutCreatesMonthlyStripeSession(t *testing.T) {
 	if got := checkoutForm.Get("consent_collection[terms_of_service]"); got != "required" {
 		t.Fatalf("Terms consent = %q, want required", got)
 	}
-	if got := checkoutForm.Get("metadata[passage_policy_version]"); got != "2026-07-29" {
+	if got := checkoutForm.Get("metadata[passage_policy_version]"); got != "2026-07-31" {
 		t.Fatalf("Checkout policy version = %q", got)
 	}
-	if got := checkoutForm.Get("subscription_data[metadata][passage_policy_version]"); got != "2026-07-29" {
+	if got := checkoutForm.Get("subscription_data[metadata][passage_policy_version]"); got != "2026-07-31" {
 		t.Fatalf("subscription policy version = %q", got)
 	}
 }

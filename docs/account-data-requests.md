@@ -166,7 +166,7 @@ Before public paid signup:
 1. Confirm the live Stripe legal identity is `Gradientwork Limited`, the public business name is `Passage`, and the business website is `https://passage.md`.
 2. Set `owain@gradientwork.com` as the live support email and set the public support URL.
 3. Confirm the statement descriptor is recognisable as `PASSAGE` or `PASSAGE.MD`.
-4. Confirm the live product has one recurring price of $6.99 USD per month.
+4. Confirm the live product has one recurring price of $5 USD per month.
 5. Confirm the portal schedules cancellation for the end of the current period and lets customers view invoices and payment methods.
 6. Confirm Checkout, receipts, invoices, and the portal identify the same merchant and support contact as the site.
 7. Have the founder review all public copy and workflow behavior.

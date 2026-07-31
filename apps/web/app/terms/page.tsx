@@ -48,7 +48,7 @@ export default function Terms() {
       <section>
         <h2>Paid subscriptions</h2>
         <p>
-          Passage Pro costs $6.99 USD per month.
+          Passage Pro costs $5 USD per month.
           Stripe charges the saved payment method automatically each month until cancellation.
           Taxes may be added where required.
         </p>

@@ -4,7 +4,7 @@ import { Brand } from "./brand";
 export const MERCHANT_NAME = "Gradientwork Limited";
 export const MERCHANT_URL = "https://gradientwork.com";
 export const SUPPORT_EMAIL = "owain@gradientwork.com";
-export const POLICY_DATE = "29 July 2026";
+export const POLICY_DATE = "31 July 2026";
 
 export function MerchantLink() {
   return <a href={MERCHANT_URL}>{MERCHANT_NAME}</a>;

@@ -22,7 +22,7 @@ func TestRegisterCreatesHttpOnlySessionAndMeReadsIt(t *testing.T) {
 	service.now = func() time.Time { return time.Unix(100, 0).UTC() }
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"USER@example.com","password":"password123","policyVersion":"2026-07-29"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"USER@example.com","password":"password123","policyVersion":"2026-07-31"}`))
 	req.Header.Set("Content-Type", "application/json")
 	service.Register(rec, req)
 
@@ -54,7 +54,7 @@ func TestRegisterCreatesHttpOnlySessionAndMeReadsIt(t *testing.T) {
 	if !strings.Contains(me.Body.String(), `"email":"user@example.com"`) {
 		t.Fatalf("me body = %s", me.Body.String())
 	}
-	if store.policyVersion != "2026-07-29" || !store.policyAcceptedAt.Equal(service.now()) {
+	if store.policyVersion != "2026-07-31" || !store.policyAcceptedAt.Equal(service.now()) {
 		t.Fatalf("policy acceptance = %q/%s", store.policyVersion, store.policyAcceptedAt)
 	}
 }
@@ -63,7 +63,7 @@ func TestLoginRejectsWrongPassword(t *testing.T) {
 	store := newMemoryStore()
 	service := NewService(store, "test-secret", false)
 	register := httptest.NewRecorder()
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-29"}`))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-31"}`))
 	registerReq.Header.Set("Content-Type", "application/json")
 	service.Register(register, registerReq)
 
@@ -332,7 +332,7 @@ func TestRegisterRequiresJSONContentTypeAndSameOrigin(t *testing.T) {
 	service := NewService(newMemoryStore(), "test-secret", false)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-29"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-31"}`))
 	req.Header.Set("Content-Type", "text/plain")
 	service.Register(rec, req)
 	if rec.Code != http.StatusUnsupportedMediaType {
@@ -340,7 +340,7 @@ func TestRegisterRequiresJSONContentTypeAndSameOrigin(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-29"}`))
+	req = httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-31"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://evil.test")
 	service.Register(rec, req)
@@ -354,7 +354,7 @@ func TestLogoutDeletesServerSession(t *testing.T) {
 	service := NewService(store, "test-secret", false)
 
 	register := httptest.NewRecorder()
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-29"}`))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-31"}`))
 	registerReq.Header.Set("Content-Type", "application/json")
 	service.Register(register, registerReq)
 	cookie := register.Result().Cookies()[0]
@@ -381,7 +381,7 @@ func TestLogoutReportsDeleteFailure(t *testing.T) {
 	service := NewService(store, "test-secret", false)
 
 	register := httptest.NewRecorder()
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-29"}`))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"u@example.com","password":"password123","policyVersion":"2026-07-31"}`))
 	registerReq.Header.Set("Content-Type", "application/json")
 	service.Register(register, registerReq)
 	cookie := register.Result().Cookies()[0]
