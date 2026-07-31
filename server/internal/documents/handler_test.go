@@ -2,11 +2,13 @@ package documents
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 )
@@ -72,6 +74,60 @@ func TestHandlerUsesAuthenticatedOwnerForCreateAndList(t *testing.T) {
 	}
 	if store.ownerID != "user-1" {
 		t.Fatalf("list owner = %q", store.ownerID)
+	}
+}
+
+func TestHandlerListsBoundedMetadataPagesWithoutBodies(t *testing.T) {
+	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	store := &fakeStore{page: []DocumentMetadata{
+		{ID: "11111111-1111-1111-1111-111111111113", Title: "Three", Excerpt: "third", UpdatedAt: now},
+		{ID: "11111111-1111-1111-1111-111111111112", Title: "Two", Excerpt: "second", UpdatedAt: now.Add(-time.Minute)},
+		{ID: "11111111-1111-1111-1111-111111111111", Title: "One", Excerpt: "first", UpdatedAt: now.Add(-2 * time.Minute)},
+	}}
+	handler := NewHandler(store)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs?limit=2", nil)
+
+	handler.List(rec, req, auth.User{ID: "user-1"})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if store.pageLimit != 3 || store.ownerID != "user-1" {
+		t.Fatalf("page owner/limit = %q/%d", store.ownerID, store.pageLimit)
+	}
+	var response documentPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Documents) != 2 || response.NextCursor == "" {
+		t.Fatalf("documents/cursor = %d/%q", len(response.Documents), response.NextCursor)
+	}
+	if strings.Contains(rec.Body.String(), `"body"`) {
+		t.Fatalf("paginated response included a body: %s", rec.Body.String())
+	}
+	cursor, err := decodeListCursor(response.NextCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor.ID != response.Documents[1].ID || !cursor.UpdatedAt.Equal(response.Documents[1].UpdatedAt) {
+		t.Fatalf("cursor = %+v, want last returned document", cursor)
+	}
+}
+
+func TestHandlerRejectsInvalidDocumentPagination(t *testing.T) {
+	handler := NewHandler(&fakeStore{})
+	for _, target := range []string{
+		"http://passage.test/api/v1/docs?limit=0",
+		"http://passage.test/api/v1/docs?limit=101",
+		"http://passage.test/api/v1/docs?limit=nope",
+		"http://passage.test/api/v1/docs?cursor=not-a-cursor",
+	} {
+		rec := httptest.NewRecorder()
+		handler.List(rec, httptest.NewRequest(http.MethodGet, target, nil), auth.User{ID: "user-1"})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, body = %s", target, rec.Code, rec.Body.String())
+		}
 	}
 }
 
@@ -350,11 +406,21 @@ type fakeStore struct {
 	publicID     string
 	shareToken   *string
 	publicDoc    Document
+	page         []DocumentMetadata
+	pageLimit    int
+	pageCursor   *ListCursor
 }
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {
 	s.ownerID = ownerID
 	return []Document{{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}}, nil
+}
+
+func (s *fakeStore) ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error) {
+	s.ownerID = ownerID
+	s.pageLimit = limit
+	s.pageCursor = cursor
+	return s.page, nil
 }
 
 func (s *fakeStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {

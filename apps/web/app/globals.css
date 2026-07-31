@@ -604,6 +604,28 @@ button {
   color: var(--muted);
 }
 
+.docListMore {
+  width: calc(100% - 1rem);
+  margin: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.docListMore:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+
+.docListMore:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 /* -------------------------------------------------------------------- main */
 
 .main {

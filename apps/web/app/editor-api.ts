@@ -1,12 +1,38 @@
 import { Doc } from "./editor-model";
 
-export async function apiDocs(): Promise<Doc[]> {
-  const res = await fetch("/api/v1/docs", { credentials: "include" });
+export type DocumentPage = {
+  documents: Doc[];
+  nextCursor: string;
+};
+
+export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
+  const query = new URLSearchParams({ limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  const res = await fetch(`/api/v1/docs?${query}`, { credentials: "include" });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(typeof body.error === "string" ? body.error : "Documents could not be loaded");
   }
-  return Array.isArray(body.documents) ? body.documents : [];
+  const documents = Array.isArray(body.documents)
+    ? body.documents.map((doc: Doc) => ({
+        ...doc,
+        body: typeof doc.body === "string" ? doc.body : "",
+        bodyLoaded: typeof doc.body === "string"
+      }))
+    : [];
+  return {
+    documents,
+    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : ""
+  };
+}
+
+export async function apiDoc(id: string): Promise<Doc> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}`, { credentials: "include" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof body.error === "string" ? body.error : "Document could not be loaded");
+  }
+  return { ...(body as Doc), bodyLoaded: true };
 }
 
 export async function apiCreateDoc(body: string): Promise<Doc> {
@@ -20,7 +46,7 @@ export async function apiCreateDoc(body: string): Promise<Doc> {
   if (!res.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be created");
   }
-  return payload as Doc;
+  return { ...(payload as Doc), bodyLoaded: true };
 }
 
 export async function apiUpdateDoc(id: string, body: string): Promise<Doc> {
@@ -34,7 +60,7 @@ export async function apiUpdateDoc(id: string, body: string): Promise<Doc> {
   if (!res.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be saved");
   }
-  return payload as Doc;
+  return { ...(payload as Doc), bodyLoaded: true };
 }
 
 export async function apiArchiveDoc(id: string): Promise<void> {

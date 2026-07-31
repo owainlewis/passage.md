@@ -1,5 +1,9 @@
 # Passage CLI
 
+The released CLI uses the legacy `GET /api/v1/docs` response, which continues to return complete document bodies.
+
+Browser pagination does not change existing CLI commands.
+
 The Passage CLI lets humans and agents work with hosted Markdown from a terminal.
 
 The public repo is `owainlewis/passage-cli`.

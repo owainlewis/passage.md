@@ -147,6 +147,11 @@ func (s *routeDocumentStore) List(ctx context.Context, ownerID string) ([]docume
 	return []documents.Document{}, nil
 }
 
+func (s *routeDocumentStore) ListPage(ctx context.Context, ownerID string, limit int, cursor *documents.ListCursor) ([]documents.DocumentMetadata, error) {
+	s.ownerID = ownerID
+	return []documents.DocumentMetadata{}, nil
+}
+
 func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (documents.Document, error) {
 	s.ownerID = ownerID
 	s.body = body

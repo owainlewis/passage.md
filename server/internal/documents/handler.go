@@ -2,10 +2,13 @@ package documents
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
@@ -18,6 +21,8 @@ type Handler struct {
 const (
 	MaxDocumentBodyBytes    = 512 * 1024
 	maxDocumentRequestBytes = MaxDocumentBodyBytes + 4096
+	defaultDocumentPageSize = 50
+	maxDocumentPageSize     = 100
 )
 
 func NewHandler(store documentStore) *Handler {
@@ -26,6 +31,7 @@ func NewHandler(store documentStore) *Handler {
 
 type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
+	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
 	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, body string) (Document, error)
@@ -36,6 +42,10 @@ type documentStore interface {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request, user auth.User) {
+	if r.URL.Query().Has("limit") || r.URL.Query().Has("cursor") {
+		h.listPage(w, r, user)
+		return
+	}
 	docs, err := h.store.List(r.Context(), user.ID)
 	if err != nil {
 		httpx.WriteInternalError(w, r, "list documents", err, "documents could not be loaded")
@@ -45,6 +55,69 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request, user auth.User) {
 		docs = []Document{}
 	}
 	writeJSON(w, http.StatusOK, map[string][]Document{"documents": docs})
+}
+
+type documentPageResponse struct {
+	Documents  []DocumentMetadata `json:"documents"`
+	NextCursor string             `json:"nextCursor,omitempty"`
+}
+
+type encodedListCursor struct {
+	UpdatedAt string `json:"updatedAt"`
+	ID        string `json:"id"`
+}
+
+func (h *Handler) listPage(w http.ResponseWriter, r *http.Request, user auth.User) {
+	limit := defaultDocumentPageSize
+	if value := r.URL.Query().Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > maxDocumentPageSize {
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	cursor, err := decodeListCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid document cursor")
+		return
+	}
+	docs, err := h.store.ListPage(r.Context(), user.ID, limit+1, cursor)
+	if err != nil {
+		httpx.WriteInternalError(w, r, "list document page", err, "documents could not be loaded")
+		return
+	}
+	response := documentPageResponse{Documents: docs}
+	if len(docs) > limit {
+		response.Documents = docs[:limit]
+		last := response.Documents[len(response.Documents)-1]
+		response.NextCursor = encodeListCursor(ListCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func encodeListCursor(cursor ListCursor) string {
+	payload, _ := json.Marshal(encodedListCursor{UpdatedAt: cursor.UpdatedAt.UTC().Format(time.RFC3339Nano), ID: cursor.ID})
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeListCursor(value string) (*ListCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	var encoded encodedListCursor
+	if err := json.Unmarshal(payload, &encoded); err != nil || !validUUID(encoded.ID) {
+		return nil, errors.New("invalid cursor")
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, encoded.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &ListCursor{UpdatedAt: updatedAt, ID: encoded.ID}, nil
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User, maxSavedDocs int) {

@@ -1,8 +1,8 @@
 "use client";
 
 import { Brand } from "./brand";
-import { snippetOf, titleOf } from "./doc-utils";
-import { editorFolderRows, visibleEditorDocs } from "./editor-list";
+import { snippetOf } from "./doc-utils";
+import { editorDocSearchText, editorDocTitle, editorFolderRows, visibleEditorDocs } from "./editor-list";
 import { Doc, isShared, SaveState, Theme } from "./editor-model";
 import { DocIcon, FolderIcon, PinIcon, SearchIcon } from "./icons";
 
@@ -14,12 +14,15 @@ type EditorSidebarProps = {
   onClearTagFilter: () => void;
   onDeleteDoc: (id: string) => void;
   onFilterChange: (value: string) => void;
+  onLoadMore: () => void;
   onSelectDoc: (doc: Doc) => void;
   onSelectFolder: (folderId: string) => void;
   onTagFilterChange: (value: string) => void;
   onToggleDarkMode: () => void;
   onTogglePin: (id: string) => void;
   saveState: SaveState;
+  hasMoreDocs: boolean;
+  loadingMore: boolean;
   selectedFolder: string;
   sidebarOpen: boolean;
   tagFilter: string;
@@ -34,12 +37,15 @@ export function EditorSidebar({
   onClearTagFilter,
   onDeleteDoc,
   onFilterChange,
+  onLoadMore,
   onSelectDoc,
   onSelectFolder,
   onTagFilterChange,
   onToggleDarkMode,
   onTogglePin,
   saveState,
+  hasMoreDocs,
+  loadingMore,
   selectedFolder,
   sidebarOpen,
   tagFilter,
@@ -119,8 +125,8 @@ export function EditorSidebar({
                   <DocIcon />
                 </span>
                 <span className="docRowText">
-                  <span className="docRowTitle">{titleOf(doc.body)}</span>
-                  <span className="docRowSnippet">{snippetOf(doc.body)}</span>
+                  <span className="docRowTitle">{editorDocTitle(doc)}</span>
+                  <span className="docRowSnippet">{snippetOf(editorDocSearchText(doc))}</span>
                 </span>
               </button>
               <span className="docRowActions">
@@ -150,6 +156,11 @@ export function EditorSidebar({
           <div className="pendingStatus" aria-hidden="true" />
         ) : visibleDocs.length === 0 && (
           <p className="docListEmpty">{docs.length === 0 ? "No documents." : "No documents match."}</p>
+        )}
+        {hasMoreDocs && (
+          <button type="button" className="docListMore" disabled={loadingMore} onClick={onLoadMore}>
+            {loadingMore ? "Loading…" : "Load more documents"}
+          </button>
         )}
       </nav>
       <div className="sidebarFoot">

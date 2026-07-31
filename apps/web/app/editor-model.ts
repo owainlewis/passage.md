@@ -4,6 +4,10 @@ export type Doc = {
   id: string;
   publicId?: string;
   body: string;
+  bodyLoaded?: boolean;
+  title?: string;
+  excerpt?: string;
+  tags?: string[];
   pinned?: boolean;
   shareToken?: string | null;
   sharedAt?: string | null;
@@ -89,7 +93,7 @@ Dark mode lives in the sidebar, so the writing surface can stay comfortable in a
 `;
 
 export function seedDocs(): Doc[] {
-  return [{ id: "welcome", body: welcomeBody, pinned: true }];
+  return [{ id: "welcome", body: welcomeBody, bodyLoaded: true, pinned: true }];
 }
 
 export function publicIdFromPath() {

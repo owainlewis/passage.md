@@ -67,7 +67,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
         { status: 200 }
       );
     }
-    if (url === "/api/v1/docs" && method === "GET") {
+    if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
     }
     if (url === "/api/v1/docs" && method === "POST") {
@@ -467,7 +467,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs") {
+      if (url.startsWith("/api/v1/docs?")) {
         return new Response(
           JSON.stringify({ documents: [{ id: "doc-retried", publicId: "retried", body: "# Retried session" }] }),
           { status: 200 }
@@ -500,7 +500,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs") {
+      if (url.startsWith("/api/v1/docs?")) {
         return new Response(
           JSON.stringify({ documents: [{ id: "doc-recovered", publicId: "recovered", body: "# Recovered session" }] }),
           { status: 200 }
@@ -556,7 +556,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && method === "GET") {
+      if (url.startsWith("/api/v1/docs?") && method === "GET") {
         return new Promise<Response>((resolve) => {
           resolveDocs = resolve;
         });
@@ -1061,7 +1061,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && method === "GET") {
+      if (url.startsWith("/api/v1/docs?") && method === "GET") {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
@@ -1090,7 +1090,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && method === "GET") {
+      if (url.startsWith("/api/v1/docs?") && method === "GET") {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
@@ -1231,7 +1231,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Private server draft" }] }), {
           status: 200
         });
@@ -1264,7 +1264,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
           status: 200
         });
@@ -1308,7 +1308,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft\n\nServer copy." }] }), {
           status: 200
         });
@@ -1322,7 +1322,108 @@ describe("Write (editor)", () => {
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.queryByText("Loading saved docs")).not.toBeInTheDocument());
     expect(screen.queryByText("Saved")).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs", { credentials: "include" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50", { credentials: "include" });
+  });
+
+  it("loads bounded metadata pages and fetches document bodies on demand", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        return new Response(
+          JSON.stringify({
+            documents: [{ id: "doc-1", publicId: "public-1", title: "First", excerpt: "First\n\nPreview" }],
+            nextCursor: "page-two"
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50&cursor=page-two") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-2", publicId: "public-2", title: "Second", excerpt: "Second" }] }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs/doc-1") {
+        return new Response(JSON.stringify({ id: "doc-1", publicId: "public-1", body: "# First\n\nFull first body" }), {
+          status: 200
+        });
+      }
+      if (url === "/api/v1/docs/doc-2") {
+        return new Response(JSON.stringify({ id: "doc-2", publicId: "public-2", body: "# Second\n\nFull second body" }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect((await screen.findAllByText("Full first body")).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50", { credentials: "include" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1", { credentials: "include" });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/docs/doc-2", expect.anything());
+
+    const second = await screen.findByRole("button", { name: /Second/ });
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50&cursor=page-two", { credentials: "include" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
+      target: { value: "Second" }
+    });
+    expect(second).toBeInTheDocument();
+
+    fireEvent.click(second);
+    expect((await screen.findAllByText("Full second body")).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-2", { credentials: "include" });
+    expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
+  });
+
+  it("keeps an unloaded document read-only after a body request fails", async () => {
+    let bodyRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", title: "Important", excerpt: "Important" }] }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs/doc-1" && !init?.method) {
+        bodyRequests += 1;
+        if (bodyRequests === 1) {
+          return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+        }
+        return new Response(JSON.stringify({ id: "doc-1", publicId: "public-1", body: "# Important\n\nStill safe" }), {
+          status: 200
+        });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Document could not be loaded.");
+    expect(screen.queryByRole("textbox", { name: "Markdown editor" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect((await screen.findAllByText("Still safe")).length).toBeGreaterThan(0);
+    expect(bodyRequests).toBe(2);
   });
 
   it("keeps a signed-in account empty when it has no documents", async () => {
@@ -1334,7 +1435,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
@@ -1365,7 +1466,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
@@ -1395,7 +1496,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
           status: 200
         });
@@ -1439,7 +1540,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         documentLoads += 1;
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
           status: 200
@@ -1491,7 +1592,7 @@ describe("Write (editor)", () => {
           : { id: "user-2", email: "two@example.com" };
         return new Response(JSON.stringify({ authenticated: true, user, account: proAccount }), { status: 200 });
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         documentLoads += 1;
         const documents = sessionRequests === 1
           ? [{ id: "doc-one", body: "# First account" }]
@@ -1531,6 +1632,60 @@ describe("Write (editor)", () => {
     );
   });
 
+  it("discards a delayed metadata page after the active account changes", async () => {
+    let sessionRequests = 0;
+    let resolveOldPage: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        sessionRequests += 1;
+        const user = sessionRequests === 1
+          ? { id: "user-1", email: "one@example.com" }
+          : { id: "user-2", email: "two@example.com" };
+        return new Response(JSON.stringify({ authenticated: true, user, account: proAccount }), { status: 200 });
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        const documents = sessionRequests === 1
+          ? [{ id: "doc-one", body: "# First account" }]
+          : [{ id: "doc-two", body: "# Second account" }];
+        return new Response(
+          JSON.stringify({ documents, nextCursor: sessionRequests === 1 ? "old-account-page" : undefined }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50&cursor=old-account-page") {
+        return new Promise<Response>((resolve) => {
+          resolveOldPage = resolve;
+        });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppProviders>
+        <Write />
+      </AppProviders>
+    );
+
+    expect(await screen.findByRole("button", { name: /First account/ })).toBeInTheDocument();
+    await waitFor(() => expect(resolveOldPage).toBeDefined());
+
+    window.dispatchEvent(new Event("focus"));
+
+    expect(await screen.findByRole("button", { name: /Second account/ })).toBeInTheDocument();
+    resolveOldPage?.(
+      new Response(
+        JSON.stringify({ documents: [{ id: "doc-private", title: "Private old account metadata", excerpt: "Private" }] }),
+        { status: 200 }
+      )
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(screen.queryByText("Private old account metadata")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /First account/ })).not.toBeInTheDocument();
+  });
+
   it("creates a server share link for a signed-in document", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -1550,7 +1705,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft" }] }), {
           status: 200
         });
@@ -1588,7 +1743,7 @@ describe("Write (editor)", () => {
           { status: 200 }
         );
       }
-      if (url === "/api/v1/docs" && !init?.method) {
+      if (url.startsWith("/api/v1/docs?") && !init?.method) {
         return new Response(
           JSON.stringify({ documents: [{ id: "doc-1", body: "# Saved draft", shareToken: token }] }),
           { status: 200 }
