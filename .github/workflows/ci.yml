@@ -29,7 +29,7 @@ env:
   CLOUD_SQL_INSTANCE: passage-md-prod:us-central1:passage-md-postgres
   CLOUD_RUN_MAX_INSTANCES: 4
   DATABASE_MAX_CONNS: 3
-  PUBLIC_SIGNUP_ENABLED: 'false'
+  PUBLIC_SIGNUP_ENABLED: 'true'
   PRO_MAX_SAVED_DOCS: '2000'
   DATABASE_SECRET: passage-database-url
   ARTIFACT_REGISTRY_REPOSITORY: passage-md
