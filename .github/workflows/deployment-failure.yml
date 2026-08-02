@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Notify the repository owner
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = "Production deployment failed";
