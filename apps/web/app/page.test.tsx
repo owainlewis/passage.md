@@ -795,6 +795,7 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
     const title = await screen.findByRole("textbox", { name: "Template title" });
+    expect(screen.queryByRole("button", { name: "Create document" })).not.toBeInTheDocument();
     fireEvent.change(title, { target: { value: "YouTube script" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Template Markdown" }), {
       target: { value: "# [Video title]\n\n## Opening\n\nWrite the hook." }

@@ -99,9 +99,6 @@ export function TemplateWorkspace({
             </button>
           </div>
           <span className="templateSaveState">{error || (saving ? "Saving" : "Saved")}</span>
-          <button type="button" className="btnPrimary" onClick={() => void onCreateDocument(activeTemplate.body)}>
-            Create document
-          </button>
         </footer>
       </section>
     );
