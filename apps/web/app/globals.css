@@ -8,13 +8,13 @@
   --faint: #b1b1aa;
   --hairline: #e7e6e0;
   --hairline-strong: #dcdad3;
-  --accent: #403e39;
+  --accent: #48685f;
   --accent-strong: #24231f;
-  --accent-tint: #eeece7;
+  --accent-tint: #e8eeeb;
   --accent-contrast: #fff;
   --ink-display: #1b1a18;
   --code-bg: #f0efe8;
-  --selection: rgba(64, 62, 57, 0.14);
+  --selection: rgba(72, 104, 95, 0.16);
   --elevated: var(--surface);
   --hover: rgba(0, 0, 0, 0.05);
   --hover-soft: rgba(0, 0, 0, 0.035);
@@ -45,13 +45,13 @@
   --faint: #68717d;
   --hairline: #282d35;
   --hairline-strong: #363d47;
-  --accent: #d8d5ce;
+  --accent: #8aa89f;
   --accent-strong: #f0ede6;
-  --accent-tint: #2a2d33;
+  --accent-tint: #21302c;
   --accent-contrast: #171713;
   --ink-display: #f0f2f5;
   --code-bg: #1b1f26;
-  --selection: rgba(216, 213, 206, 0.2);
+  --selection: rgba(138, 168, 159, 0.22);
   --elevated: #1d2229;
   --hover: rgba(255, 255, 255, 0.07);
   --hover-soft: rgba(255, 255, 255, 0.05);
@@ -144,21 +144,11 @@ button {
 
 .brandName {
   font-family: var(--serif);
-  font-size: 1.14rem;
+  font-size: 1.1rem;
   font-weight: 400;
   letter-spacing: -0.025em;
   line-height: 1;
   color: var(--ink);
-}
-
-.brandExt {
-  margin-left: 0.08em;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 0.58em;
-  font-weight: 500;
-  letter-spacing: -0.04em;
-  vertical-align: 0.12em;
 }
 
 .docListLabel {
@@ -697,6 +687,11 @@ button {
   background: var(--hover);
   border-color: var(--hairline);
   color: var(--ink);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .iconButton[aria-pressed="true"] {

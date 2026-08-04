@@ -1,13 +1,9 @@
 import Link from "next/link";
 
-// The passage.md wordmark. Renders as a plain span by default, or as a link to
+// The Passage wordmark. Renders as a plain span by default, or as a link to
 // `href` when one is given (the editor and share views link it home).
 export function Brand({ href, ariaLabel }: { href?: string; ariaLabel?: string }) {
-  const inner = (
-    <span className="brandName">
-      passage<span className="brandExt">.md</span>
-    </span>
-  );
+  const inner = <span className="brandName">Passage</span>;
 
   if (href) {
     return (

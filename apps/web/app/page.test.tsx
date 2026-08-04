@@ -373,7 +373,9 @@ describe("Account", () => {
     render(<Account />);
 
     expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "passage.md home" })).toHaveAttribute("href", "/write");
+    const brand = screen.getByRole("link", { name: "passage.md home" });
+    expect(brand).toHaveAttribute("href", "/write");
+    expect(brand).toHaveTextContent(/^Passage$/);
     expect(screen.getByText("writer@example.com")).toBeInTheDocument();
     expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
     expect(screen.getByText("Saved documents")).toBeInTheDocument();
