@@ -58,6 +58,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     ...doc
   }));
   let nextDoc = docs.length + 1;
+  let templates: Array<{ id: string; title: string; body: string; createdAt: string; updatedAt: string }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -69,6 +70,34 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     }
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
+    }
+    if (url === "/api/v1/templates" && method === "GET") {
+      return new Response(JSON.stringify({ templates }), { status: 200 });
+    }
+    if (url === "/api/v1/templates" && method === "POST") {
+      const input = JSON.parse(String(init?.body ?? "{}"));
+      const template = {
+        id: `template-${templates.length + 1}`,
+        title: input.title,
+        body: input.body,
+        createdAt: "2026-08-04T10:00:00Z",
+        updatedAt: "2026-08-04T10:00:00Z"
+      };
+      templates = [template, ...templates];
+      return new Response(JSON.stringify(template), { status: 201 });
+    }
+    if (url.startsWith("/api/v1/templates/") && method === "PATCH") {
+      const id = url.split("/")[4];
+      const input = JSON.parse(String(init?.body ?? "{}"));
+      const current = templates.find((template) => template.id === id);
+      const updated = { ...current, ...input, id, updatedAt: "2026-08-04T10:01:00Z" };
+      templates = templates.map((template) => (template.id === id ? updated : template));
+      return new Response(JSON.stringify(updated), { status: 200 });
+    }
+    if (url.startsWith("/api/v1/templates/") && method === "DELETE") {
+      const id = url.split("/")[4];
+      templates = templates.filter((template) => template.id !== id);
+      return new Response(null, { status: 204 });
     }
     if (url === "/api/v1/docs" && method === "POST") {
       const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
@@ -118,6 +147,11 @@ async function renderWrite() {
   return view;
 }
 
+async function createBlankDocument() {
+  fireEvent.click(screen.getByRole("button", { name: "New document" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
@@ -152,7 +186,11 @@ describe("Landing", () => {
     expect(screen.getAllByText("passage cat <doc-id>").length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
-    expect(screen.getByText(/Renews monthly until cancelled/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Renews monthly until cancelled/, {
+        selector: "p:not([aria-hidden])",
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Operated by/)).toBeInTheDocument();
     for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
       expect(merchantLink).toHaveAttribute("href", "https://gradientwork.com");
@@ -339,7 +377,9 @@ describe("Account", () => {
     render(<Account />);
 
     expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "passage.md home" })).toHaveAttribute("href", "/write");
+    const brand = screen.getByRole("link", { name: "passage.md home" });
+    expect(brand).toHaveAttribute("href", "/write");
+    expect(brand).toHaveTextContent(/^Passage$/);
     expect(screen.getByText("writer@example.com")).toBeInTheDocument();
     expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
     expect(screen.getByText("Saved documents")).toBeInTheDocument();
@@ -732,7 +772,7 @@ describe("Write (editor)", () => {
   it("creates a document, updates its title, and renders Markdown preview", async () => {
     await renderWrite();
 
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Launch note\n\nThis is **ready**." }
@@ -745,10 +785,163 @@ describe("Write (editor)", () => {
     expect(screen.getByText("ready")).toBeInTheDocument();
   });
 
+  it("creates, edits, and copies a Markdown template into an independent document", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-1", body: "# Existing" }]);
+    await renderWrite();
+
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(screen.queryByText("Library")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
+
+    const title = await screen.findByRole("textbox", { name: "Template title" });
+    expect(screen.queryByRole("button", { name: "Create document" })).not.toBeInTheDocument();
+    fireEvent.change(title, { target: { value: "YouTube script" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Template Markdown" }), {
+      target: { value: "# [Video title]\n\n## Opening\n\nWrite the hook." }
+    });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/templates/template-1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            title: "YouTube script",
+            body: "# [Video title]\n\n## Opening\n\nWrite the hook."
+          })
+        })
+      )
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+    expect(await screen.findByRole("heading", { name: "YouTube script" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit YouTube script" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create document from YouTube script" }));
+
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    expect(editor).toHaveValue("# [Video title]\n\n## Opening\n\nWrite the hook.");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/docs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ body: "# [Video title]\n\n## Opening\n\nWrite the hook." })
+      })
+    );
+  });
+
+  it("disables template creation until the template library finishes loading", async () => {
+    const signedInFetch = stubSignedInFetch();
+    let resolveTemplates: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/v1/templates" && (init?.method ?? "GET") === "GET") {
+          return new Promise<Response>((resolve) => {
+            resolveTemplates = resolve;
+          });
+        }
+        return signedInFetch(input, init);
+      })
+    );
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+
+    const newTemplate = screen.getByRole("button", { name: "New template" });
+    expect(newTemplate).toBeDisabled();
+    await waitFor(() => expect(resolveTemplates).toBeDefined());
+    resolveTemplates?.(new Response(JSON.stringify({ templates: [] }), { status: 200 }));
+    await waitFor(() => expect(newTemplate).toBeEnabled());
+  });
+
+  it("deletes a template and frees its library slot", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fetchMock = stubSignedInFetch();
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
+
+    expect(confirmDelete).toHaveBeenCalledWith("Delete “Untitled template”? This cannot be undone.");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/templates/template-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(await screen.findByText("0 of 10")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Untitled template" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a template when deletion is cancelled", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const fetchMock = stubSignedInFetch();
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
+
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/templates/template-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(screen.getByRole("heading", { name: "Untitled template" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 10")).toBeInTheDocument();
+  });
+
+  it("requires confirmation before deleting from the template editor", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const fetchMock = stubSignedInFetch();
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Untitled template" }));
+
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/templates/template-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(screen.getByRole("textbox", { name: "Template title" })).toBeInTheDocument();
+  });
+
+  it("keeps a template visible when deletion fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const signedInFetch = stubSignedInFetch();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/v1/templates/template-1" && init?.method === "DELETE") {
+          return Promise.resolve(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
+        }
+        return signedInFetch(input, init);
+      })
+    );
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
+    expect(screen.getByRole("heading", { name: "Untitled template" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 10")).toBeInTheDocument();
+  });
+
   it("filters the document list by title and body text", async () => {
     await renderWrite();
 
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Launch note\n\nRoadmap coverage." }
@@ -757,7 +950,9 @@ describe("Write (editor)", () => {
       target: { value: "roadmap" }
     });
 
-    expect(screen.getByRole("button", { name: /Launch note/ })).toBeInTheDocument();
+    const launchNote = screen.getByRole("button", { name: /Launch note/ });
+    expect(launchNote).toBeInTheDocument();
+    expect(launchNote).not.toHaveTextContent("Roadmap coverage");
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
   });
 
@@ -817,7 +1012,7 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
   });
 
-  it("filters private and shared documents with fixed system folders", async () => {
+  it("shows one flat document list and filters by sharing state", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "# Private note\n\nDraft." },
       { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
@@ -826,24 +1021,23 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Private note/ });
 
-    expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Open Shared folder" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "New folder" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Delete .* folder/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Document location" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Shared note/ })).not.toBeInTheDocument();
+    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
+    expect(sharingFilter).toHaveValue("all");
+    expect(screen.queryByText("Folders")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Shared document")).toBeInTheDocument();
 
-    const sharedFolder = screen.getByRole("button", { name: "Open Shared folder" });
-    fireEvent.click(sharedFolder);
+    fireEvent.change(sharingFilter, { target: { value: "shared" } });
 
-    expect(sharedFolder).toHaveAttribute("aria-current", "page");
+    expect(sharingFilter).toHaveValue("shared");
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Published.").length).toBeGreaterThan(0);
   });
 
-  it("clears the typed tag filter when changing folders", async () => {
+  it("clears the typed tag filter when changing the sharing filter", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "---\ntags: [notes]\n---\n\n# Private note\n\nDraft." },
       { id: "doc-shared", body: "---\ntags: [published]\n---\n\n# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
@@ -859,28 +1053,30 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Shared note/ })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Shared folder" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter documents by sharing" }), {
+      target: { value: "shared" }
+    });
 
     expect(screen.getByRole("textbox", { name: "Filter by tag" })).toHaveValue("");
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
   });
 
-  it("keeps empty system folders visible but disabled", async () => {
+  it("allows an empty sharing filter without restoring folder sections", async () => {
     stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
     await renderWrite();
     await screen.findByRole("button", { name: /Private note/ });
 
-    const sharedFolder = screen.getByRole("button", { name: "Open Shared folder" });
-    expect(sharedFolder).toBeDisabled();
-    fireEvent.click(sharedFolder);
+    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
+    fireEvent.change(sharingFilter, { target: { value: "shared" } });
 
-    expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
-    expect(screen.queryByText("No documents match.")).not.toBeInTheDocument();
+    expect(sharingFilter).toHaveValue("shared");
+    expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
+    expect(screen.getByText("No documents match.")).toBeInTheDocument();
+    expect(screen.queryByText("Folders")).not.toBeInTheDocument();
   });
 
-  it("moves to Shared after deleting the last private document", async () => {
+  it("returns to All after deleting the last document in a sharing filter", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "# Private note\n\nDraft." },
       { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
@@ -889,10 +1085,12 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Private note/ });
 
+    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
+    fireEvent.change(sharingFilter, { target: { value: "private" } });
+
     fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
-    expect(screen.getByRole("button", { name: "Open Private folder" })).toBeDisabled();
+    await waitFor(() => expect(sharingFilter).toHaveValue("all"));
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
@@ -1024,7 +1222,7 @@ describe("Write (editor)", () => {
     expect(rows[2]).toContain("Old note");
   });
 
-  it("moves a document into Shared when it is shared", async () => {
+  it("marks a document as shared without moving it to another section", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1036,11 +1234,12 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.getByLabelText("Shared document")).toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "Filter documents by sharing" })).toHaveValue("all");
     expect(await screen.findByRole("button", { name: /Markdown for agents and humans/ })).toBeInTheDocument();
   });
 
-  it("orders a newly shared document as latest in Shared", async () => {
+  it("orders a newly shared document as latest in the flat list", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1056,26 +1255,27 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.getByLabelText("Shared document")).toBeInTheDocument());
     const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
     expect(rows[0]).toContain("Private note");
     expect(rows[1]).toContain("Shared note");
   });
 
-  it("moves a document back to Private when it is unshared", async () => {
+  it("removes the shared marker without moving the document", async () => {
     stubSignedInFetch([{ id: "doc-shared", body: "# Shared draft", shareToken: "share-token", sharedAt: "2026-07-09T08:00:00Z" }]);
 
     await renderWrite();
     await screen.findByRole("button", { name: /Shared draft/ });
 
-    expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("Shared document")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.queryByLabelText("Shared document")).not.toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "Filter documents by sharing" })).toHaveValue("all");
     expect(screen.getByRole("button", { name: /Shared draft/ })).toBeInTheDocument();
   });
 
-  it("orders a newly unshared document as latest in Private", async () => {
+  it("orders a newly unshared document as latest in the flat list", async () => {
     stubSignedInFetch([
       {
         id: "doc-shared",
@@ -1092,7 +1292,7 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.queryByLabelText("Shared document")).not.toBeInTheDocument());
     const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
     expect(rows[0]).toContain("Shared note");
     expect(rows[1]).toContain("Private note");
@@ -1112,7 +1312,7 @@ describe("Write (editor)", () => {
     const pin = screen.getByRole("button", { name: "Unpin document" });
     expect(pin.tagName).toBe("BUTTON");
 
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
     const remove = await screen.findByRole("button", { name: "Delete document" });
     expect(remove.tagName).toBe("BUTTON");
@@ -1151,7 +1351,7 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared draft\n\nReadable by link." }
@@ -1186,7 +1386,7 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
 
     expect(await screen.findByText("Free includes 1 saved documents. Upgrade for more.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -1222,7 +1422,7 @@ describe("Write (editor)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
 
     expect(await screen.findByText(/reached your 2,000 saved-document limit/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Request more" })).toHaveAttribute("href", "/account#document-limit");
@@ -1297,7 +1497,7 @@ describe("Write (editor)", () => {
 
     // Random text barely compresses, so a large body overflows the link guard.
     const huge = Array.from({ length: 30000 }, () => Math.random().toString(36)[2] ?? "x").join("");
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: huge }

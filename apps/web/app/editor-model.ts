@@ -17,9 +17,10 @@ export type Doc = {
 export type Mode = "edit" | "preview";
 export type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
 export type SaveState = "loading" | "saving" | "saved" | "error";
+export type DocumentFilter = "all" | "private" | "shared";
 
-export const PRIVATE_FOLDER = "private";
-export const SHARED_FOLDER = "shared";
+export const ALL_DOCUMENTS: DocumentFilter = "all";
+export const SHARED_DOCUMENTS: DocumentFilter = "shared";
 
 export function isShared(doc: Doc) {
   return Boolean(doc.sharedAt || doc.shareToken);

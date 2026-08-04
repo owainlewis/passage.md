@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono, Newsreader } from "next/font/google";
+import { Castoro, Inter, IBM_Plex_Mono } from "next/font/google";
 import { AppProviders } from "./app-providers";
 import "./globals.css";
 
@@ -9,8 +9,9 @@ const sans = Inter({
   display: "swap"
 });
 
-const serif = Newsreader({
+const serif = Castoro({
   subsets: ["latin"],
+  weight: "400",
   style: ["normal", "italic"],
   variable: "--font-serif",
   display: "swap"

@@ -5,6 +5,14 @@ export type DocumentPage = {
   nextCursor: string;
 };
 
+export type Template = {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
   const query = new URLSearchParams({ limit: "50" });
   if (cursor) query.set("cursor", cursor);
@@ -101,5 +109,53 @@ export async function apiUnshareDoc(id: string): Promise<void> {
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be unshared");
+  }
+}
+
+export async function apiTemplates(): Promise<Template[]> {
+  const res = await fetch("/api/v1/templates", { credentials: "include" });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Templates could not be loaded");
+  }
+  return Array.isArray(payload.templates) ? payload.templates : [];
+}
+
+export async function apiCreateTemplate(title: string, body: string): Promise<Template> {
+  const res = await fetch("/api/v1/templates", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body })
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Template could not be created");
+  }
+  return payload as Template;
+}
+
+export async function apiUpdateTemplate(template: Template): Promise<Template> {
+  const res = await fetch(`/api/v1/templates/${encodeURIComponent(template.id)}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: template.title, body: template.body })
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Template could not be saved");
+  }
+  return payload as Template;
+}
+
+export async function apiDeleteTemplate(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/templates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "Template could not be deleted");
   }
 }

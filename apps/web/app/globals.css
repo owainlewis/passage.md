@@ -8,12 +8,13 @@
   --faint: #b1b1aa;
   --hairline: #e7e6e0;
   --hairline-strong: #dcdad3;
-  --accent: #2c6b60;
-  --accent-strong: #25594f;
-  --accent-tint: #e7efec;
-  --ink-display: #17332d;
+  --accent: #48685f;
+  --accent-strong: #24231f;
+  --accent-tint: #e8eeeb;
+  --accent-contrast: #fff;
+  --ink-display: #1b1a18;
   --code-bg: #f0efe8;
-  --selection: rgba(44, 107, 96, 0.13);
+  --selection: rgba(72, 104, 95, 0.16);
   --elevated: var(--surface);
   --hover: rgba(0, 0, 0, 0.05);
   --hover-soft: rgba(0, 0, 0, 0.035);
@@ -44,12 +45,13 @@
   --faint: #68717d;
   --hairline: #282d35;
   --hairline-strong: #363d47;
-  --accent: #6fbcad;
-  --accent-strong: #35786c;
-  --accent-tint: #18352f;
-  --ink-display: #e9efed;
+  --accent: #8aa89f;
+  --accent-strong: #f0ede6;
+  --accent-tint: #21302c;
+  --accent-contrast: #171713;
+  --ink-display: #f0f2f5;
   --code-bg: #1b1f26;
-  --selection: rgba(111, 188, 173, 0.22);
+  --selection: rgba(138, 168, 159, 0.22);
   --elevated: #1d2229;
   --hover: rgba(255, 255, 255, 0.07);
   --hover-soft: rgba(255, 255, 255, 0.05);
@@ -137,28 +139,23 @@ button {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   user-select: none;
 }
 
 .brandName {
   font-family: var(--serif);
-  font-size: 1.08rem;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-size: 1.1rem;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1;
   color: var(--ink);
-}
-
-.brandExt {
-  color: var(--faint);
-  font-weight: 500;
 }
 
 .docListLabel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px 7px;
+  padding: 12px 18px 7px;
   min-width: 268px;
 }
 
@@ -183,6 +180,28 @@ button {
   align-items: center;
   justify-content: center;
   padding: 0 6px;
+}
+
+.docListControls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.documentFilter {
+  min-height: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  padding: 2px 22px 2px 7px;
+  font: 600 0.6875rem/1 var(--sans);
+}
+
+.documentFilter:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hairline));
+  outline: 2px solid var(--accent-tint);
+  outline-offset: 1px;
 }
 
 /* -------------------------------------------------------------- documents */
@@ -284,6 +303,9 @@ button {
 }
 
 .docRowTitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 0.84rem;
   font-weight: 550;
   line-height: 1.35;
@@ -293,17 +315,29 @@ button {
   text-overflow: ellipsis;
 }
 
-.docRow.active .docRowTitle {
-  color: var(--accent);
-}
-
-.docRowSnippet {
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--muted);
-  white-space: nowrap;
+.docRowTitleText {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.docSharedMark {
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--faint);
+}
+
+.docSharedMark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.docRow.active .docRowTitle {
+  color: var(--accent);
 }
 
 .docRowDelete {
@@ -425,9 +459,9 @@ button {
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
-.folderFilter {
+.sidebarShortcuts {
   min-width: 268px;
-  padding: 0 10px 10px;
+  padding: 0 10px 4px;
 }
 
 .tagFilterHead {
@@ -460,72 +494,7 @@ button {
   color: var(--ink);
 }
 
-.folderList {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.folderRow {
-  width: 100%;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  gap: 2px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  padding: 0 4px 0 0;
-  font-family: var(--sans);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.folderRow:hover,
-.folderRow:has(:focus-visible) {
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.folderRow.active {
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-
-.folderRow.disabled {
-  color: var(--faint);
-}
-
-.folderRow.disabled:hover {
-  background: transparent;
-  color: var(--faint);
-}
-
-.folderRowSelect {
-  min-width: 0;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 6px 4px 6px 8px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.folderRowSelect:disabled {
-  cursor: default;
-}
-
-.folderRowIcon {
+.templateSidebarIcon {
   width: 20px;
   height: 20px;
   display: inline-flex;
@@ -534,13 +503,13 @@ button {
   color: currentColor;
 }
 
-.folderRowName {
+.templateSidebarName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folderRowCount {
+.templateSidebarCount {
   min-width: 20px;
   height: 20px;
   display: inline-flex;
@@ -555,7 +524,39 @@ button {
   font-weight: 650;
 }
 
-.folderRow.active .folderRowCount {
+.templateSidebarButton {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 8px;
+  font: 600 0.8125rem/1 var(--sans);
+  text-align: left;
+}
+
+.templateSidebarButton:hover,
+.templateSidebarButton:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.templateSidebarButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.templateSidebarButton.active {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.templateSidebarButton.active .templateSidebarCount {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--hairline));
   color: color-mix(in srgb, var(--accent) 72%, var(--muted));
 }
@@ -677,6 +678,11 @@ button {
   background: var(--hover);
   border-color: var(--hairline);
   color: var(--ink);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .iconButton[aria-pressed="true"] {
@@ -1017,6 +1023,11 @@ button {
   background: var(--accent);
 }
 
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .switchKnob {
   position: absolute;
   top: 3px;
@@ -1074,7 +1085,7 @@ button {
   border: 0;
   border-radius: 9px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   padding: 9px 13px;
   font: 650 0.82rem/1 var(--sans);
   cursor: pointer;
@@ -1083,6 +1094,242 @@ button {
 .emptyDocumentsCreate:hover,
 .emptyDocumentsCreate:focus-visible {
   background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+/* --------------------------------------------------------------- templates */
+
+.templateLibrary {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 52px clamp(24px, 6vw, 72px) 96px;
+}
+
+.templateLibraryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1040px;
+  margin: 0 auto 28px;
+}
+
+.templateLibraryHead h2,
+.templateLibraryHead p {
+  margin: 0;
+}
+
+.templateLibraryHead h2 {
+  color: var(--ink-display);
+  font-family: var(--serif);
+  font-size: clamp(1.7rem, 4vw, 2.25rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.templateLibraryHead > div > p:last-child,
+.templateLibraryActions > span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.templateLibraryHead > div > p:last-child {
+  margin-top: 8px;
+}
+
+.templateLibraryActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.templateNewButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 9px;
+  background: var(--elevated);
+  color: var(--ink);
+  font: 600 0.8rem/1 var(--sans);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.templateNewButton:hover:not(:disabled),
+.templateNewButton:focus-visible:not(:disabled) {
+  background: var(--hover-soft);
+  border-color: var(--muted);
+}
+
+.templateNewButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.templateGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.templateCard {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  background: var(--elevated);
+  color: var(--ink);
+  padding: 20px;
+  text-align: left;
+}
+
+.templateCard h3,
+.templateCard p {
+  margin: 0;
+}
+
+.templateCard h3 {
+  font-family: var(--serif);
+  font-size: 1.3rem;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+.templateCard p {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.templateCardBlank {
+  background: var(--sidebar-bg);
+}
+
+.templateCardActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.templateCardActions .btnPrimary {
+  width: 124px;
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 0.78rem;
+}
+
+.templateCardDelete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 7px;
+}
+
+.templateCardDelete:hover:not(:disabled),
+.templateCardDelete:focus-visible:not(:disabled) {
+  color: #a23f36;
+  background: var(--hover);
+}
+
+.templateCardDelete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.templateError {
+  max-width: 1040px;
+  margin: -12px auto 20px;
+  color: #9e3f36;
+  font-size: 0.82rem;
+}
+
+.templateEditor {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.templateEditorHead,
+.templateEditorFoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.templateEditorFoot {
+  justify-content: space-between;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 0;
+}
+
+.templateTitleInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 6px 2px;
+  font: 600 0.95rem/1.2 var(--sans);
+}
+
+.templateTitleInput:focus {
+  border-bottom-color: var(--accent);
+}
+
+.templateDelete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.templateDelete:hover:not(:disabled),
+.templateDelete:focus-visible:not(:disabled) {
+  color: #a23f36;
+}
+
+.templateDelete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.templateEditorBody {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 48px clamp(24px, 7vw, 88px) 96px;
+}
+
+.templateBodyInput {
+  width: min(100%, var(--measure));
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.templateEditorBody .markdown {
+  margin: 0 auto;
+}
+
+.templateSaveState {
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .editor,
@@ -1406,13 +1653,13 @@ button {
 .shareToggle[aria-pressed="true"].dockButton {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .shareToggle[aria-pressed="true"].dockButton:hover {
   background: color-mix(in srgb, var(--accent) 92%, black 8%);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 :root[data-theme="dark"] .statusDock {
@@ -1685,7 +1932,7 @@ button {
   align-items: center;
   justify-content: center;
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 0.95rem;
   font-weight: 600;
   padding: 12px 22px;
@@ -2980,6 +3227,35 @@ button {
   .writingPane,
   .shareScroll {
     padding: 40px 22px 18vh;
+  }
+
+  .templateLibrary {
+    padding: 32px 18px 72px;
+  }
+
+  .templateLibraryHead {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .templateLibraryActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .templateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .templateEditorHead,
+  .templateEditorFoot {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .templateEditorBody {
+    padding: 32px 20px 72px;
   }
 
   .statusBar {

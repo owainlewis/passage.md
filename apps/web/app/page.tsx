@@ -25,6 +25,8 @@ const workflow = [
   }
 ];
 
+const proRenewal = "Renews monthly until cancelled. Cancel through the Stripe portal.";
+
 export default function Landing() {
   return (
     <AuthBoundary>
@@ -216,9 +218,14 @@ function LandingContent() {
                   <li key={feature}>{feature}</li>
                 ))}
               </ul>
-              <Link className={`${styles.secondaryButton} ${styles.planButton}`} href={primaryHref}>
-                {primaryLabel}
-              </Link>
+              <div className={styles.planFooter}>
+                <Link className={`${styles.secondaryButton} ${styles.planButton}`} href={primaryHref}>
+                  {primaryLabel}
+                </Link>
+                <p className={`${styles.planRenewal} ${styles.planRenewalPlaceholder}`} aria-hidden="true">
+                  {proRenewal}
+                </p>
+              </div>
             </div>
             <div className={`${styles.plan} ${styles.planPro}`}>
               <p className={styles.planName}>
@@ -233,10 +240,12 @@ function LandingContent() {
                   <li key={feature}>{feature}</li>
                 ))}
               </ul>
-              <Link className={`${styles.primaryButton} ${styles.planButton}`} href={proHref}>
-                {proLabel}
-              </Link>
-              <p className={styles.planRenewal}>Renews monthly until cancelled. Cancel through the Stripe portal.</p>
+              <div className={styles.planFooter}>
+                <Link className={`${styles.primaryButton} ${styles.planButton}`} href={proHref}>
+                  {proLabel}
+                </Link>
+                <p className={styles.planRenewal}>{proRenewal}</p>
+              </div>
             </div>
           </div>
           <p className={styles.pricingPolicies}>

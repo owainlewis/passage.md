@@ -2,15 +2,15 @@
 
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc } from "./editor-api";
-import { docMatchesFolder } from "./editor-list";
+import { docMatchesFilter } from "./editor-list";
 import {
+  ALL_DOCUMENTS,
   Doc,
+  DocumentFilter,
   isShared,
-  PRIVATE_FOLDER,
   publicIdFromPath,
   SaveState,
-  seedDocs,
-  SHARED_FOLDER
+  seedDocs
 } from "./editor-model";
 
 export type PendingSave = {
@@ -35,7 +35,7 @@ export function useEditorDocuments({
 }: EditorDocumentsOptions) {
   const [docs, setDocs] = useState<Doc[]>(seedDocs);
   const [activeId, setActiveId] = useState("welcome");
-  const [selectedFolder, setSelectedFolder] = useState(PRIVATE_FOLDER);
+  const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(ALL_DOCUMENTS);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [billingNotice, setBillingNoticeMessage] = useState("");
@@ -84,7 +84,7 @@ export function useEditorDocuments({
         setDocs(savedDocs);
         setNextCursor(cursor);
         setActiveId(nextActive?.id ?? "");
-        setSelectedFolder(nextActive && isShared(nextActive) ? SHARED_FOLDER : PRIVATE_FOLDER);
+        setDocumentFilter(ALL_DOCUMENTS);
         setSaveState("saved");
         setPendingSave(null);
         setLoadingMore(Boolean(cursor));
@@ -214,7 +214,7 @@ export function useEditorDocuments({
     }
   }
 
-  async function createDoc() {
+  async function createDoc(body = "") {
     if (docs.length >= maxSavedDocs) {
       showDocumentLimit();
       return;
@@ -222,11 +222,11 @@ export function useEditorDocuments({
     setBillingNotice("");
     setSaveState("saving");
     try {
-      const doc = await apiCreateDoc("");
+      const doc = await apiCreateDoc(body);
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       updateEditorURL(doc, "push");
-      setSelectedFolder(PRIVATE_FOLDER);
+      setDocumentFilter(ALL_DOCUMENTS);
       setSaveState("saved");
       requestAnimationFrame(focusEditor);
       return doc;
@@ -281,10 +281,10 @@ export function useEditorDocuments({
     }
     setDocs((prev) => {
       const next = prev.filter((candidate) => candidate.id !== id);
-      const selectedFolderHasDocs = next.some((candidate) => docMatchesFolder(candidate, selectedFolder));
+      const filteredDocsRemain = next.some((candidate) => docMatchesFilter(candidate, documentFilter));
       const replacement =
         next.find((candidate) => candidate.id === activeId) ??
-        next.find((candidate) => docMatchesFolder(candidate, selectedFolder)) ??
+        next.find((candidate) => docMatchesFilter(candidate, documentFilter)) ??
         next[0] ??
         null;
       if (id === activeId) {
@@ -295,8 +295,8 @@ export function useEditorDocuments({
           window.history.replaceState(null, "", "/write");
         }
       }
-      if (replacement && !selectedFolderHasDocs) {
-        setSelectedFolder(isShared(replacement) ? SHARED_FOLDER : PRIVATE_FOLDER);
+      if (replacement && !filteredDocsRemain) {
+        setDocumentFilter(ALL_DOCUMENTS);
       }
       return next;
     });
@@ -322,12 +322,12 @@ export function useEditorDocuments({
     },
     saveState,
     selectDoc,
-    selectedFolder,
+    documentFilter,
     setBillingNotice,
     setDocs,
     setPendingSave,
     setSaveState,
-    setSelectedFolder,
+    setDocumentFilter,
     togglePin,
     updateBody
   };

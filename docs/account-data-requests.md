@@ -20,7 +20,7 @@ If the requester cannot use that mailbox, ask for separate evidence of account c
 
 Never ask for a password, API token, session cookie, card number, or document body to verify identity.
 
-Record the request date, verified account email, action taken, and completion date without copying document content into support notes.
+Record the request date, verified account email, action taken, and completion date without copying document or template content into support notes.
 
 ## Export an account
 
@@ -41,11 +41,13 @@ It contains:
 - `account.json` with account, access, and Stripe subscription metadata.
 - `documents.json` with active and archived document metadata.
 - `documents/<document-id>.md` with every saved Markdown document.
+- `templates.json` with template metadata.
+- `templates/<template-id>.md` with every saved Markdown template.
 - `api-tokens.json` with token names and dates, but no token values or hashes.
 
 Inspect only the ZIP entry names and record counts needed to confirm the export.
 
-Do not read document bodies unless the customer specifically asks for content troubleshooting.
+Do not read document or template bodies unless the customer specifically asks for content troubleshooting.
 
 Send the ZIP through a private, access-controlled channel.
 
@@ -112,6 +114,7 @@ The transaction immediately removes the Passage user row and database records li
 - sessions and password-reset tokens;
 - API tokens;
 - active and archived documents, share state, and public document access;
+- Markdown templates;
 - local billing state;
 - community access grants.
 
