@@ -1217,7 +1217,8 @@ button {
 .templateCardActions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .templateCardActions .btnPrimary {
@@ -1225,6 +1226,27 @@ button {
   min-height: 38px;
   padding: 0 14px;
   font-size: 0.78rem;
+}
+
+.templateCardDelete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 7px;
+}
+
+.templateCardDelete:hover:not(:disabled),
+.templateCardDelete:focus-visible:not(:disabled) {
+  color: #a23f36;
+  background: var(--hover);
+}
+
+.templateCardDelete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .templateError {
@@ -1279,9 +1301,14 @@ button {
   font-size: 0.78rem;
 }
 
-.templateDelete:hover,
-.templateDelete:focus-visible {
+.templateDelete:hover:not(:disabled),
+.templateDelete:focus-visible:not(:disabled) {
   color: #a23f36;
+}
+
+.templateDelete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .templateEditorBody {

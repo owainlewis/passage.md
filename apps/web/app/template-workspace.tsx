@@ -38,6 +38,13 @@ export function TemplateWorkspace({
   const [mode, setMode] = useState<Mode>("edit");
   const activeTemplate = templates.find((template) => template.id === activeTemplateId) ?? null;
 
+  function confirmDelete(template: Template, onDeleted?: () => void) {
+    if (!window.confirm(`Delete “${template.title}”? This cannot be undone.`)) return;
+    void onDeleteTemplate(template.id).then((deleted) => {
+      if (deleted) onDeleted?.();
+    });
+  }
+
   if (activeTemplate) {
     return (
       <section className="templateEditor" aria-label="Template editor">
@@ -58,7 +65,9 @@ export function TemplateWorkspace({
           <button
             type="button"
             className="templateDelete"
-            onClick={() => void onDeleteTemplate(activeTemplate.id).then((deleted) => deleted && onShowLibrary())}
+            aria-label={`Delete ${activeTemplate.title}`}
+            disabled={saving}
+            onClick={() => confirmDelete(activeTemplate, onShowLibrary)}
           >
             Delete
           </button>
@@ -163,6 +172,15 @@ export function TemplateWorkspace({
                   onClick={() => { setMode("edit"); onEditTemplate(template.id); }}
                 >
                   Edit
+                </button>
+                <button
+                  type="button"
+                  className="templateCardDelete"
+                  aria-label={`Delete ${template.title}`}
+                  disabled={saving}
+                  onClick={() => confirmDelete(template)}
+                >
+                  Delete
                 </button>
               </div>
             </article>

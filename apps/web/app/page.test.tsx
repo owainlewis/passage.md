@@ -855,15 +855,86 @@ describe("Write (editor)", () => {
   });
 
   it("deletes a template and frees its library slot", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fetchMock = stubSignedInFetch();
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
+
+    expect(confirmDelete).toHaveBeenCalledWith("Delete “Untitled template”? This cannot be undone.");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/templates/template-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(await screen.findByText("0 of 10")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Untitled template" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a template when deletion is cancelled", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const fetchMock = stubSignedInFetch();
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
+
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/templates/template-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(screen.getByRole("heading", { name: "Untitled template" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 10")).toBeInTheDocument();
+  });
+
+  it("requires confirmation before deleting from the template editor", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const fetchMock = stubSignedInFetch();
     await renderWrite();
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
     fireEvent.click(await screen.findByRole("button", { name: "New template" }));
     await screen.findByRole("textbox", { name: "Template title" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Untitled template" }));
 
-    expect(await screen.findByText("0 of 10")).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Template title" })).not.toBeInTheDocument();
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/templates/template-1",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(screen.getByRole("textbox", { name: "Template title" })).toBeInTheDocument();
+  });
+
+  it("keeps a template visible when deletion fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const signedInFetch = stubSignedInFetch();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/v1/templates/template-1" && init?.method === "DELETE") {
+          return Promise.resolve(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
+        }
+        return signedInFetch(input, init);
+      })
+    );
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
+    await screen.findByRole("textbox", { name: "Template title" });
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
+    expect(screen.getByRole("heading", { name: "Untitled template" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 10")).toBeInTheDocument();
   });
 
   it("filters the document list by title and body text", async () => {
