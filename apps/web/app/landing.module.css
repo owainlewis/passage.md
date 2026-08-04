@@ -466,9 +466,15 @@
   font-weight: 800;
 }
 
+.planFooter {
+  display: grid;
+  grid-template-rows: auto minmax(2.5rem, auto);
+  gap: 18px;
+  margin-top: auto;
+}
+
 .planButton {
   width: 100%;
-  margin-top: auto;
 }
 
 .planRenewal,
@@ -479,8 +485,12 @@
 }
 
 .planRenewal {
-  margin: 18px 0 0;
+  margin: 0;
   text-align: center;
+}
+
+.planRenewalPlaceholder {
+  visibility: hidden;
 }
 
 .pricingPolicies {

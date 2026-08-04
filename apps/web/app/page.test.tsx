@@ -186,7 +186,11 @@ describe("Landing", () => {
     expect(screen.getAllByText("passage cat <doc-id>").length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
-    expect(screen.getByText(/Renews monthly until cancelled/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Renews monthly until cancelled/, {
+        selector: "p:not([aria-hidden])",
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Operated by/)).toBeInTheDocument();
     for (const merchantLink of screen.getAllByRole("link", { name: "Gradientwork Limited" })) {
       expect(merchantLink).toHaveAttribute("href", "https://gradientwork.com");
