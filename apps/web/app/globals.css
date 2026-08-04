@@ -1133,7 +1133,6 @@ button {
   margin-top: 8px;
 }
 
-.templateKicker,
 .templateCardType {
   color: var(--accent);
   font: 650 0.68rem/1.2 var(--mono);

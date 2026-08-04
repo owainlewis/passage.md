@@ -102,7 +102,6 @@ export function TemplateWorkspace({
     <section className="templateLibrary" aria-labelledby="templates-title">
       <div className="templateLibraryHead">
         <div>
-          <p className="templateKicker">Library</p>
           <h2 id="templates-title">Create a document</h2>
           <p>Start blank or copy the Markdown from one of your templates.</p>
         </div>

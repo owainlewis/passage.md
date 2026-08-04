@@ -785,6 +785,7 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
     expect(await screen.findByRole("heading", { name: "Create a document" })).toBeInTheDocument();
+    expect(screen.queryByText("Library")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
     const title = await screen.findByRole("textbox", { name: "Template title" });
