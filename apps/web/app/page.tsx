@@ -96,8 +96,7 @@ function LandingContent() {
       <main className={styles.main}>
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>A quiet place for plain text</p>
-            <h1 className={styles.heroTitle}>Markdown writing for humans and agents</h1>
+            <h1 className={styles.heroTitle}>Markdown writing for agents and humans</h1>
             <p className={styles.heroSub}>
               Write in a calm browser workspace, share documents online, and give your agents clean Markdown they can read
               without copying files around.
@@ -249,7 +248,7 @@ function LandingContent() {
       <footer className={styles.footer}>
         <div className={styles.footerBrand}>
           <Brand />
-          <span className={styles.footerTag}>Markdown writing for humans and agents.</span>
+          <span className={styles.footerTag}>Markdown writing for agents and humans.</span>
           <span className={styles.footerTag}>
             Operated by <MerchantLink />.
           </span>

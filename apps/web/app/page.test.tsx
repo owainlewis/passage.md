@@ -136,7 +136,7 @@ describe("Landing", () => {
   it("shows the product loop, current pricing, and account actions for Pro users", async () => {
     render(<Landing />);
 
-    expect(screen.getByText("Markdown writing for humans and agents")).toBeInTheDocument();
+    expect(screen.getByText("Markdown writing for agents and humans")).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
