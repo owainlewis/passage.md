@@ -42,8 +42,8 @@ export function TemplateWorkspace({
     return (
       <section className="templateEditor" aria-label="Template editor">
         <div className="templateEditorHead">
-          <button type="button" className="textButton" onClick={onShowLibrary}>
-            Back to templates
+          <button type="button" className="textButton" aria-label="Back to templates" onClick={onShowLibrary}>
+            <span aria-hidden="true">←</span> Templates
           </button>
           <input
             className="templateTitleInput"
@@ -102,10 +102,26 @@ export function TemplateWorkspace({
     <section className="templateLibrary" aria-labelledby="templates-title">
       <div className="templateLibraryHead">
         <div>
-          <h2 id="templates-title">Create a document</h2>
-          <p>Start blank or copy the Markdown from one of your templates.</p>
+          <h2 id="templates-title">Create from a template</h2>
+          <p>Choose a starting point or make your own.</p>
         </div>
-        <span>{templates.length} of {MAX_TEMPLATES} templates</span>
+        <div className="templateLibraryActions">
+          <span>{templates.length} of {MAX_TEMPLATES}</span>
+          <button
+            type="button"
+            className="templateNewButton"
+            aria-label="New template"
+            disabled={loading || saving || templates.length >= MAX_TEMPLATES}
+            onClick={() => void onCreateTemplate().then((created) => {
+              if (created) {
+                setMode("edit");
+                onEditTemplate(created.id);
+              }
+            })}
+          >
+            <span aria-hidden="true">+</span> New template
+          </button>
+        </div>
       </div>
 
       {error && <p className="templateError" role="alert">{error}</p>}
@@ -115,19 +131,17 @@ export function TemplateWorkspace({
         <div className="templateGrid">
           <article className="templateCard templateCardBlank">
             <div>
-              <span className="templateCardType">Document</span>
               <h3>Blank document</h3>
               <p>Start with an empty Markdown page.</p>
             </div>
-            <button type="button" className="btnPrimary" onClick={() => void onCreateDocument("")}>
-              Create blank document
+            <button type="button" className="btnPrimary" aria-label="Create blank document" onClick={() => void onCreateDocument("")}>
+              Create blank
             </button>
           </article>
 
           {templates.map((template) => (
             <article className="templateCard" key={template.id}>
               <div>
-                <span className="templateCardType">Template</span>
                 <h3>{template.title}</h3>
                 <p>{templateExcerpt(template.body)}</p>
               </div>
@@ -138,7 +152,7 @@ export function TemplateWorkspace({
                   aria-label={`Create document from ${template.title}`}
                   onClick={() => void onCreateDocument(template.body)}
                 >
-                  Create from template
+                  Use template
                 </button>
                 <button
                   type="button"
@@ -152,21 +166,6 @@ export function TemplateWorkspace({
             </article>
           ))}
 
-          <button
-            type="button"
-            className="templateCard templateCardNew"
-            aria-label="New template"
-            disabled={saving || templates.length >= MAX_TEMPLATES}
-            onClick={() => void onCreateTemplate().then((created) => {
-              if (created) {
-                setMode("edit");
-                onEditTemplate(created.id);
-              }
-            })}
-          >
-            <span className="templateCardPlus">+</span>
-            <span>New template</span>
-          </button>
         </div>
       )}
     </section>

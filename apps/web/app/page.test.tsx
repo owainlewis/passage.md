@@ -784,7 +784,7 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "Create a document" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
     expect(screen.queryByText("Library")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
@@ -823,6 +823,31 @@ describe("Write (editor)", () => {
     );
   });
 
+  it("disables template creation until the template library finishes loading", async () => {
+    const signedInFetch = stubSignedInFetch();
+    let resolveTemplates: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/v1/templates" && (init?.method ?? "GET") === "GET") {
+          return new Promise<Response>((resolve) => {
+            resolveTemplates = resolve;
+          });
+        }
+        return signedInFetch(input, init);
+      })
+    );
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+
+    const newTemplate = screen.getByRole("button", { name: "New template" });
+    expect(newTemplate).toBeDisabled();
+    await waitFor(() => expect(resolveTemplates).toBeDefined());
+    resolveTemplates?.(new Response(JSON.stringify({ templates: [] }), { status: 200 }));
+    await waitFor(() => expect(newTemplate).toBeEnabled());
+  });
+
   it("deletes a template and frees its library slot", async () => {
     await renderWrite();
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
@@ -831,7 +856,7 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(await screen.findByText("0 of 10 templates")).toBeInTheDocument();
+    expect(await screen.findByText("0 of 10")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Template title" })).not.toBeInTheDocument();
   });
 

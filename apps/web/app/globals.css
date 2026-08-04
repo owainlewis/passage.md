@@ -8,12 +8,13 @@
   --faint: #b1b1aa;
   --hairline: #e7e6e0;
   --hairline-strong: #dcdad3;
-  --accent: #2c6b60;
-  --accent-strong: #25594f;
-  --accent-tint: #e7efec;
-  --ink-display: #17332d;
+  --accent: #403e39;
+  --accent-strong: #24231f;
+  --accent-tint: #eeece7;
+  --accent-contrast: #fff;
+  --ink-display: #1b1a18;
   --code-bg: #f0efe8;
-  --selection: rgba(44, 107, 96, 0.13);
+  --selection: rgba(64, 62, 57, 0.14);
   --elevated: var(--surface);
   --hover: rgba(0, 0, 0, 0.05);
   --hover-soft: rgba(0, 0, 0, 0.035);
@@ -44,12 +45,13 @@
   --faint: #68717d;
   --hairline: #282d35;
   --hairline-strong: #363d47;
-  --accent: #6fbcad;
-  --accent-strong: #35786c;
-  --accent-tint: #18352f;
-  --ink-display: #e9efed;
+  --accent: #d8d5ce;
+  --accent-strong: #f0ede6;
+  --accent-tint: #2a2d33;
+  --accent-contrast: #171713;
+  --ink-display: #f0f2f5;
   --code-bg: #1b1f26;
-  --selection: rgba(111, 188, 173, 0.22);
+  --selection: rgba(216, 213, 206, 0.2);
   --elevated: #1d2229;
   --hover: rgba(255, 255, 255, 0.07);
   --hover-soft: rgba(255, 255, 255, 0.05);
@@ -137,21 +139,26 @@ button {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   user-select: none;
 }
 
 .brandName {
   font-family: var(--serif);
-  font-size: 1.08rem;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-size: 1.14rem;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1;
   color: var(--ink);
 }
 
 .brandExt {
-  color: var(--faint);
+  margin-left: 0.08em;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.58em;
   font-weight: 500;
+  letter-spacing: -0.04em;
+  vertical-align: 0.12em;
 }
 
 .docListLabel {
@@ -556,6 +563,11 @@ button {
 .templateSidebarButton:focus-visible {
   background: var(--hover);
   color: var(--ink);
+}
+
+.templateSidebarButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .templateSidebarButton.active {
@@ -1025,6 +1037,11 @@ button {
   background: var(--accent);
 }
 
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .switchKnob {
   position: absolute;
   top: 3px;
@@ -1082,7 +1099,7 @@ button {
   border: 0;
   border-radius: 9px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   padding: 9px 13px;
   font: 650 0.82rem/1 var(--sans);
   cursor: pointer;
@@ -1103,7 +1120,7 @@ button {
 
 .templateLibraryHead {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
   max-width: 1040px;
@@ -1116,15 +1133,15 @@ button {
 }
 
 .templateLibraryHead h2 {
-  margin-top: 5px;
   color: var(--ink-display);
   font-family: var(--serif);
-  font-size: clamp(1.8rem, 4vw, 2.5rem);
-  font-weight: 500;
+  font-size: clamp(1.7rem, 4vw, 2.25rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
 }
 
 .templateLibraryHead > div > p:last-child,
-.templateLibraryHead > span {
+.templateLibraryActions > span {
   color: var(--muted);
   font-size: 0.84rem;
 }
@@ -1133,11 +1150,37 @@ button {
   margin-top: 8px;
 }
 
-.templateCardType {
-  color: var(--accent);
-  font: 650 0.68rem/1.2 var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.templateLibraryActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.templateNewButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 9px;
+  background: var(--elevated);
+  color: var(--ink);
+  font: 600 0.8rem/1 var(--sans);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.templateNewButton:hover:not(:disabled),
+.templateNewButton:focus-visible:not(:disabled) {
+  background: var(--hover-soft);
+  border-color: var(--muted);
+}
+
+.templateNewButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .templateGrid {
@@ -1149,7 +1192,7 @@ button {
 }
 
 .templateCard {
-  min-height: 220px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1158,7 +1201,7 @@ button {
   border-radius: 12px;
   background: var(--elevated);
   color: var(--ink);
-  padding: 22px;
+  padding: 20px;
   text-align: left;
 }
 
@@ -1168,10 +1211,10 @@ button {
 }
 
 .templateCard h3 {
-  margin-top: 14px;
   font-family: var(--serif);
-  font-size: 1.35rem;
-  font-weight: 550;
+  font-size: 1.3rem;
+  font-weight: 400;
+  letter-spacing: -0.015em;
 }
 
 .templateCard p {
@@ -1182,8 +1225,7 @@ button {
 }
 
 .templateCardBlank {
-  background: var(--accent-tint);
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--hairline));
+  background: var(--sidebar-bg);
 }
 
 .templateCardActions {
@@ -1198,31 +1240,6 @@ button {
   min-height: 38px;
   padding: 0 14px;
   font-size: 0.78rem;
-}
-
-.templateCardNew {
-  align-items: center;
-  justify-content: center;
-  min-height: 220px;
-  color: var(--muted);
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.templateCardNew:hover:not(:disabled),
-.templateCardNew:focus-visible:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.templateCardNew:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.templateCardPlus {
-  font-size: 2rem;
-  font-weight: 350;
 }
 
 .templateError {
@@ -1631,13 +1648,13 @@ button {
 .shareToggle[aria-pressed="true"].dockButton {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .shareToggle[aria-pressed="true"].dockButton:hover {
   background: color-mix(in srgb, var(--accent) 92%, black 8%);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 :root[data-theme="dark"] .statusDock {
@@ -1910,7 +1927,7 @@ button {
   align-items: center;
   justify-content: center;
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 0.95rem;
   font-weight: 600;
   padding: 12px 22px;
@@ -3214,7 +3231,12 @@ button {
   .templateLibraryHead {
     align-items: flex-start;
     flex-direction: column;
-    gap: 10px;
+    gap: 16px;
+  }
+
+  .templateLibraryActions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .templateGrid {
