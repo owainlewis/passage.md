@@ -12,8 +12,10 @@ import { EditorStatusBar } from "./editor-status-bar";
 import { useEntitlements } from "./entitlements";
 import { PlusIcon, SidebarIcon, UserIcon } from "./icons";
 import { MarkdownView } from "./markdown-view";
+import { TemplateWorkspace } from "./template-workspace";
 import { useEditorDocuments } from "./use-editor-documents";
 import { useEditorSharing } from "./use-editor-sharing";
+import { useEditorTemplates } from "./use-editor-templates";
 import { useEditorTheme } from "./use-editor-theme";
 
 export default function Editor() {
@@ -23,12 +25,15 @@ export default function Editor() {
   const [filter, setFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [authError, setAuthError] = useState("");
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [activeTemplateId, setActiveTemplateId] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const auth = useAuth();
   const userId = auth.user?.id;
   const entitlements = useEntitlements();
   const { darkActive, theme, toggleDarkMode } = useEditorTheme();
+  const templateState = useEditorTemplates(userId);
   const {
     active,
     activeLoadError,
@@ -112,15 +117,31 @@ export default function Editor() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleMode]);
 
-  async function createDoc() {
-    const created = await createDocument();
-    if (!created) return;
+  async function createDoc(body = "") {
+    const created = await createDocument(body);
+    if (!created) return false;
+    setTemplatesOpen(false);
+    setActiveTemplateId("");
     setMode("edit");
     setFilter("");
     setTagFilter("");
+    return true;
+  }
+
+  function openTemplates() {
+    setTemplatesOpen(true);
+    setActiveTemplateId("");
+  }
+
+  function selectDocument(doc: Parameters<typeof selectDoc>[0]) {
+    setTemplatesOpen(false);
+    setActiveTemplateId("");
+    selectDoc(doc);
   }
 
   function selectFolder(folderId: string) {
+    setTemplatesOpen(false);
+    setActiveTemplateId("");
     if (folderId !== selectedFolder) {
       clearTagFilter();
     }
@@ -171,7 +192,8 @@ export default function Editor() {
         onDeleteDoc={(id) => void deleteDoc(id)}
         onFilterChange={setFilter}
         onLoadMore={() => void loadMoreDocs()}
-        onSelectDoc={selectDoc}
+        onOpenTemplates={openTemplates}
+        onSelectDoc={selectDocument}
         onSelectFolder={selectFolder}
         onTagFilterChange={setTagFilter}
         onToggleDarkMode={toggleDarkMode}
@@ -182,6 +204,8 @@ export default function Editor() {
         selectedFolder={selectedFolder}
         sidebarOpen={sidebarOpen}
         tagFilter={tagFilter}
+        templateCount={templateState.templates.length}
+        templatesActive={templatesOpen}
         theme={theme}
       />
 
@@ -202,14 +226,14 @@ export default function Editor() {
               className="iconButton"
               aria-label="New document"
               disabled={saveState === "loading"}
-              onClick={() => void createDoc()}
+              onClick={openTemplates}
             >
               <PlusIcon />
             </button>
           </div>
 
-          <h1 className="docTitle" title={docsReady ? title : ""}>
-            {docsReady ? title : ""}
+          <h1 className="docTitle" title={templatesOpen ? "Templates" : docsReady ? title : ""}>
+            {templatesOpen ? "Templates" : docsReady ? title : ""}
           </h1>
 
           <div className="topCluster end">
@@ -262,7 +286,22 @@ export default function Editor() {
           </div>
         ) : null}
 
-        <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
+        {templatesOpen ? (
+          <TemplateWorkspace
+            activeTemplateId={activeTemplateId}
+            darkActive={darkActive}
+            error={templateState.error}
+            loading={templateState.loading}
+            saving={templateState.saving}
+            templates={templateState.templates}
+            onCreateDocument={createDoc}
+            onCreateTemplate={templateState.createTemplate}
+            onDeleteTemplate={templateState.deleteTemplate}
+            onEditTemplate={setActiveTemplateId}
+            onShowLibrary={() => setActiveTemplateId("")}
+            onUpdateTemplate={templateState.updateTemplate}
+          />
+        ) : <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
           {saveState === "loading" || activeLoading ? (
             <PendingStatus label="Loading saved docs" />
           ) : activeLoadError ? (
@@ -277,7 +316,7 @@ export default function Editor() {
             <div className="emptyDocuments">
               <h2>No documents yet.</h2>
               <p>Create a document to start writing.</p>
-              <button type="button" className="emptyDocumentsCreate" onClick={() => void createDoc()}>
+              <button type="button" className="emptyDocumentsCreate" onClick={openTemplates}>
                 <PlusIcon />
                 <span>Create document</span>
               </button>
@@ -296,9 +335,9 @@ export default function Editor() {
           ) : (
             <MarkdownView source={bodyWithoutFrontmatter(active.body)} theme={darkActive ? "dark" : "light"} />
           )}
-        </section>
+        </section>}
 
-        {docsReady && active?.bodyLoaded && (
+        {!templatesOpen && docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
             mode={mode}

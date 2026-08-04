@@ -214,7 +214,7 @@ export function useEditorDocuments({
     }
   }
 
-  async function createDoc() {
+  async function createDoc(body = "") {
     if (docs.length >= maxSavedDocs) {
       showDocumentLimit();
       return;
@@ -222,7 +222,7 @@ export function useEditorDocuments({
     setBillingNotice("");
     setSaveState("saving");
     try {
-      const doc = await apiCreateDoc("");
+      const doc = await apiCreateDoc(body);
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       updateEditorURL(doc, "push");

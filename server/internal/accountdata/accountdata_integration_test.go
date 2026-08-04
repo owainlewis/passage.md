@@ -45,6 +45,7 @@ func TestExportAndDeleteAccount(t *testing.T) {
 		{`INSERT INTO billing_accounts (user_id, manual_plan, max_saved_docs) VALUES ($1, 'pro', 1000)`, []any{userID}},
 		{`INSERT INTO documents (owner_user_id, public_id, title, body) VALUES ($1, $2, 'Active document', '# Active document')`, []any{userID, fmt.Sprintf("public%dA", stamp)}},
 		{`INSERT INTO documents (owner_user_id, public_id, title, body, archived_at) VALUES ($1, $2, 'Archived document', '# Archived document', now())`, []any{userID, fmt.Sprintf("public%dB", stamp)}},
+		{`INSERT INTO templates (owner_user_id, title, body) VALUES ($1, 'YouTube script', '# Video title')`, []any{userID}},
 		{`INSERT INTO password_reset_requests (email, processed_at) VALUES ($1, now())`, []any{email}},
 		{`INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '1 hour')`, []any{userID, fmt.Sprintf("reset-token-%d", stamp)}},
 		{`INSERT INTO password_reset_confirmation_rate_limits (dimension, key_hash, window_started_at, attempts) VALUES ('token', $1, now(), 1)`, []any{fmt.Sprintf("reset-token-%d", stamp)}},
@@ -75,7 +76,7 @@ func TestExportAndDeleteAccount(t *testing.T) {
 		t.Fatalf("export permissions = %o, want 600", info.Mode().Perm())
 	}
 	files := readExport(t, outputPath)
-	for _, name := range []string{"account.json", "documents.json", "api-tokens.json"} {
+	for _, name := range []string{"account.json", "documents.json", "templates.json", "api-tokens.json"} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("missing %s", name)
 		}
@@ -101,6 +102,16 @@ func TestExportAndDeleteAccount(t *testing.T) {
 			t.Fatalf("missing Markdown body for %s", document.ID)
 		}
 	}
+	var templateManifest []Template
+	if err := json.Unmarshal(files["templates.json"], &templateManifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(templateManifest) != 1 || templateManifest[0].Title != "YouTube script" {
+		t.Fatalf("templates = %#v, want YouTube script", templateManifest)
+	}
+	if body, ok := files[templateManifest[0].Path]; !ok || string(body) != "# Video title" {
+		t.Fatalf("missing Markdown body for template %s", templateManifest[0].ID)
+	}
 	if err := Export(ctx, db, email, outputPath, exportedAt); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second export error = %v, want file exists", err)
 	}
@@ -113,6 +124,7 @@ func TestExportAndDeleteAccount(t *testing.T) {
 		"sessions":         `SELECT count(*) FROM sessions WHERE user_id = $1`,
 		"api_tokens":       `SELECT count(*) FROM api_tokens WHERE user_id = $1`,
 		"documents":        `SELECT count(*) FROM documents WHERE owner_user_id = $1`,
+		"templates":        `SELECT count(*) FROM templates WHERE owner_user_id = $1`,
 		"billing_accounts": `SELECT count(*) FROM billing_accounts WHERE user_id = $1`,
 	} {
 		var count int

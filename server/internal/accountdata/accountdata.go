@@ -61,6 +61,14 @@ type Document struct {
 	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
+type Template struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Path      string    `json:"path"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 type Token struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
@@ -119,6 +127,13 @@ func Export(ctx context.Context, db *database.Pool, email string, outputPath str
 		return err
 	}
 	if err := writeJSONFile(writer, "documents.json", documents); err != nil {
+		return err
+	}
+	templates, err := writeTemplates(ctx, tx, writer, account.ID)
+	if err != nil {
+		return err
+	}
+	if err := writeJSONFile(writer, "templates.json", templates); err != nil {
 		return err
 	}
 	if err := writeJSONFile(writer, "api-tokens.json", tokens); err != nil {
@@ -460,6 +475,43 @@ func writeDocuments(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID s
 		}
 	}
 	return documents, rows.Err()
+}
+
+func writeTemplates(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID string) ([]Template, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, title, body, created_at, updated_at
+		FROM templates
+		WHERE owner_user_id = $1
+		ORDER BY created_at, id
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	templates := []Template{}
+	for rows.Next() {
+		var template Template
+		var body string
+		if err := rows.Scan(
+			&template.ID,
+			&template.Title,
+			&body,
+			&template.CreatedAt,
+			&template.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		template.Path = "templates/" + template.ID + ".md"
+		templates = append(templates, template)
+		entry, err := writer.Create(template.Path)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			return nil, err
+		}
+	}
+	return templates, rows.Err()
 }
 
 func loadTokens(ctx context.Context, tx pgx.Tx, userID string) ([]Token, error) {

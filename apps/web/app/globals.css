@@ -560,6 +560,39 @@ button {
   color: color-mix(in srgb, var(--accent) 72%, var(--muted));
 }
 
+.templateSidebarButton {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 8px;
+  font: 600 0.8125rem/1 var(--sans);
+  text-align: left;
+}
+
+.templateSidebarButton:hover,
+.templateSidebarButton:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.templateSidebarButton.active {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.templateSidebarButton.active .folderRowCount {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--hairline));
+  color: color-mix(in srgb, var(--accent) 72%, var(--muted));
+}
+
 .tagPanel {
   min-width: 0;
   display: grid;
@@ -1083,6 +1116,224 @@ button {
 .emptyDocumentsCreate:hover,
 .emptyDocumentsCreate:focus-visible {
   background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+/* --------------------------------------------------------------- templates */
+
+.templateLibrary {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 52px clamp(24px, 6vw, 72px) 96px;
+}
+
+.templateLibraryHead {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1040px;
+  margin: 0 auto 28px;
+}
+
+.templateLibraryHead h2,
+.templateLibraryHead p {
+  margin: 0;
+}
+
+.templateLibraryHead h2 {
+  margin-top: 5px;
+  color: var(--ink-display);
+  font-family: var(--serif);
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  font-weight: 500;
+}
+
+.templateLibraryHead > div > p:last-child,
+.templateLibraryHead > span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.templateLibraryHead > div > p:last-child {
+  margin-top: 8px;
+}
+
+.templateKicker,
+.templateCardType {
+  color: var(--accent);
+  font: 650 0.68rem/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.templateGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.templateCard {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  background: var(--elevated);
+  color: var(--ink);
+  padding: 22px;
+  text-align: left;
+}
+
+.templateCard h3,
+.templateCard p {
+  margin: 0;
+}
+
+.templateCard h3 {
+  margin-top: 14px;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 550;
+}
+
+.templateCard p {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.templateCardBlank {
+  background: var(--accent-tint);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--hairline));
+}
+
+.templateCardActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.templateCardActions .btnPrimary,
+.templateCardBlank .btnPrimary {
+  width: auto;
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 0.78rem;
+}
+
+.templateCardNew {
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  color: var(--muted);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.templateCardNew:hover:not(:disabled),
+.templateCardNew:focus-visible:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.templateCardNew:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.templateCardPlus {
+  font-size: 2rem;
+  font-weight: 350;
+}
+
+.templateError {
+  max-width: 1040px;
+  margin: -12px auto 20px;
+  color: #9e3f36;
+  font-size: 0.82rem;
+}
+
+.templateEditor {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.templateEditorHead,
+.templateEditorFoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.templateEditorFoot {
+  justify-content: space-between;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 0;
+}
+
+.templateTitleInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 6px 2px;
+  font: 600 0.95rem/1.2 var(--sans);
+}
+
+.templateTitleInput:focus {
+  border-bottom-color: var(--accent);
+}
+
+.templateDelete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.templateDelete:hover,
+.templateDelete:focus-visible {
+  color: #a23f36;
+}
+
+.templateEditorBody {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 48px clamp(24px, 7vw, 88px) 96px;
+}
+
+.templateBodyInput {
+  width: min(100%, var(--measure));
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.templateEditorBody .markdown {
+  margin: 0 auto;
+}
+
+.templateSaveState {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.templateEditorFoot .btnPrimary {
+  width: auto;
+  min-height: 38px;
+  padding: 0 15px;
+  font-size: 0.78rem;
 }
 
 .editor,
@@ -2980,6 +3231,35 @@ button {
   .writingPane,
   .shareScroll {
     padding: 40px 22px 18vh;
+  }
+
+  .templateLibrary {
+    padding: 32px 18px 72px;
+  }
+
+  .templateLibraryHead {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .templateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .templateEditorHead,
+  .templateEditorFoot {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .templateEditorBody {
+    padding: 32px 20px 72px;
+  }
+
+  .templateEditorFoot {
+    align-items: stretch;
+    flex-wrap: wrap;
   }
 
   .statusBar {

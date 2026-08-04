@@ -15,6 +15,7 @@ type EditorSidebarProps = {
   onDeleteDoc: (id: string) => void;
   onFilterChange: (value: string) => void;
   onLoadMore: () => void;
+  onOpenTemplates: () => void;
   onSelectDoc: (doc: Doc) => void;
   onSelectFolder: (folderId: string) => void;
   onTagFilterChange: (value: string) => void;
@@ -26,6 +27,8 @@ type EditorSidebarProps = {
   selectedFolder: string;
   sidebarOpen: boolean;
   tagFilter: string;
+  templateCount: number;
+  templatesActive: boolean;
   theme: Theme;
 };
 
@@ -38,6 +41,7 @@ export function EditorSidebar({
   onDeleteDoc,
   onFilterChange,
   onLoadMore,
+  onOpenTemplates,
   onSelectDoc,
   onSelectFolder,
   onTagFilterChange,
@@ -49,6 +53,8 @@ export function EditorSidebar({
   selectedFolder,
   sidebarOpen,
   tagFilter,
+  templateCount,
+  templatesActive,
   theme
 }: EditorSidebarProps) {
   const darkActive = theme === "dark";
@@ -110,6 +116,16 @@ export function EditorSidebar({
             );
           })}
         </div>
+        <button
+          type="button"
+          className={`templateSidebarButton ${templatesActive ? "active" : ""}`}
+          aria-current={templatesActive ? "page" : undefined}
+          onClick={onOpenTemplates}
+        >
+          <span className="folderRowIcon"><DocIcon /></span>
+          <span className="folderRowName">Templates</span>
+          <span className="folderRowCount" aria-hidden="true">{templateCount}/10</span>
+        </button>
       </div>
       <div className="docListLabel">
         <span>Documents</span>
