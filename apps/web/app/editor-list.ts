@@ -1,13 +1,14 @@
 import { bodyWithoutFrontmatter, parseTags, titleOf } from "./doc-utils";
-import { Doc, isShared, PRIVATE_FOLDER, SHARED_FOLDER } from "./editor-model";
+import { ALL_DOCUMENTS, Doc, DocumentFilter, isShared, SHARED_DOCUMENTS } from "./editor-model";
 
 type IndexedDoc = {
   doc: Doc;
   index: number;
 };
 
-export function docMatchesFolder(doc: Doc, folderId: string) {
-  if (folderId === SHARED_FOLDER) return isShared(doc);
+export function docMatchesFilter(doc: Doc, documentFilter: DocumentFilter) {
+  if (documentFilter === ALL_DOCUMENTS) return true;
+  if (documentFilter === SHARED_DOCUMENTS) return isShared(doc);
   return !isShared(doc);
 }
 
@@ -32,17 +33,10 @@ export function compareDocsBySidebarOrder(a: IndexedDoc, b: IndexedDoc) {
   return a.index - b.index;
 }
 
-export function editorFolderRows(docs: Doc[], docsReady: boolean) {
-  return [
-    { id: PRIVATE_FOLDER, label: "Private", count: docsReady ? docs.filter((doc) => !isShared(doc)).length : 0 },
-    { id: SHARED_FOLDER, label: "Shared", count: docsReady ? docs.filter(isShared).length : 0 }
-  ];
-}
-
 export function visibleEditorDocs(
   docs: Doc[],
   docsReady: boolean,
-  selectedFolder: string,
+  documentFilter: DocumentFilter,
   filter: string,
   tagFilter: string
 ) {
@@ -51,7 +45,7 @@ export function visibleEditorDocs(
   return (docsReady ? docs.map((doc, index) => ({ doc, index })) : [])
     .filter(({ doc }) => {
       const tags = editorDocTags(doc);
-      if (!docMatchesFolder(doc, selectedFolder)) return false;
+      if (!docMatchesFilter(doc, documentFilter)) return false;
       if (tagFilterQuery && !tags.some((tag) => tag.includes(tagFilterQuery))) return false;
       if (!query) return true;
       return (
@@ -64,9 +58,9 @@ export function visibleEditorDocs(
     .map(({ doc }) => doc);
 }
 
-export function firstDocInFolder(docs: Doc[], folderId: string) {
+export function firstDocInFilter(docs: Doc[], documentFilter: DocumentFilter) {
   return docs
     .map((doc, index) => ({ doc, index }))
-    .filter(({ doc }) => docMatchesFolder(doc, folderId))
+    .filter(({ doc }) => docMatchesFilter(doc, documentFilter))
     .sort(compareDocsBySidebarOrder)[0]?.doc;
 }

@@ -906,7 +906,7 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
   });
 
-  it("filters private and shared documents with fixed system folders", async () => {
+  it("shows one flat document list and filters by sharing state", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "# Private note\n\nDraft." },
       { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
@@ -915,24 +915,23 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Private note/ });
 
-    expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Open Shared folder" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "New folder" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Delete .* folder/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Document location" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Shared note/ })).not.toBeInTheDocument();
+    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
+    expect(sharingFilter).toHaveValue("all");
+    expect(screen.queryByText("Folders")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Shared document")).toBeInTheDocument();
 
-    const sharedFolder = screen.getByRole("button", { name: "Open Shared folder" });
-    fireEvent.click(sharedFolder);
+    fireEvent.change(sharingFilter, { target: { value: "shared" } });
 
-    expect(sharedFolder).toHaveAttribute("aria-current", "page");
+    expect(sharingFilter).toHaveValue("shared");
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Published.").length).toBeGreaterThan(0);
   });
 
-  it("clears the typed tag filter when changing folders", async () => {
+  it("clears the typed tag filter when changing the sharing filter", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "---\ntags: [notes]\n---\n\n# Private note\n\nDraft." },
       { id: "doc-shared", body: "---\ntags: [published]\n---\n\n# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
@@ -948,28 +947,30 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Shared note/ })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Shared folder" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter documents by sharing" }), {
+      target: { value: "shared" }
+    });
 
     expect(screen.getByRole("textbox", { name: "Filter by tag" })).toHaveValue("");
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
   });
 
-  it("keeps empty system folders visible but disabled", async () => {
+  it("allows an empty sharing filter without restoring folder sections", async () => {
     stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
     await renderWrite();
     await screen.findByRole("button", { name: /Private note/ });
 
-    const sharedFolder = screen.getByRole("button", { name: "Open Shared folder" });
-    expect(sharedFolder).toBeDisabled();
-    fireEvent.click(sharedFolder);
+    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
+    fireEvent.change(sharingFilter, { target: { value: "shared" } });
 
-    expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
-    expect(screen.queryByText("No documents match.")).not.toBeInTheDocument();
+    expect(sharingFilter).toHaveValue("shared");
+    expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
+    expect(screen.getByText("No documents match.")).toBeInTheDocument();
+    expect(screen.queryByText("Folders")).not.toBeInTheDocument();
   });
 
-  it("moves to Shared after deleting the last private document", async () => {
+  it("returns to All after deleting the last document in a sharing filter", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "# Private note\n\nDraft." },
       { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
@@ -978,10 +979,12 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Private note/ });
 
+    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
+    fireEvent.change(sharingFilter, { target: { value: "private" } });
+
     fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
-    expect(screen.getByRole("button", { name: "Open Private folder" })).toBeDisabled();
+    await waitFor(() => expect(sharingFilter).toHaveValue("all"));
     expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
@@ -1113,7 +1116,7 @@ describe("Write (editor)", () => {
     expect(rows[2]).toContain("Old note");
   });
 
-  it("moves a document into Shared when it is shared", async () => {
+  it("marks a document as shared without moving it to another section", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1125,11 +1128,12 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.getByLabelText("Shared document")).toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "Filter documents by sharing" })).toHaveValue("all");
     expect(await screen.findByRole("button", { name: /Markdown for agents and humans/ })).toBeInTheDocument();
   });
 
-  it("orders a newly shared document as latest in Shared", async () => {
+  it("orders a newly shared document as latest in the flat list", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1145,26 +1149,27 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.getByLabelText("Shared document")).toBeInTheDocument());
     const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
     expect(rows[0]).toContain("Private note");
     expect(rows[1]).toContain("Shared note");
   });
 
-  it("moves a document back to Private when it is unshared", async () => {
+  it("removes the shared marker without moving the document", async () => {
     stubSignedInFetch([{ id: "doc-shared", body: "# Shared draft", shareToken: "share-token", sharedAt: "2026-07-09T08:00:00Z" }]);
 
     await renderWrite();
     await screen.findByRole("button", { name: /Shared draft/ });
 
-    expect(screen.getByRole("button", { name: "Open Shared folder" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("Shared document")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.queryByLabelText("Shared document")).not.toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "Filter documents by sharing" })).toHaveValue("all");
     expect(screen.getByRole("button", { name: /Shared draft/ })).toBeInTheDocument();
   });
 
-  it("orders a newly unshared document as latest in Private", async () => {
+  it("orders a newly unshared document as latest in the flat list", async () => {
     stubSignedInFetch([
       {
         id: "doc-shared",
@@ -1181,7 +1186,7 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Private folder" })).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(screen.queryByLabelText("Shared document")).not.toBeInTheDocument());
     const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
     expect(rows[0]).toContain("Shared note");
     expect(rows[1]).toContain("Private note");

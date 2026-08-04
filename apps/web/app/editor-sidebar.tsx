@@ -2,9 +2,9 @@
 
 import { Brand } from "./brand";
 import { snippetOf } from "./doc-utils";
-import { editorDocSearchText, editorDocTitle, editorFolderRows, visibleEditorDocs } from "./editor-list";
-import { Doc, isShared, SaveState, Theme } from "./editor-model";
-import { DocIcon, FolderIcon, PinIcon, SearchIcon } from "./icons";
+import { editorDocSearchText, editorDocTitle, visibleEditorDocs } from "./editor-list";
+import { Doc, DocumentFilter, isShared, SaveState, Theme } from "./editor-model";
+import { DocIcon, PinIcon, SearchIcon, ShareIcon } from "./icons";
 
 type EditorSidebarProps = {
   active: Doc | null;
@@ -13,18 +13,18 @@ type EditorSidebarProps = {
   filter: string;
   onClearTagFilter: () => void;
   onDeleteDoc: (id: string) => void;
+  onDocumentFilterChange: (filter: DocumentFilter) => void;
   onFilterChange: (value: string) => void;
   onLoadMore: () => void;
   onOpenTemplates: () => void;
   onSelectDoc: (doc: Doc) => void;
-  onSelectFolder: (folderId: string) => void;
   onTagFilterChange: (value: string) => void;
   onToggleDarkMode: () => void;
   onTogglePin: (id: string) => void;
   saveState: SaveState;
   hasMoreDocs: boolean;
   loadingMore: boolean;
-  selectedFolder: string;
+  documentFilter: DocumentFilter;
   sidebarOpen: boolean;
   tagFilter: string;
   templateCount: number;
@@ -39,18 +39,18 @@ export function EditorSidebar({
   filter,
   onClearTagFilter,
   onDeleteDoc,
+  onDocumentFilterChange,
   onFilterChange,
   onLoadMore,
   onOpenTemplates,
   onSelectDoc,
-  onSelectFolder,
   onTagFilterChange,
   onToggleDarkMode,
   onTogglePin,
   saveState,
   hasMoreDocs,
   loadingMore,
-  selectedFolder,
+  documentFilter,
   sidebarOpen,
   tagFilter,
   templateCount,
@@ -59,8 +59,7 @@ export function EditorSidebar({
 }: EditorSidebarProps) {
   const darkActive = theme === "dark";
   const tagFilterQuery = tagFilter.trim().toLowerCase();
-  const folderRows = editorFolderRows(docs, docsReady);
-  const visibleDocs = visibleEditorDocs(docs, docsReady, selectedFolder, filter, tagFilter);
+  const visibleDocs = visibleEditorDocs(docs, docsReady, documentFilter, filter, tagFilter);
 
   return (
     <aside className="sidebar" aria-label="Documents" data-open={sidebarOpen}>
@@ -83,53 +82,33 @@ export function EditorSidebar({
           />
         </div>
       </div>
-      <div className="folderFilter" aria-label="Folders">
-        <div className="tagFilterHead">
-          <span>Folders</span>
-        </div>
-        <div className="folderList">
-          {folderRows.map((folder) => {
-            const activeFolderFilter = selectedFolder === folder.id;
-            const disabled = folder.count === 0;
-            return (
-              <div
-                key={folder.id || "all-documents"}
-                className={`folderRow ${activeFolderFilter ? "active" : ""} ${disabled ? "disabled" : ""}`}
-              >
-                <button
-                  type="button"
-                  className="folderRowSelect"
-                  disabled={disabled}
-                  aria-current={activeFolderFilter ? "page" : undefined}
-                  aria-label={`Open ${folder.label} folder`}
-                  onClick={() => onSelectFolder(folder.id)}
-                >
-                  <span className="folderRowIcon">
-                    <FolderIcon />
-                  </span>
-                  <span className="folderRowName">{folder.label}</span>
-                  <span className="folderRowCount" aria-hidden="true">
-                    {folder.count}
-                  </span>
-                </button>
-              </div>
-            );
-          })}
-        </div>
+      <div className="sidebarShortcuts">
         <button
           type="button"
           className={`templateSidebarButton ${templatesActive ? "active" : ""}`}
           aria-current={templatesActive ? "page" : undefined}
           onClick={onOpenTemplates}
         >
-          <span className="folderRowIcon"><DocIcon /></span>
-          <span className="folderRowName">Templates</span>
-          <span className="folderRowCount" aria-hidden="true">{templateCount}/10</span>
+          <span className="templateSidebarIcon"><DocIcon /></span>
+          <span className="templateSidebarName">Templates</span>
+          <span className="templateSidebarCount" aria-hidden="true">{templateCount}/10</span>
         </button>
       </div>
       <div className="docListLabel">
         <span>Documents</span>
-        <span className="docCount">{visibleDocs.length}</span>
+        <div className="docListControls">
+          <select
+            className="documentFilter"
+            aria-label="Filter documents by sharing"
+            value={documentFilter}
+            onChange={(event) => onDocumentFilterChange(event.target.value as DocumentFilter)}
+          >
+            <option value="all">All</option>
+            <option value="private">Private</option>
+            <option value="shared">Shared</option>
+          </select>
+          <span className="docCount">{visibleDocs.length}</span>
+        </div>
       </div>
       <nav className="docList">
         {visibleDocs.map((doc) => {
@@ -141,7 +120,14 @@ export function EditorSidebar({
                   <DocIcon />
                 </span>
                 <span className="docRowText">
-                  <span className="docRowTitle">{editorDocTitle(doc)}</span>
+                  <span className="docRowTitle">
+                    <span className="docRowTitleText">{editorDocTitle(doc)}</span>
+                    {isShared(doc) && (
+                      <span className="docSharedMark" aria-label="Shared document" title="Shared">
+                        <ShareIcon />
+                      </span>
+                    )}
+                  </span>
                   <span className="docRowSnippet">{snippetOf(editorDocSearchText(doc))}</span>
                 </span>
               </button>

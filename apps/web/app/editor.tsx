@@ -6,8 +6,8 @@ import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { EditorSidebar } from "./editor-sidebar";
-import { firstDocInFolder, docMatchesFolder } from "./editor-list";
-import { isShared, Mode } from "./editor-model";
+import { docMatchesFilter, firstDocInFilter } from "./editor-list";
+import { DocumentFilter, isShared, Mode } from "./editor-model";
 import { EditorStatusBar } from "./editor-status-bar";
 import { useEntitlements } from "./entitlements";
 import { PlusIcon, SidebarIcon, UserIcon } from "./icons";
@@ -51,12 +51,12 @@ export default function Editor() {
     retryActive,
     saveState,
     selectDoc,
-    selectedFolder,
+    documentFilter,
     setBillingNotice,
     setDocs,
     setPendingSave,
     setSaveState,
-    setSelectedFolder,
+    setDocumentFilter,
     togglePin,
     updateBody
   } = useEditorDocuments({
@@ -84,7 +84,7 @@ export default function Editor() {
     setDocs,
     setPendingSave,
     setSaveState,
-    setSelectedFolder
+    setDocumentFilter
   });
 
   useEffect(() => {
@@ -139,19 +139,18 @@ export default function Editor() {
     selectDoc(doc);
   }
 
-  function selectFolder(folderId: string) {
+  function selectDocumentFilter(nextFilter: DocumentFilter) {
     setTemplatesOpen(false);
     setActiveTemplateId("");
-    if (folderId !== selectedFolder) {
+    if (nextFilter !== documentFilter) {
       clearTagFilter();
     }
-    if (active && docMatchesFolder(active, folderId)) {
-      setSelectedFolder(folderId);
+    setDocumentFilter(nextFilter);
+    if (active && docMatchesFilter(active, nextFilter)) {
       return;
     }
-    const nextDoc = firstDocInFolder(docs, folderId);
+    const nextDoc = firstDocInFilter(docs, nextFilter);
     if (!nextDoc) return;
-    setSelectedFolder(folderId);
     selectDoc(nextDoc);
   }
 
@@ -194,14 +193,14 @@ export default function Editor() {
         onLoadMore={() => void loadMoreDocs()}
         onOpenTemplates={openTemplates}
         onSelectDoc={selectDocument}
-        onSelectFolder={selectFolder}
+        onDocumentFilterChange={selectDocumentFilter}
         onTagFilterChange={setTagFilter}
         onToggleDarkMode={toggleDarkMode}
         onTogglePin={togglePin}
         saveState={saveState}
         hasMoreDocs={hasMoreDocs}
         loadingMore={loadingMore}
-        selectedFolder={selectedFolder}
+        documentFilter={documentFilter}
         sidebarOpen={sidebarOpen}
         tagFilter={tagFilter}
         templateCount={templateState.templates.length}

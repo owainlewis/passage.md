@@ -3,7 +3,7 @@
 import { Dispatch, SetStateAction, useRef, useState } from "react";
 import { apiShareDoc, apiUnshareDoc, apiUpdateDoc } from "./editor-api";
 import { titleOf } from "./doc-utils";
-import { Doc, SaveState, ShareState, SHARED_FOLDER, PRIVATE_FOLDER } from "./editor-model";
+import { ALL_DOCUMENTS, Doc, DocumentFilter, SaveState, ShareState } from "./editor-model";
 import { PendingSave } from "./use-editor-documents";
 
 type EditorSharingOptions = {
@@ -16,7 +16,7 @@ type EditorSharingOptions = {
   setDocs: Dispatch<SetStateAction<Doc[]>>;
   setPendingSave: Dispatch<SetStateAction<PendingSave | null>>;
   setSaveState: Dispatch<SetStateAction<SaveState>>;
-  setSelectedFolder: Dispatch<SetStateAction<string>>;
+  setDocumentFilter: Dispatch<SetStateAction<DocumentFilter>>;
 };
 
 export function useEditorSharing({
@@ -29,7 +29,7 @@ export function useEditorSharing({
   setDocs,
   setPendingSave,
   setSaveState,
-  setSelectedFolder
+  setDocumentFilter
 }: EditorSharingOptions) {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const copyTimer = useRef<number | undefined>(undefined);
@@ -92,7 +92,7 @@ export function useEditorSharing({
         );
       }
       await copyURL(new URL(htmlPath, window.location.origin).toString());
-      setSelectedFolder(SHARED_FOLDER);
+      setDocumentFilter(ALL_DOCUMENTS);
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {
@@ -118,7 +118,7 @@ export function useEditorSharing({
       setDocs((prev) =>
         prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null, updatedAt } : doc))
       );
-      setSelectedFolder(PRIVATE_FOLDER);
+      setDocumentFilter(ALL_DOCUMENTS);
       setShareState("unshared");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {

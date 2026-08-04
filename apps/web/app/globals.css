@@ -158,7 +158,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px 7px;
+  padding: 12px 18px 7px;
   min-width: 268px;
 }
 
@@ -183,6 +183,28 @@ button {
   align-items: center;
   justify-content: center;
   padding: 0 6px;
+}
+
+.docListControls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.documentFilter {
+  min-height: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  padding: 2px 22px 2px 7px;
+  font: 600 0.6875rem/1 var(--sans);
+}
+
+.documentFilter:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--hairline));
+  outline: 2px solid var(--accent-tint);
+  outline-offset: 1px;
 }
 
 /* -------------------------------------------------------------- documents */
@@ -284,6 +306,9 @@ button {
 }
 
 .docRowTitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 0.84rem;
   font-weight: 550;
   line-height: 1.35;
@@ -291,6 +316,27 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.docRowTitleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docSharedMark {
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--faint);
+}
+
+.docSharedMark svg {
+  width: 11px;
+  height: 11px;
 }
 
 .docRow.active .docRowTitle {
@@ -425,9 +471,9 @@ button {
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
-.folderFilter {
+.sidebarShortcuts {
   min-width: 268px;
-  padding: 0 10px 10px;
+  padding: 0 10px 4px;
 }
 
 .tagFilterHead {
@@ -460,72 +506,7 @@ button {
   color: var(--ink);
 }
 
-.folderList {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.folderRow {
-  width: 100%;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  gap: 2px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  padding: 0 4px 0 0;
-  font-family: var(--sans);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.folderRow:hover,
-.folderRow:has(:focus-visible) {
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.folderRow.active {
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-
-.folderRow.disabled {
-  color: var(--faint);
-}
-
-.folderRow.disabled:hover {
-  background: transparent;
-  color: var(--faint);
-}
-
-.folderRowSelect {
-  min-width: 0;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 6px 4px 6px 8px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.folderRowSelect:disabled {
-  cursor: default;
-}
-
-.folderRowIcon {
+.templateSidebarIcon {
   width: 20px;
   height: 20px;
   display: inline-flex;
@@ -534,13 +515,13 @@ button {
   color: currentColor;
 }
 
-.folderRowName {
+.templateSidebarName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folderRowCount {
+.templateSidebarCount {
   min-width: 20px;
   height: 20px;
   display: inline-flex;
@@ -555,11 +536,6 @@ button {
   font-weight: 650;
 }
 
-.folderRow.active .folderRowCount {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--hairline));
-  color: color-mix(in srgb, var(--accent) 72%, var(--muted));
-}
-
 .templateSidebarButton {
   width: 100%;
   min-height: 34px;
@@ -567,7 +543,6 @@ button {
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
-  margin-top: 4px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -588,7 +563,7 @@ button {
   color: var(--accent);
 }
 
-.templateSidebarButton.active .folderRowCount {
+.templateSidebarButton.active .templateSidebarCount {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--hairline));
   color: color-mix(in srgb, var(--accent) 72%, var(--muted));
 }
