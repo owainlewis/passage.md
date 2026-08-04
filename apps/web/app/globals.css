@@ -1220,9 +1220,8 @@ button {
   gap: 12px;
 }
 
-.templateCardActions .btnPrimary,
-.templateCardBlank .btnPrimary {
-  width: auto;
+.templateCardActions .btnPrimary {
+  width: 124px;
   min-height: 38px;
   padding: 0 14px;
   font-size: 0.78rem;

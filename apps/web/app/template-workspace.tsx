@@ -134,9 +134,11 @@ export function TemplateWorkspace({
               <h3>Blank document</h3>
               <p>Start with an empty Markdown page.</p>
             </div>
-            <button type="button" className="btnPrimary" aria-label="Create blank document" onClick={() => void onCreateDocument("")}>
-              Create blank
-            </button>
+            <div className="templateCardActions">
+              <button type="button" className="btnPrimary" aria-label="Create blank document" onClick={() => void onCreateDocument("")}>
+                Create blank
+              </button>
+            </div>
           </article>
 
           {templates.map((template) => (
