@@ -1,8 +1,7 @@
 "use client";
 
 import { Brand } from "./brand";
-import { snippetOf } from "./doc-utils";
-import { editorDocSearchText, editorDocTitle, visibleEditorDocs } from "./editor-list";
+import { editorDocTitle, visibleEditorDocs } from "./editor-list";
 import { Doc, DocumentFilter, isShared, SaveState, Theme } from "./editor-model";
 import { DocIcon, PinIcon, SearchIcon, ShareIcon } from "./icons";
 
@@ -128,7 +127,6 @@ export function EditorSidebar({
                       </span>
                     )}
                   </span>
-                  <span className="docRowSnippet">{snippetOf(editorDocSearchText(doc))}</span>
                 </span>
               </button>
               <span className="docRowActions">

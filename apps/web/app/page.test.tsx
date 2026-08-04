@@ -874,7 +874,9 @@ describe("Write (editor)", () => {
       target: { value: "roadmap" }
     });
 
-    expect(screen.getByRole("button", { name: /Launch note/ })).toBeInTheDocument();
+    const launchNote = screen.getByRole("button", { name: /Launch note/ });
+    expect(launchNote).toBeInTheDocument();
+    expect(launchNote).not.toHaveTextContent("Roadmap coverage");
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
   });
 

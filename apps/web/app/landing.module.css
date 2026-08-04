@@ -45,10 +45,10 @@
 
 .navCta {
   padding: 9px 14px;
-  color: var(--ink) !important;
-  border: 1px solid var(--hairline-strong);
+  color: var(--accent) !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--hairline));
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--accent-tint);
 }
 
 .hero {
@@ -80,7 +80,7 @@
 .heroTitle {
   max-width: 20ch;
   margin: 0 auto;
-  color: var(--ink-display);
+  color: color-mix(in srgb, var(--accent) 58%, var(--accent-strong));
   font-family: var(--serif);
   font-size: clamp(2.5rem, 4vw, 3.6rem);
   font-weight: 500;
@@ -121,25 +121,26 @@
 }
 
 .primaryButton {
-  color: #fff;
-  border: 1px solid var(--accent-strong);
-  background: var(--accent-strong);
+  color: var(--accent-contrast);
+  border: 1px solid var(--accent);
+  background: var(--accent);
 }
 
 .primaryButton:hover {
-  border-color: color-mix(in srgb, var(--accent-strong) 85%, var(--accent));
-  background: color-mix(in srgb, var(--accent-strong) 85%, var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 84%, var(--accent-strong));
+  background: color-mix(in srgb, var(--accent) 84%, var(--accent-strong));
 }
 
 .secondaryButton {
-  color: var(--ink-soft);
-  border: 1px solid var(--hairline-strong);
-  background: transparent;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--hairline));
+  background: var(--accent-tint);
 }
 
 .secondaryButton:hover {
-  color: var(--ink);
-  border-color: var(--ink);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-tint) 70%, var(--surface));
 }
 
 .heroNote {

@@ -340,15 +340,6 @@ button {
   color: var(--accent);
 }
 
-.docRowSnippet {
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .docRowDelete {
   flex: 0 0 auto;
   width: 18px;
