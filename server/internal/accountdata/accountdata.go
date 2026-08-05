@@ -62,11 +62,12 @@ type Document struct {
 }
 
 type Template struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Path      string    `json:"path"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Path        string    `json:"path"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type Token struct {
@@ -479,7 +480,7 @@ func writeDocuments(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID s
 
 func writeTemplates(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID string) ([]Template, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, title, body, created_at, updated_at
+		SELECT id::text, title, description, body, created_at, updated_at
 		FROM templates
 		WHERE owner_user_id = $1
 		ORDER BY created_at, id
@@ -495,6 +496,7 @@ func writeTemplates(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID s
 		if err := rows.Scan(
 			&template.ID,
 			&template.Title,
+			&template.Description,
 			&body,
 			&template.CreatedAt,
 			&template.UpdatedAt,

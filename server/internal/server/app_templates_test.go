@@ -13,27 +13,29 @@ import (
 )
 
 type routeTemplateStore struct {
-	ownerID string
-	title   string
-	body    string
+	ownerID     string
+	title       string
+	description string
+	body        string
 }
 
 func (s *routeTemplateStore) List(context.Context, string) ([]passagetemplates.Template, error) {
 	return []passagetemplates.Template{}, nil
 }
 
-func (s *routeTemplateStore) Create(_ context.Context, ownerID string, title string, body string) (passagetemplates.Template, error) {
+func (s *routeTemplateStore) Create(_ context.Context, ownerID string, title string, description string, body string) (passagetemplates.Template, error) {
 	s.ownerID = ownerID
 	s.title = title
+	s.description = description
 	s.body = body
-	return passagetemplates.Template{ID: "11111111-1111-1111-1111-111111111111", Title: title, Body: body}, nil
+	return passagetemplates.Template{ID: "11111111-1111-1111-1111-111111111111", Title: title, Description: description, Body: body}, nil
 }
 
 func (s *routeTemplateStore) Get(context.Context, string, string) (passagetemplates.Template, error) {
 	return passagetemplates.Template{}, passagetemplates.ErrNotFound
 }
 
-func (s *routeTemplateStore) Update(context.Context, string, string, string, string) (passagetemplates.Template, error) {
+func (s *routeTemplateStore) Update(context.Context, string, string, string, string, string) (passagetemplates.Template, error) {
 	return passagetemplates.Template{}, passagetemplates.ErrNotFound
 }
 
@@ -66,14 +68,14 @@ func TestTemplateRoutesRequireBrowserSession(t *testing.T) {
 	}
 
 	create := httptest.NewRecorder()
-	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/templates", strings.NewReader(`{"title":"Video script","body":"# [Title]"}`))
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/templates", strings.NewReader(`{"title":"Video script","description":"Plan a product video.","body":"# [Title]"}`))
 	createRequest.Header.Set("Content-Type", "application/json")
 	createRequest.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
 	app.Routes().ServeHTTP(create, createRequest)
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create status/body = %d/%s", create.Code, create.Body.String())
 	}
-	if store.ownerID != "user-1" || store.title != "Video script" || store.body != "# [Title]" {
-		t.Fatalf("stored owner/title/body = %q/%q/%q", store.ownerID, store.title, store.body)
+	if store.ownerID != "user-1" || store.title != "Video script" || store.description != "Plan a product video." || store.body != "# [Title]" {
+		t.Fatalf("stored owner/title/description/body = %q/%q/%q/%q", store.ownerID, store.title, store.description, store.body)
 	}
 }

@@ -18,7 +18,7 @@ type TemplateWorkspaceProps = {
   onDeleteTemplate: (id: string) => Promise<boolean>;
   onEditTemplate: (id: string) => void;
   onShowLibrary: () => void;
-  onUpdateTemplate: (id: string, changes: Partial<Pick<Template, "title" | "body">>) => void;
+  onUpdateTemplate: (id: string, changes: Partial<Pick<Template, "title" | "description" | "body">>) => void;
 };
 
 export function TemplateWorkspace({
@@ -75,15 +75,25 @@ export function TemplateWorkspace({
 
         <div className="templateEditorBody">
           {mode === "edit" ? (
-            <textarea
-              className="editor templateBodyInput"
-              aria-label="Template Markdown"
-              aria-multiline="true"
-              spellCheck
-              placeholder="Write the Markdown this template should copy."
-              value={activeTemplate.body}
-              onChange={(event) => onUpdateTemplate(activeTemplate.id, { body: event.target.value })}
-            />
+            <div className="templateEditFields">
+              <input
+                className="templateDescriptionInput"
+                aria-label="Template description"
+                maxLength={240}
+                placeholder="Describe when to use this template."
+                value={activeTemplate.description}
+                onChange={(event) => onUpdateTemplate(activeTemplate.id, { description: event.target.value })}
+              />
+              <textarea
+                className="editor templateBodyInput"
+                aria-label="Template Markdown"
+                aria-multiline="true"
+                spellCheck
+                placeholder="Write the Markdown this template should copy."
+                value={activeTemplate.body}
+                onChange={(event) => onUpdateTemplate(activeTemplate.id, { body: event.target.value })}
+              />
+            </div>
           ) : (
             <MarkdownView source={activeTemplate.body} theme={darkActive ? "dark" : "light"} />
           )}
@@ -151,7 +161,7 @@ export function TemplateWorkspace({
             <article className="templateCard" key={template.id}>
               <div>
                 <h3>{template.title}</h3>
-                <p>{templateExcerpt(template.body)}</p>
+                <p>{template.description || "No description."}</p>
               </div>
               <div className="templateCardActions">
                 <button
@@ -187,14 +197,4 @@ export function TemplateWorkspace({
       )}
     </section>
   );
-}
-
-function templateExcerpt(body: string) {
-  const text = body
-    .replace(/^---[\s\S]*?---\s*/m, "")
-    .replace(/[#>*_`\[\]()-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!text) return "Empty Markdown template.";
-  return text.length > 120 ? `${text.slice(0, 117)}…` : text;
 }

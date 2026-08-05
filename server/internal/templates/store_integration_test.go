@@ -36,7 +36,7 @@ func TestStoreEnforcesOwnerAndTenTemplateLimit(t *testing.T) {
 	store := NewStore(db)
 	var first Template
 	for index := range MaxTemplates {
-		created, err := store.Create(ctx, ownerID, fmt.Sprintf("Template %d", index+1), fmt.Sprintf("# Body %d", index+1))
+		created, err := store.Create(ctx, ownerID, fmt.Sprintf("Template %d", index+1), fmt.Sprintf("Description %d", index+1), fmt.Sprintf("# Body %d", index+1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestStoreEnforcesOwnerAndTenTemplateLimit(t *testing.T) {
 			first = created
 		}
 	}
-	if _, err := store.Create(ctx, ownerID, "Eleventh", "# Too many"); err != ErrLimitReached {
+	if _, err := store.Create(ctx, ownerID, "Eleventh", "Too many", "# Too many"); err != ErrLimitReached {
 		t.Fatalf("eleventh create error = %v", err)
 	}
 	if _, err := store.Get(ctx, otherID, first.ID); err != ErrNotFound {
@@ -53,12 +53,23 @@ func TestStoreEnforcesOwnerAndTenTemplateLimit(t *testing.T) {
 	if err := store.Delete(ctx, ownerID, first.ID); err != nil {
 		t.Fatal(err)
 	}
-	created, err := store.Create(ctx, ownerID, "Replacement", "# Replacement")
+	created, err := store.Create(ctx, ownerID, "Replacement", "A replacement template.", "# Replacement")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Title != "Replacement" || created.Body != "# Replacement" {
+	if created.Title != "Replacement" || created.Description != "A replacement template." || created.Body != "# Replacement" {
 		t.Fatalf("replacement = %#v", created)
+	}
+	updated, err := store.Update(ctx, ownerID, created.ID, "Updated", "Updated description.", "# Updated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Get(ctx, ownerID, updated.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Description != "Updated description." || loaded.Body != "# Updated" {
+		t.Fatalf("loaded = %#v", loaded)
 	}
 }
 

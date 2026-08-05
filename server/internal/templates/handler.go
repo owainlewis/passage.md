@@ -6,22 +6,24 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
 )
 
 const (
-	MaxTitleBytes           = 120
-	MaxBodyBytes            = 512 * 1024
-	maxTemplateRequestBytes = MaxBodyBytes*6 + 4096
+	MaxTitleBytes            = 120
+	MaxDescriptionCharacters = 240
+	MaxBodyBytes             = 512 * 1024
+	maxTemplateRequestBytes  = MaxBodyBytes*6 + 4096
 )
 
 type templateStore interface {
 	List(ctx context.Context, ownerID string) ([]Template, error)
-	Create(ctx context.Context, ownerID string, title string, body string) (Template, error)
+	Create(ctx context.Context, ownerID string, title string, description string, body string) (Template, error)
 	Get(ctx context.Context, ownerID string, id string) (Template, error)
-	Update(ctx context.Context, ownerID string, id string, title string, body string) (Template, error)
+	Update(ctx context.Context, ownerID string, id string, title string, description string, body string) (Template, error)
 	Delete(ctx context.Context, ownerID string, id string) error
 }
 
@@ -50,7 +52,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User)
 	if !ok {
 		return
 	}
-	template, err := h.store.Create(r.Context(), user.ID, input.Title, input.Body)
+	template, err := h.store.Create(r.Context(), user.ID, input.Title, input.Description, input.Body)
 	if errors.Is(err, ErrLimitReached) {
 		writeError(w, http.StatusConflict, "template limit reached")
 		return
@@ -80,7 +82,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 	if !ok {
 		return
 	}
-	template, err := h.store.Update(r.Context(), user.ID, r.PathValue("id"), input.Title, input.Body)
+	template, err := h.store.Update(r.Context(), user.ID, r.PathValue("id"), input.Title, input.Description, input.Body)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "template not found")
 		return
@@ -109,8 +111,9 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, user auth.User)
 }
 
 type templateInput struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Body        string `json:"body"`
 }
 
 func decodeTemplateInput(w http.ResponseWriter, r *http.Request) (templateInput, bool) {
@@ -122,12 +125,17 @@ func decodeTemplateInput(w http.ResponseWriter, r *http.Request) (templateInput,
 		return templateInput{}, false
 	}
 	input.Title = strings.TrimSpace(input.Title)
+	input.Description = strings.TrimSpace(input.Description)
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "template title is required")
 		return templateInput{}, false
 	}
 	if len([]byte(input.Title)) > MaxTitleBytes {
 		writeError(w, http.StatusBadRequest, "template title is too long")
+		return templateInput{}, false
+	}
+	if utf8.RuneCountInString(input.Description) > MaxDescriptionCharacters {
+		writeError(w, http.StatusBadRequest, "template description is too long")
 		return templateInput{}, false
 	}
 	if len([]byte(input.Body)) > MaxBodyBytes {

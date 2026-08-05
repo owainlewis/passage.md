@@ -15,11 +15,12 @@ var ErrLimitReached = errors.New("template limit reached")
 const MaxTemplates = 10
 
 type Template struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Body        string    `json:"body"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type Store struct {
@@ -32,7 +33,7 @@ func NewStore(db *database.Pool) *Store {
 
 func (s *Store) List(ctx context.Context, ownerID string) ([]Template, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, title, body, created_at, updated_at
+		SELECT id::text, title, description, body, created_at, updated_at
 		FROM templates
 		WHERE owner_user_id = $1
 		ORDER BY updated_at DESC, id DESC
@@ -45,7 +46,7 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Template, error) {
 	result := []Template{}
 	for rows.Next() {
 		var template Template
-		if err := rows.Scan(&template.ID, &template.Title, &template.Body, &template.CreatedAt, &template.UpdatedAt); err != nil {
+		if err := rows.Scan(&template.ID, &template.Title, &template.Description, &template.Body, &template.CreatedAt, &template.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, template)
@@ -53,7 +54,7 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Template, error) {
 	return result, rows.Err()
 }
 
-func (s *Store) Create(ctx context.Context, ownerID string, title string, body string) (Template, error) {
+func (s *Store) Create(ctx context.Context, ownerID string, title string, description string, body string) (Template, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Template{}, err
@@ -74,10 +75,10 @@ func (s *Store) Create(ctx context.Context, ownerID string, title string, body s
 
 	var template Template
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO templates (owner_user_id, title, body)
-		VALUES ($1, $2, $3)
-		RETURNING id::text, title, body, created_at, updated_at
-	`, ownerID, title, body).Scan(&template.ID, &template.Title, &template.Body, &template.CreatedAt, &template.UpdatedAt); err != nil {
+		INSERT INTO templates (owner_user_id, title, description, body)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id::text, title, description, body, created_at, updated_at
+	`, ownerID, title, description, body).Scan(&template.ID, &template.Title, &template.Description, &template.Body, &template.CreatedAt, &template.UpdatedAt); err != nil {
 		return Template{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -92,27 +93,27 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Template, e
 	}
 	var template Template
 	err := s.db.QueryRow(ctx, `
-		SELECT id::text, title, body, created_at, updated_at
+		SELECT id::text, title, description, body, created_at, updated_at
 		FROM templates
 		WHERE owner_user_id = $1 AND id = $2
-	`, ownerID, id).Scan(&template.ID, &template.Title, &template.Body, &template.CreatedAt, &template.UpdatedAt)
+	`, ownerID, id).Scan(&template.ID, &template.Title, &template.Description, &template.Body, &template.CreatedAt, &template.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Template{}, ErrNotFound
 	}
 	return template, err
 }
 
-func (s *Store) Update(ctx context.Context, ownerID string, id string, title string, body string) (Template, error) {
+func (s *Store) Update(ctx context.Context, ownerID string, id string, title string, description string, body string) (Template, error) {
 	if !validUUID(id) {
 		return Template{}, ErrNotFound
 	}
 	var template Template
 	err := s.db.QueryRow(ctx, `
 		UPDATE templates
-		SET title = $3, body = $4, updated_at = now()
+		SET title = $3, description = $4, body = $5, updated_at = now()
 		WHERE owner_user_id = $1 AND id = $2
-		RETURNING id::text, title, body, created_at, updated_at
-	`, ownerID, id, title, body).Scan(&template.ID, &template.Title, &template.Body, &template.CreatedAt, &template.UpdatedAt)
+		RETURNING id::text, title, description, body, created_at, updated_at
+	`, ownerID, id, title, description, body).Scan(&template.ID, &template.Title, &template.Description, &template.Body, &template.CreatedAt, &template.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Template{}, ErrNotFound
 	}

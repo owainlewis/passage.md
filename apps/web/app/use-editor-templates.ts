@@ -14,6 +14,7 @@ export const MAX_TEMPLATES = 10;
 type PendingTemplate = {
   id: string;
   title: string;
+  description: string;
   body: string;
 };
 
@@ -81,7 +82,7 @@ export function useEditorTemplates(userId?: string) {
     }
     setSaving(true);
     try {
-      const created = await apiCreateTemplate("Untitled template", "# Untitled\n\n");
+      const created = await apiCreateTemplate("Untitled template", "", "# Untitled\n\n");
       setTemplates((existing) => [created, ...existing]);
       setError("");
       return created;
@@ -93,12 +94,19 @@ export function useEditorTemplates(userId?: string) {
     }
   }
 
-  function updateTemplate(id: string, changes: Partial<Pick<Template, "title" | "body">>) {
+  function updateTemplate(id: string, changes: Partial<Pick<Template, "title" | "description" | "body">>) {
     setTemplates((existing) =>
       existing.map((template) => (template.id === id ? { ...template, ...changes } : template))
     );
     const current = templates.find((template) => template.id === id);
-    if (current) setPending({ id, title: changes.title ?? current.title, body: changes.body ?? current.body });
+    if (current) {
+      setPending({
+        id,
+        title: changes.title ?? current.title,
+        description: changes.description ?? current.description,
+        body: changes.body ?? current.body
+      });
+    }
     setError("");
   }
 
