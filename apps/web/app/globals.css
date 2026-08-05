@@ -1317,10 +1317,39 @@ button {
   padding: 48px clamp(24px, 7vw, 88px) 96px;
 }
 
-.templateBodyInput {
+.templateEditFields {
   width: min(100%, var(--measure));
   min-height: 100%;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.templateDescriptionInput {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--hairline-strong);
+  outline: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 0 12px;
+  font: 400 0.9rem/1.5 var(--sans);
+}
+
+.templateDescriptionInput::placeholder {
+  color: var(--faint);
+}
+
+.templateDescriptionInput:focus {
+  border-bottom-color: var(--accent);
+}
+
+.templateBodyInput {
+  flex: 1;
+  width: 100%;
+  min-height: 320px;
+  margin: 0;
 }
 
 .templateEditorBody .markdown {

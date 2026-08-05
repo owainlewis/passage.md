@@ -45,7 +45,7 @@ func TestExportAndDeleteAccount(t *testing.T) {
 		{`INSERT INTO billing_accounts (user_id, manual_plan, max_saved_docs) VALUES ($1, 'pro', 1000)`, []any{userID}},
 		{`INSERT INTO documents (owner_user_id, public_id, title, body) VALUES ($1, $2, 'Active document', '# Active document')`, []any{userID, fmt.Sprintf("public%dA", stamp)}},
 		{`INSERT INTO documents (owner_user_id, public_id, title, body, archived_at) VALUES ($1, $2, 'Archived document', '# Archived document', now())`, []any{userID, fmt.Sprintf("public%dB", stamp)}},
-		{`INSERT INTO templates (owner_user_id, title, body) VALUES ($1, 'YouTube script', '# Video title')`, []any{userID}},
+		{`INSERT INTO templates (owner_user_id, title, description, body) VALUES ($1, 'YouTube script', 'Plan a concise product video.', '# Video title')`, []any{userID}},
 		{`INSERT INTO password_reset_requests (email, processed_at) VALUES ($1, now())`, []any{email}},
 		{`INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '1 hour')`, []any{userID, fmt.Sprintf("reset-token-%d", stamp)}},
 		{`INSERT INTO password_reset_confirmation_rate_limits (dimension, key_hash, window_started_at, attempts) VALUES ('token', $1, now(), 1)`, []any{fmt.Sprintf("reset-token-%d", stamp)}},
@@ -106,7 +106,7 @@ func TestExportAndDeleteAccount(t *testing.T) {
 	if err := json.Unmarshal(files["templates.json"], &templateManifest); err != nil {
 		t.Fatal(err)
 	}
-	if len(templateManifest) != 1 || templateManifest[0].Title != "YouTube script" {
+	if len(templateManifest) != 1 || templateManifest[0].Title != "YouTube script" || templateManifest[0].Description != "Plan a concise product video." {
 		t.Fatalf("templates = %#v, want YouTube script", templateManifest)
 	}
 	if body, ok := files[templateManifest[0].Path]; !ok || string(body) != "# Video title" {

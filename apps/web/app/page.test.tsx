@@ -58,7 +58,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     ...doc
   }));
   let nextDoc = docs.length + 1;
-  let templates: Array<{ id: string; title: string; body: string; createdAt: string; updatedAt: string }> = [];
+  let templates: Array<{ id: string; title: string; description: string; body: string; createdAt: string; updatedAt: string }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -79,6 +79,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       const template = {
         id: `template-${templates.length + 1}`,
         title: input.title,
+        description: input.description,
         body: input.body,
         createdAt: "2026-08-04T10:00:00Z",
         updatedAt: "2026-08-04T10:00:00Z"
@@ -797,6 +798,9 @@ describe("Write (editor)", () => {
     const title = await screen.findByRole("textbox", { name: "Template title" });
     expect(screen.queryByRole("button", { name: "Create document" })).not.toBeInTheDocument();
     fireEvent.change(title, { target: { value: "YouTube script" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Template description" }), {
+      target: { value: "A clear structure for planning a YouTube video." }
+    });
     fireEvent.change(screen.getByRole("textbox", { name: "Template Markdown" }), {
       target: { value: "# [Video title]\n\n## Opening\n\nWrite the hook." }
     });
@@ -808,6 +812,7 @@ describe("Write (editor)", () => {
           method: "PATCH",
           body: JSON.stringify({
             title: "YouTube script",
+            description: "A clear structure for planning a YouTube video.",
             body: "# [Video title]\n\n## Opening\n\nWrite the hook."
           })
         })
@@ -816,6 +821,8 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
     expect(await screen.findByRole("heading", { name: "YouTube script" })).toBeInTheDocument();
+    expect(screen.getByText("A clear structure for planning a YouTube video.")).toBeInTheDocument();
+    expect(screen.queryByText("Write the hook.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit YouTube script" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create document from YouTube script" }));
 
@@ -863,6 +870,7 @@ describe("Write (editor)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "New template" }));
     await screen.findByRole("textbox", { name: "Template title" });
     fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
+    expect(await screen.findByText("No description.")).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
 

@@ -8,6 +8,7 @@ export type DocumentPage = {
 export type Template = {
   id: string;
   title: string;
+  description: string;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -121,12 +122,12 @@ export async function apiTemplates(): Promise<Template[]> {
   return Array.isArray(payload.templates) ? payload.templates : [];
 }
 
-export async function apiCreateTemplate(title: string, body: string): Promise<Template> {
+export async function apiCreateTemplate(title: string, description: string, body: string): Promise<Template> {
   const res = await fetch("/api/v1/templates", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, body })
+    body: JSON.stringify({ title, description, body })
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -140,7 +141,7 @@ export async function apiUpdateTemplate(template: Template): Promise<Template> {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: template.title, body: template.body })
+    body: JSON.stringify({ title: template.title, description: template.description, body: template.body })
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
