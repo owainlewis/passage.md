@@ -55,6 +55,19 @@ func (a *App) listDocs(w http.ResponseWriter, r *http.Request) {
 	a.requireUserForDocs(a.docs.List)(w, r)
 }
 
+func (a *App) searchDocs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.allowUserRequest(w, r, a.rateLimiters.documentSearch, user.ID) {
+			return
+		}
+		a.docs.Search(w, r, user)
+	})(w, r)
+}
+
 func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
