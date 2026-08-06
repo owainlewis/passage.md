@@ -238,7 +238,7 @@ export default function Editor() {
         theme={theme}
         searchActive={search.active}
         searchDocs={searchDocs}
-        searchError={search.error}
+        searchError={search.errorMessage}
         onRetrySearch={search.retry}
       />
 

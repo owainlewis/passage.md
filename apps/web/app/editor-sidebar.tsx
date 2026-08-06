@@ -31,7 +31,7 @@ type EditorSidebarProps = {
   theme: Theme;
   searchActive: boolean;
   searchDocs: Doc[];
-  searchError: boolean;
+  searchError: string;
   onRetrySearch: () => void;
 };
 
@@ -174,7 +174,9 @@ export function EditorSidebar({
         )}
         {searchError && (
           <p className="searchError" role="alert">
-            Search unavailable. <button type="button" onClick={onRetrySearch}>Retry.</button>
+            {searchError}{searchError === "Search unavailable." && (
+              <> <button type="button" onClick={onRetrySearch}>Retry.</button></>
+            )}
           </p>
         )}
         {searchActive && loadingMore && (

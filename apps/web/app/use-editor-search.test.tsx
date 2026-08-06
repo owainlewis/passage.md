@@ -78,7 +78,7 @@ it("debounces queries, aborts superseded work, and ignores a late response", asy
     await flushPromises();
   });
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["second"]);
-  expect(result.current.error).toBe(false);
+  expect(result.current.errorMessage).toBe("");
 });
 
 it("paginates without duplicates and preserves results through failure and retry", async () => {
@@ -132,7 +132,7 @@ it("paginates without duplicates and preserves results through failure and retry
     await flushPromises();
   });
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["a", "b", "c"]);
-  expect(result.current.error).toBe(true);
+  expect(result.current.errorMessage).toBe("Search unavailable.");
 
   await act(async () => {
     result.current.retry();
@@ -143,7 +143,7 @@ it("paginates without duplicates and preserves results through failure and retry
   });
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["a"]);
   expect(result.current.documents[0].matchExcerpt).toBe("refreshed");
-  expect(result.current.error).toBe(false);
+  expect(result.current.errorMessage).toBe("");
 });
 
 it("does not expose results from a previous account", async () => {
@@ -199,7 +199,7 @@ it("restarts the first page when visibility changes", async () => {
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["all"]);
 
   rerender({ visibility: "shared" });
-  expect(result.current.documents.map((doc) => doc.id)).toEqual(["all"]);
+  expect(result.current.documents).toEqual([]);
   expect(result.current.loading).toBe(true);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
@@ -209,4 +209,31 @@ it("restarts the first page when visibility changes", async () => {
     "/api/v1/docs/search?q=notes&visibility=shared&limit=50"
   );
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["shared"]);
+});
+
+it("accepts 128 Unicode characters and rejects 129 without an unretryable request", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(searchResponse([]));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const { result, rerender } = renderHook(
+    (props: { query: string }) =>
+      useEditorSearch({ query: props.query, visibility: "all", userId: "user-1", mutationVersion: 0 }),
+    { initialProps: { query: "🙂".repeat(128) } }
+  );
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(result.current.errorMessage).toBe("");
+
+  rerender({ query: "🙂".repeat(129) });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(result.current.loading).toBe(false);
+  expect(result.current.documents).toEqual([]);
+  expect(result.current.errorMessage).toBe("Search is limited to 128 characters.");
 });

@@ -43,6 +43,7 @@ export function useEditorSearch({
 }) {
   const normalizedQuery = normalizeEditorSearch(query);
   const active = Boolean(userId && normalizedQuery);
+  const invalid = [...normalizedQuery].length > 128;
   const key = active ? `${userId}\u0000${visibility}\u0000${normalizedQuery}` : "";
   const [state, setState] = useState<SearchState>(emptySearch);
   const [retryVersion, setRetryVersion] = useState(0);
@@ -54,7 +55,7 @@ export function useEditorSearch({
     currentKey.current = key;
     const version = ++requestVersion.current;
     requestController.current?.abort();
-    if (!active || !userId) return;
+    if (!active || !userId || invalid) return;
 
     const controller = new AbortController();
     requestController.current = controller;
@@ -62,7 +63,7 @@ export function useEditorSearch({
       setState((current) => ({
         key,
         ownerId: userId,
-        documents: current.ownerId === userId ? current.documents : [],
+        documents: current.key === key ? current.documents : [],
         nextCursor: current.key === key ? current.nextCursor : "",
         loading: true,
         error: false
@@ -96,10 +97,10 @@ export function useEditorSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [active, key, mutationVersion, normalizedQuery, retryVersion, userId, visibility]);
+  }, [active, invalid, key, mutationVersion, normalizedQuery, retryVersion, userId, visibility]);
 
   const loadMore = useCallback(() => {
-    if (!active || !userId || state.key !== key || !state.nextCursor || state.loading) return;
+    if (!active || invalid || !userId || state.key !== key || !state.nextCursor || state.loading) return;
     const version = ++requestVersion.current;
     requestController.current?.abort();
     const controller = new AbortController();
@@ -125,15 +126,19 @@ export function useEditorSearch({
         if (requestVersion.current !== version || currentKey.current !== key) return;
         setState((current) => ({ ...current, loading: false, error: true }));
       });
-  }, [active, key, normalizedQuery, state.key, state.loading, state.nextCursor, userId, visibility]);
+  }, [active, invalid, key, normalizedQuery, state.key, state.loading, state.nextCursor, userId, visibility]);
 
   const ownsState = state.ownerId === userId;
   return {
     active,
-    documents: ownsState ? state.documents : [],
-    error: active && state.key === key && state.error,
-    hasMore: active && state.key === key && Boolean(state.nextCursor),
-    loading: active && (state.key !== key || state.loading),
+    documents: ownsState && !invalid && state.key === key ? state.documents : [],
+    errorMessage: invalid
+      ? "Search is limited to 128 characters."
+      : active && state.key === key && state.error
+        ? "Search unavailable."
+        : "",
+    hasMore: active && !invalid && state.key === key && Boolean(state.nextCursor),
+    loading: active && !invalid && (state.key !== key || state.loading),
     loadMore,
     retry: () => setRetryVersion((version) => version + 1)
   };
