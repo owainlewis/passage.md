@@ -11,7 +11,7 @@ type EditorSidebarProps = {
   docsReady: boolean;
   filter: string;
   onClearTagFilter: () => void;
-  onDeleteDoc: (id: string) => void;
+  onDeleteDoc: (doc: Doc) => void;
   onDocumentFilterChange: (filter: DocumentFilter) => void;
   onFilterChange: (value: string) => void;
   onLoadMore: () => void;
@@ -19,7 +19,7 @@ type EditorSidebarProps = {
   onSelectDoc: (doc: Doc) => void;
   onTagFilterChange: (value: string) => void;
   onToggleDarkMode: () => void;
-  onTogglePin: (id: string) => void;
+  onTogglePin: (doc: Doc) => void;
   saveState: SaveState;
   hasMoreDocs: boolean;
   loadingMore: boolean;
@@ -29,6 +29,10 @@ type EditorSidebarProps = {
   templateCount: number;
   templatesActive: boolean;
   theme: Theme;
+  searchActive: boolean;
+  searchDocs: Doc[];
+  searchError: boolean;
+  onRetrySearch: () => void;
 };
 
 export function EditorSidebar({
@@ -54,11 +58,17 @@ export function EditorSidebar({
   tagFilter,
   templateCount,
   templatesActive,
-  theme
+  theme,
+  searchActive,
+  searchDocs,
+  searchError,
+  onRetrySearch
 }: EditorSidebarProps) {
   const darkActive = theme === "dark";
   const tagFilterQuery = tagFilter.trim().toLowerCase();
-  const visibleDocs = visibleEditorDocs(docs, docsReady, documentFilter, filter, tagFilter);
+  const visibleDocs = searchActive
+    ? searchDocs
+    : visibleEditorDocs(docs, docsReady, documentFilter, filter, tagFilter);
 
   return (
     <aside className="sidebar" aria-label="Documents" data-open={sidebarOpen}>
@@ -74,8 +84,8 @@ export function EditorSidebar({
             className="filterInput"
             type="text"
             name="filter-documents"
-            placeholder="Filter"
-            aria-label="Search documents and tags"
+            placeholder="Search documents"
+            aria-label="Search documents"
             value={filter}
             onChange={(event) => onFilterChange(event.target.value)}
           />
@@ -127,6 +137,9 @@ export function EditorSidebar({
                       </span>
                     )}
                   </span>
+                  {searchActive && doc.matchExcerpt && (
+                    <span className="docRowExcerpt">{doc.matchExcerpt}</span>
+                  )}
                 </span>
               </button>
               <span className="docRowActions">
@@ -134,7 +147,7 @@ export function EditorSidebar({
                   type="button"
                   className="docRowPin"
                   aria-label={doc.pinned ? "Unpin document" : "Pin document"}
-                  onClick={() => onTogglePin(doc.id)}
+                  onClick={() => onTogglePin(doc)}
                 >
                   <PinIcon filled={Boolean(doc.pinned)} />
                 </button>
@@ -143,7 +156,7 @@ export function EditorSidebar({
                     type="button"
                     className="docRowDelete"
                     aria-label="Delete document"
-                    onClick={() => onDeleteDoc(doc.id)}
+                    onClick={() => onDeleteDoc(doc)}
                   >
                     ×
                   </button>
@@ -152,14 +165,24 @@ export function EditorSidebar({
             </div>
           );
         })}
-        {saveState === "loading" ? (
+        {!searchActive && saveState === "loading" ? (
           <div className="pendingStatus" aria-hidden="true" />
-        ) : visibleDocs.length === 0 && (
-          <p className="docListEmpty">{docs.length === 0 ? "No documents." : "No documents match."}</p>
+        ) : visibleDocs.length === 0 && !loadingMore && !searchError && (
+          <p className="docListEmpty">
+            {searchActive || docs.length > 0 ? "No documents match." : "No documents."}
+          </p>
+        )}
+        {searchError && (
+          <p className="searchError" role="alert">
+            Search unavailable. <button type="button" onClick={onRetrySearch}>Retry.</button>
+          </p>
+        )}
+        {searchActive && loadingMore && (
+          <p className="searchStatus" role="status">Searching…</p>
         )}
         {hasMoreDocs && (
           <button type="button" className="docListMore" disabled={loadingMore} onClick={onLoadMore}>
-            {loadingMore ? "Loading…" : "Load more documents"}
+            {loadingMore ? "Loading…" : searchActive ? "Load more results" : "Load more documents"}
           </button>
         )}
       </nav>
