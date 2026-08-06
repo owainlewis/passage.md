@@ -70,7 +70,7 @@ Project:
 
 - Owner: `owainlewis`
 - Project number: `14`
-- Title: `passage.md MVP`
+- Title: `Passage Kanban`
 - URL: `https://github.com/users/owainlewis/projects/14`
 - Status field options: `Todo`, `Ready`, `In Progress`, `Review`, `Done`
 
