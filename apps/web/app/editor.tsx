@@ -15,6 +15,7 @@ import { MarkdownView } from "./markdown-view";
 import { TemplateWorkspace } from "./template-workspace";
 import { useEditorDocuments } from "./use-editor-documents";
 import { useEditorSharing } from "./use-editor-sharing";
+import { useEditorSearch } from "./use-editor-search";
 import { useEditorTemplates } from "./use-editor-templates";
 import { useEditorTheme } from "./use-editor-theme";
 
@@ -34,6 +35,7 @@ export default function Editor() {
   const entitlements = useEntitlements();
   const { darkActive, theme, toggleDarkMode } = useEditorTheme();
   const templateState = useEditorTemplates(userId);
+  const searchRequested = Boolean(userId && filter.trim());
   const {
     active,
     activeLoadError,
@@ -47,6 +49,8 @@ export default function Editor() {
     hasMoreDocs,
     loadMoreDocs,
     loadingMore,
+    mutationVersion,
+    notifyDocumentMutation,
     pendingSave,
     retryActive,
     saveState,
@@ -63,7 +67,21 @@ export default function Editor() {
     userId,
     maxSavedDocs: entitlements.maxSavedDocs,
     plan: entitlements.plan,
-    focusEditor: () => textareaRef.current?.focus()
+    focusEditor: () => textareaRef.current?.focus(),
+    preserveDocumentFilter: searchRequested
+  });
+
+  const search = useEditorSearch({
+    query: filter,
+    visibility: documentFilter,
+    userId,
+    mutationVersion
+  });
+  const searchDocs = search.documents.map((result) => {
+    const loaded = docs.find((doc) => doc.id === result.id);
+    return loaded?.bodyLoaded
+      ? { ...result, body: loaded.body, bodyLoaded: true, pinned: loaded.pinned }
+      : { ...result, pinned: loaded?.pinned };
   });
 
   const activeShared = active ? isShared(active) : false;
@@ -84,7 +102,9 @@ export default function Editor() {
     setDocs,
     setPendingSave,
     setSaveState,
-    setDocumentFilter
+    setDocumentFilter,
+    onDocumentMutation: notifyDocumentMutation,
+    preserveDocumentFilter: searchRequested
   });
 
   useEffect(() => {
@@ -123,7 +143,6 @@ export default function Editor() {
     setTemplatesOpen(false);
     setActiveTemplateId("");
     setMode("edit");
-    setFilter("");
     setTagFilter("");
     return true;
   }
@@ -146,6 +165,7 @@ export default function Editor() {
       clearTagFilter();
     }
     setDocumentFilter(nextFilter);
+    if (search.active) return;
     if (active && docMatchesFilter(active, nextFilter)) {
       return;
     }
@@ -156,6 +176,16 @@ export default function Editor() {
 
   function clearTagFilter() {
     setTagFilter("");
+  }
+
+  function changeSearch(value: string) {
+    setFilter(value);
+    if (value.trim()) setTagFilter("");
+  }
+
+  function changeTagFilter(value: string) {
+    setTagFilter(value);
+    if (value.trim()) setFilter("");
   }
 
   async function signOut() {
@@ -188,24 +218,28 @@ export default function Editor() {
         docsReady={docsReady}
         filter={filter}
         onClearTagFilter={clearTagFilter}
-        onDeleteDoc={(id) => void deleteDoc(id)}
-        onFilterChange={setFilter}
-        onLoadMore={() => void loadMoreDocs()}
+        onDeleteDoc={(doc) => void deleteDoc(doc.id, doc)}
+        onFilterChange={changeSearch}
+        onLoadMore={() => search.active ? search.loadMore() : void loadMoreDocs()}
         onOpenTemplates={openTemplates}
         onSelectDoc={selectDocument}
         onDocumentFilterChange={selectDocumentFilter}
-        onTagFilterChange={setTagFilter}
+        onTagFilterChange={changeTagFilter}
         onToggleDarkMode={toggleDarkMode}
-        onTogglePin={togglePin}
+        onTogglePin={(doc) => togglePin(doc.id, doc)}
         saveState={saveState}
-        hasMoreDocs={hasMoreDocs}
-        loadingMore={loadingMore}
+        hasMoreDocs={search.active ? search.hasMore : hasMoreDocs}
+        loadingMore={search.active ? search.loading : loadingMore}
         documentFilter={documentFilter}
         sidebarOpen={sidebarOpen}
         tagFilter={tagFilter}
         templateCount={templateState.templates.length}
         templatesActive={templatesOpen}
         theme={theme}
+        searchActive={search.active}
+        searchDocs={searchDocs}
+        searchError={search.errorMessage}
+        onRetrySearch={search.retry}
       />
 
       <div className="main">

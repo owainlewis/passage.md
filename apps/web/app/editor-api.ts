@@ -1,7 +1,16 @@
-import { Doc } from "./editor-model";
+import { Doc, DocumentFilter } from "./editor-model";
 
 export type DocumentPage = {
   documents: Doc[];
+  nextCursor: string;
+};
+
+export type SearchDocument = Doc & {
+  matchExcerpt: string;
+};
+
+export type SearchDocumentPage = {
+  documents: SearchDocument[];
   nextCursor: string;
 };
 
@@ -27,6 +36,36 @@ export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
         ...doc,
         body: typeof doc.body === "string" ? doc.body : "",
         bodyLoaded: typeof doc.body === "string"
+      }))
+    : [];
+  return {
+    documents,
+    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : ""
+  };
+}
+
+export async function apiSearchDocs(
+  value: string,
+  visibility: DocumentFilter,
+  cursor = "",
+  signal?: AbortSignal
+): Promise<SearchDocumentPage> {
+  const query = new URLSearchParams({ q: value, visibility, limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  const res = await fetch(`/api/v1/docs/search?${query}`, {
+    credentials: "include",
+    signal
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof body.error === "string" ? body.error : "Search unavailable");
+  }
+  const documents = Array.isArray(body.documents)
+    ? body.documents.map((doc: SearchDocument) => ({
+        ...doc,
+        body: "",
+        bodyLoaded: false,
+        matchExcerpt: typeof doc.matchExcerpt === "string" ? doc.matchExcerpt : ""
       }))
     : [];
   return {
