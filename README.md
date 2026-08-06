@@ -10,11 +10,11 @@ The problem is file wrangling.
 
 Local Markdown files are fine until the document needs to move between your laptop, your phone, another person, and an agent.
 
-Anonymous users can write transient docs in the browser.
+Visitors can read the public site and shared documents.
 
-Free accounts can save 5 hosted docs and use the CLI with those docs.
+Signed-in Free accounts can save 5 hosted docs.
 
-Pro users can save thousands of hosted docs, sync, export, share, use custom themes, and use higher-limit CLI/API workflows.
+Pro users can save thousands of hosted docs, export and share them, and use CLI/API workflows.
 
 ## Product
 
@@ -37,7 +37,7 @@ Every saved doc is plain Markdown, private by default, and addressable through w
 ## Docs
 
 - [PRD](docs/prd.md)
-- [Architecture](docs/architecture.md)
+- [Architecture](ARCHITECTURE.md)
 - [Production runbook](docs/production-runbook.md)
 - [Document API contract](docs/document-api.md)
 - [CLI](docs/cli.md)

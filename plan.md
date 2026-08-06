@@ -7,8 +7,8 @@ This file intentionally does not duplicate the roadmap.
 Use:
 
 ```sh
-gh issue list --repo owainlewis/passage.md --state all --limit 100
-gh project item-list 14 --owner owainlewis --limit 100
+gh issue list --repo owainlewis/passage.md --state all --limit 200
+gh project item-list 14 --owner owainlewis --limit 200
 ```
 
 If this file, README, PRD, architecture docs, or strategy notes conflict with a GitHub issue, the GitHub issue wins.
