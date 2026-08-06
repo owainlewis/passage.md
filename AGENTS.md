@@ -72,14 +72,14 @@ Project:
 - Project number: `14`
 - Title: `passage.md MVP`
 - URL: `https://github.com/users/owainlewis/projects/14`
-- Status field options: `Todo`, `In Progress`, `Done`
+- Status field options: `Todo`, `Ready`, `In Progress`, `Review`, `Done`
 
 Useful commands:
 
 ```sh
-gh issue list --repo owainlewis/passage.md --state all --limit 100
+gh issue list --repo owainlewis/passage.md --state all --limit 200
 gh issue view <number> --repo owainlewis/passage.md
-gh project item-list 14 --owner owainlewis --limit 100
+gh project item-list 14 --owner owainlewis --limit 200
 gh project field-list 14 --owner owainlewis
 ```
 
@@ -101,11 +101,14 @@ It is not a local issue plan.
 
 When picking work:
 
-- Prefer `Todo` items with the `agent-ready` label.
+- Use `Todo` for captured work that still needs refinement.
+- Prefer `Ready` items, which must be self-contained and safe for an agent to start.
 - Skip `blocked` items unless Owain explicitly asks for them.
 - Read the full issue before changing code.
 - Honor dependencies listed in the issue body.
 - Move only the active issue to `In Progress`.
+- Move verified implementation to `Review` while its pull request awaits or responds to review.
+- Move work to `Done` only after review is resolved and its pull request is merged.
 - Keep finished evidence in the issue or PR, not in a local roadmap file.
 
 ## Git Workflow
