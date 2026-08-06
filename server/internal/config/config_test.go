@@ -196,6 +196,8 @@ func TestFromEnvLoadsRateLimitAndProductionProxyDefaults(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("PASSAGE_RATE_LIMIT_AUTH_REQUESTS", "7")
 	t.Setenv("PASSAGE_RATE_LIMIT_AUTH_WINDOW", "30s")
+	t.Setenv("PASSAGE_RATE_LIMIT_DOCUMENT_SEARCH_REQUESTS", "9")
+	t.Setenv("PASSAGE_RATE_LIMIT_DOCUMENT_SEARCH_WINDOW", "45s")
 
 	cfg := FromEnv()
 	if cfg.RateLimits.AuthMutation.Requests != 7 || cfg.RateLimits.AuthMutation.Window != 30*time.Second {
@@ -203,6 +205,9 @@ func TestFromEnvLoadsRateLimitAndProductionProxyDefaults(t *testing.T) {
 	}
 	if cfg.RateLimits.DocumentMutation.Requests != 120 || cfg.RateLimits.DocumentMutation.Window != time.Minute {
 		t.Fatalf("document mutation rate limit = %#v", cfg.RateLimits.DocumentMutation)
+	}
+	if cfg.RateLimits.DocumentSearch.Requests != 9 || cfg.RateLimits.DocumentSearch.Window != 45*time.Second {
+		t.Fatalf("document search rate limit = %#v", cfg.RateLimits.DocumentSearch)
 	}
 	if cfg.Proxy.ForwardedHops != 2 || len(cfg.Proxy.TrustedCIDRs) == 0 {
 		t.Fatalf("proxy config = %#v", cfg.Proxy)

@@ -167,6 +167,33 @@ func TestDocumentMutationLimitIsPerAuthenticatedUser(t *testing.T) {
 	}
 }
 
+func TestDocumentSearchLimitIsPerAuthenticatedUser(t *testing.T) {
+	authStore := newRouteAuthStore()
+	docStore := newRouteDocumentStore()
+	app := &App{
+		static: fstest.MapFS{"index.html": {Data: []byte("ok")}},
+		auth:   auth.NewService(authStore, "test-secret", false),
+		docs:   documents.NewHandler(docStore),
+		rateLimiters: newAppRateLimiters(config.AbuseRateLimitConfig{
+			DocumentSearch: config.RateLimitConfig{Requests: 120, Window: time.Minute},
+		}),
+		clientIP: httpx.NewClientIPResolver(nil, 0),
+	}
+	handler := app.Routes()
+
+	for attempt := 1; attempt <= 120; attempt++ {
+		if status := documentSearchStatus(t, handler, "psg_owner_one"); status != http.StatusOK {
+			t.Fatalf("allowed attempt %d status = %d", attempt, status)
+		}
+	}
+	if status := documentSearchStatus(t, handler, "psg_owner_one"); status != http.StatusTooManyRequests {
+		t.Fatalf("121st user status = %d", status)
+	}
+	if status := documentSearchStatus(t, handler, "psg_owner_two"); status != http.StatusOK {
+		t.Fatalf("independent user status = %d", status)
+	}
+}
+
 func TestAPITokenLimitAppliesToRepresentativeRoute(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
@@ -232,5 +259,17 @@ func documentCreateStatus(t *testing.T, handler http.Handler, token string) int 
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(recorder, request)
+	return recorder.Code
+}
+
+func documentSearchStatus(t *testing.T, handler http.Handler, token string) int {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=agent", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code == http.StatusTooManyRequests && recorder.Header().Get("Retry-After") == "" {
+		t.Fatal("Retry-After is empty")
+	}
 	return recorder.Code
 }

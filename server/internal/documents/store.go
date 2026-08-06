@@ -44,6 +44,33 @@ type DocumentMetadata struct {
 	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
+type SearchResult struct {
+	ID           string     `json:"id"`
+	PublicID     string     `json:"publicId"`
+	Title        string     `json:"title"`
+	MatchExcerpt string     `json:"matchExcerpt"`
+	Tags         []string   `json:"tags"`
+	ShareToken   *string    `json:"shareToken,omitempty"`
+	SharedAt     *time.Time `json:"sharedAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+	Rank         float64    `json:"-"`
+}
+
+type SearchVisibility string
+
+const (
+	SearchAll     SearchVisibility = "all"
+	SearchPrivate SearchVisibility = "private"
+	SearchShared  SearchVisibility = "shared"
+)
+
+type SearchCursor struct {
+	Rank      float64
+	UpdatedAt time.Time
+	ID        string
+}
+
 type ListCursor struct {
 	UpdatedAt time.Time
 	ID        string
@@ -113,6 +140,141 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 		docs = append(docs, doc)
 	}
 	return docs, rows.Err()
+}
+
+func (s *Store) Search(ctx context.Context, ownerID string, query string, visibility SearchVisibility, limit int, cursor *SearchCursor) ([]SearchResult, error) {
+	var cursorRank *float64
+	var cursorUpdatedAt *time.Time
+	var cursorID *string
+	if cursor != nil {
+		cursorRank = &cursor.Rank
+		cursorUpdatedAt = &cursor.UpdatedAt
+		cursorID = &cursor.ID
+	}
+	rows, err := s.db.Query(ctx, `
+		WITH raw_terms AS (
+			SELECT term, ordinal
+			FROM string_to_table($2, ' ') WITH ORDINALITY AS terms(term, ordinal)
+		),
+		lexemes AS (
+			SELECT raw_terms.ordinal, lexeme
+			FROM raw_terms
+			CROSS JOIN LATERAL unnest(
+				tsvector_to_array(to_tsvector('simple'::regconfig, raw_terms.term))
+			) AS parsed(lexeme)
+		),
+		query_text AS (
+			SELECT string_agg(
+				quote_literal(lexeme) || CASE WHEN ordinal = final_ordinal THEN ':*' ELSE '' END,
+				' & ' ORDER BY ordinal, lexeme
+			) AS value
+			FROM (
+				SELECT ordinal, lexeme, max(ordinal) OVER () AS final_ordinal
+				FROM lexemes
+			) ordered_lexemes
+		),
+		search_query AS (
+			SELECT to_tsquery('simple'::regconfig, value) AS value
+			FROM query_text
+			WHERE value IS NOT NULL
+		),
+		ranked AS (
+			SELECT
+				documents.id,
+				documents.public_id,
+				documents.title,
+				documents.body,
+				left(documents.body, 4096) AS body_start,
+				documents.share_token,
+				documents.shared_at,
+				documents.created_at,
+				documents.updated_at,
+				ts_rank_cd(
+					setweight(to_tsvector('simple'::regconfig, documents.title), 'A') ||
+					setweight(to_tsvector('simple'::regconfig, documents.body), 'B'),
+					search_query.value
+				)::double precision AS rank
+			FROM documents
+			CROSS JOIN search_query
+			WHERE documents.owner_user_id = $1
+			  AND documents.archived_at IS NULL
+			  AND (
+				$3 = 'all'
+				OR ($3 = 'private' AND documents.shared_at IS NULL)
+				OR ($3 = 'shared' AND documents.shared_at IS NOT NULL)
+			  )
+			  AND (
+				setweight(to_tsvector('simple'::regconfig, documents.title), 'A') ||
+				setweight(to_tsvector('simple'::regconfig, documents.body), 'B')
+			  ) @@ search_query.value
+		),
+		page AS (
+			SELECT *
+			FROM ranked
+			WHERE $4::double precision IS NULL
+			   OR (rank, updated_at, id) < ($4, $5::timestamptz, $6::uuid)
+			ORDER BY rank DESC, updated_at DESC, id DESC
+			LIMIT $7
+		)
+		SELECT
+			page.id::text,
+			page.public_id,
+			page.title,
+			page.body_start,
+			left(
+				replace(
+					replace(
+						ts_headline(
+							'simple'::regconfig,
+							page.body,
+							search_query.value,
+							'StartSel=<<<passage>>>, StopSel=<<</passage>>>, MaxWords=35, MinWords=15, ShortWord=2, MaxFragments=1, FragmentDelimiter= … '
+						),
+						'<<<passage>>>',
+						''
+					),
+					'<<</passage>>>',
+					''
+				),
+				240
+			) AS match_excerpt,
+			page.share_token,
+			page.shared_at,
+			page.created_at,
+			page.updated_at,
+			page.rank
+		FROM page
+		CROSS JOIN search_query
+		ORDER BY page.rank DESC, page.updated_at DESC, page.id DESC
+	`, ownerID, query, string(visibility), cursorRank, cursorUpdatedAt, cursorID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []SearchResult{}
+	for rows.Next() {
+		var result SearchResult
+		var bodyStart string
+		if err := rows.Scan(
+			&result.ID,
+			&result.PublicID,
+			&result.Title,
+			&bodyStart,
+			&result.MatchExcerpt,
+			&result.ShareToken,
+			&result.SharedAt,
+			&result.CreatedAt,
+			&result.UpdatedAt,
+			&result.Rank,
+		); err != nil {
+			return nil, err
+		}
+		result.MatchExcerpt = strings.TrimSpace(result.MatchExcerpt)
+		result.Tags = tagsOf(bodyStart)
+		results = append(results, result)
+	}
+	return results, rows.Err()
 }
 
 func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {

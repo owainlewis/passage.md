@@ -290,6 +290,79 @@ Opening a metadata result requires `GET /api/v1/docs/{id}` to load the complete 
 
 All list forms enforce the authenticated owner, so cursors never grant access to another account's documents.
 
+## Search Documents
+
+```http
+GET /api/v1/docs/search?q=agent+work
+GET /api/v1/docs/search?q=agent+work&visibility=private&limit=50&cursor=<opaque-cursor>
+```
+
+Returns ranked metadata for active documents owned by the authenticated user.
+
+Search inspects the derived title and complete current Markdown body.
+
+It does not search archived documents, templates, document history, or public documents owned by another user.
+
+Parameters:
+
+- `q` is required. After surrounding whitespace is removed and internal whitespace is collapsed, it must contain 1 through 128 Unicode characters.
+- `visibility` is optional and defaults to `all`. Valid values are `all`, `private`, and `shared`.
+- `limit` is optional and defaults to `50`. Valid values are `1` through `100`.
+- `cursor` is optional and opaque.
+
+Search is case-insensitive.
+
+Every complete query term must match.
+
+The final term is a prefix, so `agent work` can match `agent workflow`.
+
+Quotes and search operators are treated as text rather than query syntax.
+
+Input that produces no searchable term, such as punctuation alone, returns an empty document list.
+
+Title matches rank above body matches.
+
+Equal ranks are ordered by `updatedAt` descending and then document ID descending.
+
+Response:
+
+```json
+{
+  "documents": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "publicId": "abcdefghijklmnopqrstuv",
+      "title": "Agent workflow",
+      "matchExcerpt": "...notes from the agent workflow review...",
+      "tags": ["agents", "notes"],
+      "createdAt": "2026-06-28T12:00:00Z",
+      "updatedAt": "2026-06-28T12:00:00Z"
+    }
+  ],
+  "nextCursor": "opaque-value"
+}
+```
+
+`matchExcerpt` is plain text containing at most 240 characters around a match.
+
+Search responses never contain the complete `body`.
+
+They set `Cache-Control: private, no-store`.
+
+`nextCursor` is omitted on the final page.
+
+A cursor is bound to the normalized query and visibility scope that created it.
+
+Using it with different search inputs returns `400`.
+
+Browser sessions may search on Free or Pro accounts.
+
+Bearer-token callers retain the existing Pro requirement for document API access.
+
+Search is limited to 120 requests per authenticated user per minute by default.
+
+Exceeding the limit returns `429` with `Retry-After`.
+
 ## Create Document
 
 ```http
@@ -530,9 +603,11 @@ Legacy share token URLs are still accepted while older shares exist.
 - `204`: document archived or unshared.
 - `400`: invalid JSON.
 - `401`: authentication required.
+- `402`: a bearer-token document request requires Pro.
 - `403`: cross-origin mutation blocked.
 - `404`: document or public share not found.
 - `415`: create or update request was not JSON.
+- `429`: request rate limit exceeded.
 - `500`: unexpected server failure.
 - `503`: database-backed service is not configured.
 
@@ -541,8 +616,6 @@ Legacy share token URLs are still accepted while older shares exist.
 Pagination is deferred.
 
 API token UI is defined in a separate issue.
-
-Search is deferred.
 
 Version history is deferred.
 
