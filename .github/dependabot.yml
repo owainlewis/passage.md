@@ -2,24 +2,28 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    labels: []
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
     directory: /
+    labels: []
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
 
   - package-ecosystem: gomod
     directory: /server
+    labels: []
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
 
   - package-ecosystem: docker
     directory: /
+    labels: []
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
