@@ -7,7 +7,6 @@ export type Doc = {
   bodyLoaded?: boolean;
   title?: string;
   excerpt?: string;
-  matchExcerpt?: string;
   tags?: string[];
   pinned?: boolean;
   shareToken?: string | null;

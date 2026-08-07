@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Account from "./account/page";
 import { AppProviders } from "./app-providers";
 import { AuthProvider } from "./auth";
@@ -70,20 +70,6 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     }
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
-    }
-    if (url.startsWith("/api/v1/docs/search?") && method === "GET") {
-      const parsed = new URL(url, "https://passage.test");
-      const terms = (parsed.searchParams.get("q") ?? "").toLowerCase().split(/\s+/).filter(Boolean);
-      const visibility = parsed.searchParams.get("visibility") ?? "all";
-      const documents = docs
-        .filter((doc) => visibility === "all" || (visibility === "shared") === Boolean(doc.sharedAt || doc.shareToken))
-        .filter((doc) => terms.every((term) => doc.body.toLowerCase().includes(term)))
-        .map(({ body, ...doc }) => ({
-          ...doc,
-          title: body.match(/^#\s+(.+)$/m)?.[1] ?? "Untitled",
-          matchExcerpt: body.replace(/\s+/g, " ").slice(0, 240)
-        }));
-      return new Response(JSON.stringify({ documents }), { status: 200 });
     }
     if (url === "/api/v1/templates" && method === "GET") {
       return new Response(JSON.stringify({ templates }), { status: 200 });
@@ -960,7 +946,7 @@ describe("Write (editor)", () => {
     expect(screen.getByText("1 of 10")).toBeInTheDocument();
   });
 
-  it("searches the complete document body after autosave", async () => {
+  it("filters the document list by title and body text", async () => {
     await renderWrite();
 
     await createBlankDocument();
@@ -968,217 +954,14 @@ describe("Write (editor)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Launch note\n\nRoadmap coverage." }
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "roadmap" }
     });
 
-    const launchNote = await screen.findByRole("button", { name: /Launch note/ });
+    const launchNote = screen.getByRole("button", { name: /Launch note/ });
     expect(launchNote).toBeInTheDocument();
-    expect(launchNote).toHaveTextContent("Roadmap coverage");
+    expect(launchNote).not.toHaveTextContent("Roadmap coverage");
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
-  });
-
-  it("keeps server relevance order, renders excerpts as text, and restores browsing when cleared", async () => {
-    const signedInFetch = stubSignedInFetch([
-      {
-        id: "doc-pinned",
-        body: "---\ntags: [notes]\n---\n\n# Pinned lower result\n\nRanked body.",
-        pinned: true
-      },
-      { id: "doc-best", body: "# Best ranked result\n\nRanked body." }
-    ]);
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).startsWith("/api/v1/docs/search?")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              documents: [
-                {
-                  id: "doc-best",
-                  publicId: "public-2",
-                  title: "Best ranked result",
-                  matchExcerpt: "<strong>Ranked body</strong>"
-                },
-                {
-                  id: "doc-pinned",
-                  publicId: "public-1",
-                  title: "Pinned lower result",
-                  matchExcerpt: "Lower ranked body"
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
-      return signedInFetch(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    await renderWrite();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
-      target: { value: "ranked" }
-    });
-
-    const list = screen.getByRole("navigation");
-    const best = await within(list).findByText("Best ranked result");
-    const pinned = within(list).getByText("Pinned lower result");
-    expect(best.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(list).getByText("<strong>Ranked body</strong>")).toBeInTheDocument();
-    expect(list.querySelector("strong")).toBeNull();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
-      target: { value: "" }
-    });
-    const restoredPinned = within(list).getByText("Pinned lower result");
-    const restoredBest = within(list).getByText("Best ranked result");
-    expect(restoredPinned.compareDocumentPosition(restoredBest) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
-      target: { value: "ranked" }
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Filter by tag" }), {
-      target: { value: "notes" }
-    });
-    expect(screen.getByRole("textbox", { name: "Search documents" })).toHaveValue("");
-    expect(within(list).getByText("Pinned lower result")).toBeInTheDocument();
-    expect(within(list).queryByText("Best ranked result")).not.toBeInTheDocument();
-  });
-
-  it("preserves search state on failure and retries the current query", async () => {
-    const signedInFetch = stubSignedInFetch();
-    let searches = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).startsWith("/api/v1/docs/search?")) {
-          searches += 1;
-          if (searches === 1) {
-            return Promise.resolve(new Response(JSON.stringify({ error: "rate limited" }), { status: 429 }));
-          }
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                documents: [{
-                  id: "doc-welcome",
-                  publicId: "public-1",
-                  title: "Markdown for agents and humans",
-                  matchExcerpt: "Welcome to passage."
-                }]
-              }),
-              { status: 200 }
-            )
-          );
-        }
-        return signedInFetch(input, init);
-      })
-    );
-    await renderWrite();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
-      target: { value: "passage" }
-    });
-    expect(await screen.findByRole("alert")).toHaveTextContent("Search unavailable. Retry.");
-
-    fireEvent.click(screen.getByRole("button", { name: "Retry." }));
-    expect(await screen.findByRole("button", { name: /Markdown for agents and humans/ })).toHaveTextContent(
-      "Welcome to passage."
-    );
-    expect(searches).toBe(2);
-  });
-
-  it("keeps the active search scope after create", async () => {
-    const fetchMock = stubSignedInFetch([{ id: "doc-note", body: "# Private note\n\nSearchable." }]);
-    await renderWrite();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
-      target: { value: "searchable" }
-    });
-    await screen.findByRole("button", { name: /Private note/ });
-    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
-    fireEvent.change(sharingFilter, { target: { value: "private" } });
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/docs/search?q=searchable&visibility=private&limit=50",
-        expect.objectContaining({ credentials: "include" })
-      )
-    );
-
-    await createBlankDocument();
-
-    expect(sharingFilter).toHaveValue("private");
-    await waitFor(() => {
-      const privateSearches = fetchMock.mock.calls.filter(([input]) =>
-        String(input).includes("visibility=private")
-      );
-      expect(privateSearches.length).toBeGreaterThanOrEqual(2);
-    });
-  });
-
-  it("keeps the active search scope after share and unshare", async () => {
-    const signedInFetch = stubSignedInFetch([{ id: "doc-note", body: "# Private note\n\nSearchable." }]);
-    let shared = false;
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.startsWith("/api/v1/docs/search?")) {
-        const visibility = new URL(url, "https://passage.test").searchParams.get("visibility");
-        const visible = visibility === "all" || (visibility === "shared") === shared;
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              documents: visible
-                ? [{
-                    id: "doc-note",
-                    publicId: "public-1",
-                    title: "Private note",
-                    matchExcerpt: "Searchable.",
-                    sharedAt: shared ? "2026-08-06T10:00:00Z" : undefined
-                  }]
-                : []
-            }),
-            { status: 200 }
-          )
-        );
-      }
-      if (url === "/api/v1/docs/doc-note/share" && init?.method === "POST") {
-        shared = true;
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({ token: "public-1", publicId: "public-1", htmlPath: "/d/public-1", markdownPath: "/d/public-1.md" }),
-            { status: 200 }
-          )
-        );
-      }
-      if (url === "/api/v1/docs/doc-note/share" && init?.method === "DELETE") {
-        shared = false;
-        return Promise.resolve(new Response(null, { status: 204 }));
-      }
-      return signedInFetch(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    await renderWrite();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
-      target: { value: "searchable" }
-    });
-    await screen.findByRole("button", { name: /Private note/ });
-    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
-    fireEvent.change(sharingFilter, { target: { value: "private" } });
-    await screen.findByRole("button", { name: /Private note/ });
-
-    fireEvent.click(screen.getByRole("button", { name: "Share" }));
-
-    expect(sharingFilter).toHaveValue("private");
-    expect(await screen.findByText("No documents match.")).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Private note", level: 1 }).length).toBeGreaterThan(0);
-
-    fireEvent.change(sharingFilter, { target: { value: "shared" } });
-    await screen.findByRole("button", { name: /Private note/ });
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
-
-    expect(sharingFilter).toHaveValue("shared");
-    expect(await screen.findByText("No documents match.")).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Private note", level: 1 }).length).toBeGreaterThan(0);
   });
 
   it("uses stable public ids in the editor URL", async () => {
@@ -1199,7 +982,7 @@ describe("Write (editor)", () => {
     expect(window.location.pathname).toBe("/write/notes-public-id");
   });
 
-  it("finds indexed frontmatter text", async () => {
+  it("filters the document list by frontmatter tags", async () => {
     stubSignedInFetch([
       { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
       { id: "doc-scripts", body: "---\ntags: [scripts]\n---\n\n# Video script\n\nOpening line." }
@@ -1208,11 +991,11 @@ describe("Write (editor)", () => {
     await renderWrite();
     await screen.findByRole("button", { name: /Agent notes/ });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "scripts" }
     });
 
-    expect(await screen.findByRole("button", { name: /Video script/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
   });
 
@@ -1962,14 +1745,6 @@ describe("Write (editor)", () => {
           status: 200
         });
       }
-      if (url.startsWith("/api/v1/docs/search?")) {
-        return new Response(
-          JSON.stringify({
-            documents: [{ id: "doc-2", publicId: "public-2", title: "Second", matchExcerpt: "Second" }]
-          }),
-          { status: 200 }
-        );
-      }
       return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1984,12 +1759,12 @@ describe("Write (editor)", () => {
     const second = await screen.findByRole("button", { name: /Second/ });
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50&cursor=page-two", { credentials: "include" });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "Second" }
     });
-    const searchSecond = await screen.findByRole("button", { name: /Second/ });
+    expect(second).toBeInTheDocument();
 
-    fireEvent.click(searchSecond);
+    fireEvent.click(second);
     expect((await screen.findAllByText("Full second body")).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-2", { credentials: "include" });
     expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();

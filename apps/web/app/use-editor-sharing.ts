@@ -17,8 +17,6 @@ type EditorSharingOptions = {
   setPendingSave: Dispatch<SetStateAction<PendingSave | null>>;
   setSaveState: Dispatch<SetStateAction<SaveState>>;
   setDocumentFilter: Dispatch<SetStateAction<DocumentFilter>>;
-  onDocumentMutation: () => void;
-  preserveDocumentFilter: boolean;
 };
 
 export function useEditorSharing({
@@ -31,9 +29,7 @@ export function useEditorSharing({
   setDocs,
   setPendingSave,
   setSaveState,
-  setDocumentFilter,
-  onDocumentMutation,
-  preserveDocumentFilter
+  setDocumentFilter
 }: EditorSharingOptions) {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const copyTimer = useRef<number | undefined>(undefined);
@@ -81,7 +77,6 @@ export function useEditorSharing({
         setDocs((prev) => prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc)));
         setPendingSave(null);
         setSaveState("saved");
-        onDocumentMutation();
       }
       let htmlPath = activeShared && active.publicId ? `/d/${active.publicId}` : "";
       if (!htmlPath) {
@@ -95,10 +90,9 @@ export function useEditorSharing({
               : doc
           )
         );
-        onDocumentMutation();
       }
       await copyURL(new URL(htmlPath, window.location.origin).toString());
-      if (!preserveDocumentFilter) setDocumentFilter(ALL_DOCUMENTS);
+      setDocumentFilter(ALL_DOCUMENTS);
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {
@@ -124,8 +118,7 @@ export function useEditorSharing({
       setDocs((prev) =>
         prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null, updatedAt } : doc))
       );
-      onDocumentMutation();
-      if (!preserveDocumentFilter) setDocumentFilter(ALL_DOCUMENTS);
+      setDocumentFilter(ALL_DOCUMENTS);
       setShareState("unshared");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
     } catch {

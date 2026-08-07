@@ -25,15 +25,13 @@ type EditorDocumentsOptions = {
   maxSavedDocs: number;
   plan: string;
   focusEditor: () => void;
-  preserveDocumentFilter: boolean;
 };
 
 export function useEditorDocuments({
   userId,
   maxSavedDocs,
   plan,
-  focusEditor,
-  preserveDocumentFilter
+  focusEditor
 }: EditorDocumentsOptions) {
   const [docs, setDocs] = useState<Doc[]>(seedDocs);
   const [activeId, setActiveId] = useState("welcome");
@@ -45,7 +43,6 @@ export function useEditorDocuments({
   const [nextCursor, setNextCursor] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [documentLoadError, setDocumentLoadError] = useState("");
-  const [mutationVersion, setMutationVersion] = useState(0);
   const initialURLPublicId = useRef("");
   const activeRequest = useRef(0);
   const bodyRequests = useRef(new Set<string>());
@@ -149,7 +146,6 @@ export function useEditorDocuments({
           );
           setSaveState("saved");
           setPendingSave(null);
-          setMutationVersion((version) => version + 1);
         } catch {
           if (!cancelled) setSaveState("error");
         }
@@ -193,13 +189,9 @@ export function useEditorDocuments({
   }
 
   function selectDoc(doc: Doc) {
-    const existing = docs.find((candidate) => candidate.id === doc.id);
-    if (!existing) {
-      setDocs((current) => [...current, doc]);
-    }
     setActiveId(doc.id);
     updateEditorURL(doc, "push");
-    void loadDocBody(existing ?? doc);
+    void loadDocBody(doc);
   }
 
   async function loadMoreDocs() {
@@ -234,9 +226,8 @@ export function useEditorDocuments({
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       updateEditorURL(doc, "push");
-      if (!preserveDocumentFilter) setDocumentFilter(ALL_DOCUMENTS);
+      setDocumentFilter(ALL_DOCUMENTS);
       setSaveState("saved");
-      setMutationVersion((version) => version + 1);
       requestAnimationFrame(focusEditor);
       return doc;
     } catch (err) {
@@ -262,17 +253,12 @@ export function useEditorDocuments({
     );
   }
 
-  function togglePin(id: string, fallback?: Doc) {
-    setDocs((prev) => {
-      if (!prev.some((doc) => doc.id === id)) {
-        return fallback ? [...prev, { ...fallback, pinned: true }] : prev;
-      }
-      return prev.map((doc) => (doc.id === id ? { ...doc, pinned: !doc.pinned } : doc));
-    });
+  function togglePin(id: string) {
+    setDocs((prev) => prev.map((doc) => (doc.id === id ? { ...doc, pinned: !doc.pinned } : doc)));
   }
 
-  async function deleteDoc(id: string, fallback?: Doc) {
-    const doc = docs.find((candidate) => candidate.id === id) ?? fallback;
+  async function deleteDoc(id: string) {
+    const doc = docs.find((candidate) => candidate.id === id);
     if (!doc || doc.pinned || isShared(doc)) return;
     const cancelledSave = pendingSave?.id === id ? pendingSave : null;
     if (cancelledSave) setPendingSave(null);
@@ -309,13 +295,12 @@ export function useEditorDocuments({
           window.history.replaceState(null, "", "/write");
         }
       }
-      if (replacement && !filteredDocsRemain && !preserveDocumentFilter) {
+      if (replacement && !filteredDocsRemain) {
         setDocumentFilter(ALL_DOCUMENTS);
       }
       return next;
     });
     setSaveState("saved");
-    setMutationVersion((version) => version + 1);
   }
 
   return {
@@ -331,8 +316,6 @@ export function useEditorDocuments({
     hasMoreDocs: Boolean(nextCursor),
     loadMoreDocs,
     loadingMore,
-    mutationVersion,
-    notifyDocumentMutation: () => setMutationVersion((version) => version + 1),
     pendingSave,
     retryActive: () => {
       if (active) void loadDocBody(active);

@@ -99,7 +99,7 @@ It does not decide document access or plan entitlement.
 
 ### Documents and public sharing
 
-`server/internal/documents` owns document validation, persistence, owner-scoped queries, pagination, full-text search, archiving, share state, public Markdown, and public HTML rendering.
+`server/internal/documents` owns document validation, persistence, owner-scoped queries, pagination, archiving, share state, public Markdown, and public HTML rendering.
 
 It depends on authenticated user identity supplied by the server composition layer and on PostgreSQL.
 
@@ -190,19 +190,6 @@ Invalid credentials return an authentication error and do not create a session.
 
 Document creation locks the user row before counting active documents, so concurrent creates cannot bypass the account limit.
 
-### Search documents
-
-1. The browser or an eligible bearer-token client sends a normalized query to `GET /api/v1/docs/search`.
-2. The server applies a per-user search rate limit and resolves the authenticated owner.
-3. PostgreSQL searches a partial GIN index over active document titles and complete Markdown bodies.
-4. The owner and requested private or shared scope remain predicates in the indexed query.
-5. The server returns ranked metadata and a bounded plain-text match excerpt, never a complete body.
-6. Opaque cursors retain rank, update time, document ID, and the search-input fingerprint.
-
-Search uses PostgreSQL's `simple` text configuration, requires every complete term, and treats the final term as a prefix.
-
-The index is updated in the same transaction as each document write, so there is no asynchronous index lag.
-
 ### Share and unshare a document
 
 1. A session-authenticated owner requests a share.
@@ -270,8 +257,6 @@ Important current limits are:
 
 - 512 KiB per document body;
 - 50 documents in the default metadata page and 100 maximum;
-- 50 documents in the default search page and 100 maximum;
-- 128 Unicode characters per search query and 240 characters per match excerpt;
 - 5 active saved documents for Free by default;
 - 2,000 active saved documents for Pro by default;
 - 10 templates per user;
