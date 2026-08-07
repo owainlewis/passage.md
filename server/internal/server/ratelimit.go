@@ -36,7 +36,6 @@ type rateLimitEntry struct {
 type appRateLimiters struct {
 	authMutation     *fixedWindowLimiter
 	documentMutation *fixedWindowLimiter
-	documentSearch   *fixedWindowLimiter
 	apiToken         *fixedWindowLimiter
 	sharedHTML       *fixedWindowLimiter
 	rawMarkdown      *fixedWindowLimiter
@@ -46,7 +45,6 @@ func newAppRateLimiters(settings config.AbuseRateLimitConfig) appRateLimiters {
 	return appRateLimiters{
 		authMutation:     newFixedWindowLimiter(settings.AuthMutation),
 		documentMutation: newFixedWindowLimiter(settings.DocumentMutation),
-		documentSearch:   newFixedWindowLimiter(settings.DocumentSearch),
 		apiToken:         newFixedWindowLimiter(settings.APIToken),
 		sharedHTML:       newFixedWindowLimiter(settings.SharedHTML),
 		rawMarkdown:      newFixedWindowLimiter(settings.RawMarkdown),
@@ -57,7 +55,6 @@ func newPersistentAppRateLimiters(settings config.AbuseRateLimitConfig, store ra
 	return appRateLimiters{
 		authMutation:     newPersistentFixedWindowLimiter("auth_mutation", settings.AuthMutation, store, secret),
 		documentMutation: newPersistentFixedWindowLimiter("document_mutation", settings.DocumentMutation, store, secret),
-		documentSearch:   newPersistentFixedWindowLimiter("document_search", settings.DocumentSearch, store, secret),
 		apiToken:         newPersistentFixedWindowLimiter("api_token", settings.APIToken, store, secret),
 		sharedHTML:       newPersistentFixedWindowLimiter("shared_html", settings.SharedHTML, store, secret),
 		rawMarkdown:      newPersistentFixedWindowLimiter("raw_markdown", settings.RawMarkdown, store, secret),

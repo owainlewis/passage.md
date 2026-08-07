@@ -24,16 +24,6 @@ func TestDocsRequireDatabase(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d", rec.Code)
 	}
-
-	search := httptest.NewRecorder()
-	searchReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=agent", nil)
-	app.Routes().ServeHTTP(search, searchReq)
-	if search.Code != http.StatusServiceUnavailable {
-		t.Fatalf("search status = %d", search.Code)
-	}
-	if got := search.Header().Get("Cache-Control"); got != "private, no-store" {
-		t.Fatalf("search Cache-Control = %q", got)
-	}
 }
 
 func TestDocumentRoutesAcceptBearerTokensAndEnforceOwnership(t *testing.T) {
@@ -50,15 +40,6 @@ func TestDocumentRoutesAcceptBearerTokensAndEnforceOwnership(t *testing.T) {
 	app.Routes().ServeHTTP(anonymous, anonymousReq)
 	if anonymous.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous status = %d, body = %s", anonymous.Code, anonymous.Body.String())
-	}
-	anonymousSearch := httptest.NewRecorder()
-	anonymousSearchReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=token", nil)
-	app.Routes().ServeHTTP(anonymousSearch, anonymousSearchReq)
-	if anonymousSearch.Code != http.StatusUnauthorized {
-		t.Fatalf("anonymous search status = %d, body = %s", anonymousSearch.Code, anonymousSearch.Body.String())
-	}
-	if got := anonymousSearch.Header().Get("Cache-Control"); got != "private, no-store" {
-		t.Fatalf("anonymous search Cache-Control = %q", got)
 	}
 
 	create := httptest.NewRecorder()
@@ -79,20 +60,6 @@ func TestDocumentRoutesAcceptBearerTokensAndEnforceOwnership(t *testing.T) {
 	app.Routes().ServeHTTP(list, listReq)
 	if list.Code != http.StatusOK {
 		t.Fatalf("list status = %d, body = %s", list.Code, list.Body.String())
-	}
-
-	search := httptest.NewRecorder()
-	searchReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=token", nil)
-	searchReq.Header.Set("Authorization", "Bearer psg_owner_one")
-	app.Routes().ServeHTTP(search, searchReq)
-	if search.Code != http.StatusOK {
-		t.Fatalf("search status = %d, body = %s", search.Code, search.Body.String())
-	}
-	if docStore.ownerID != "user-1" {
-		t.Fatalf("search owner = %q", docStore.ownerID)
-	}
-	if got := search.Header().Get("Cache-Control"); got != "private, no-store" {
-		t.Fatalf("search Cache-Control = %q", got)
 	}
 
 	get := httptest.NewRecorder()
@@ -183,14 +150,6 @@ func TestPaidOnlyRoutesReturnPaymentRequiredForFreeUsers(t *testing.T) {
 	if token.Code != http.StatusPaymentRequired {
 		t.Fatalf("token status = %d, body = %s", token.Code, token.Body.String())
 	}
-
-	search := httptest.NewRecorder()
-	searchReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=agent", nil)
-	searchReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: routeSignedToken("session-one")})
-	app.Routes().ServeHTTP(search, searchReq)
-	if search.Code != http.StatusOK {
-		t.Fatalf("free session search status = %d, body = %s", search.Code, search.Body.String())
-	}
 }
 
 func TestBearerDocumentAPIReturnsPaymentRequiredForFreeUsers(t *testing.T) {
@@ -210,13 +169,5 @@ func TestBearerDocumentAPIReturnsPaymentRequiredForFreeUsers(t *testing.T) {
 
 	if rec.Code != http.StatusPaymentRequired {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-
-	search := httptest.NewRecorder()
-	searchReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=agent", nil)
-	searchReq.Header.Set("Authorization", "Bearer psg_owner_one")
-	app.Routes().ServeHTTP(search, searchReq)
-	if search.Code != http.StatusPaymentRequired {
-		t.Fatalf("search status = %d, body = %s", search.Code, search.Body.String())
 	}
 }

@@ -168,30 +168,6 @@ func TestPersistentRateLimitConcurrentBoundary(t *testing.T) {
 	}
 }
 
-func TestPersistentDocumentSearchLimitUsesSupportedScope(t *testing.T) {
-	db := openRateLimitTestDatabase(t)
-	defer db.Close()
-
-	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
-	secret := fmt.Sprintf("document-search-rate-limit-%d", time.Now().UnixNano())
-	limiter := newPersistentFixedWindowLimiter(
-		"document_search",
-		config.RateLimitConfig{Requests: 1, Window: time.Minute},
-		newPGRateLimitStore(db),
-		secret,
-	)
-	limiter.now = func() time.Time { return now }
-	keyHash := newRateLimitKeyHasher(secret, "document_search")("user-1")
-	defer db.Exec(context.Background(), `DELETE FROM abuse_rate_limits WHERE scope = 'document_search' AND key_hash = $1`, keyHash)
-
-	if allowed, _, err := limiter.allowContext(context.Background(), "user-1"); err != nil || !allowed {
-		t.Fatalf("first search allowed/error = %t/%v", allowed, err)
-	}
-	if allowed, retryAfter, err := limiter.allowContext(context.Background(), "user-1"); err != nil || allowed || retryAfter != time.Minute {
-		t.Fatalf("second search allowed/retry/error = %t/%s/%v", allowed, retryAfter, err)
-	}
-}
-
 func TestPersistentPublicDocumentLimitsSpanInstancesAndFormats(t *testing.T) {
 	db := openRateLimitTestDatabase(t)
 	defer db.Close()
@@ -361,13 +337,9 @@ func TestWriteFenceKeepsRateLimitedReadsDatabaseReadOnly(t *testing.T) {
 		SessionSecret:  secret,
 		WritesDisabled: true,
 		RateLimits: config.AbuseRateLimitConfig{
-			SharedHTML:     config.RateLimitConfig{Requests: 1, Window: time.Minute},
-			DocumentSearch: config.RateLimitConfig{Requests: 1, Window: time.Minute},
+			SharedHTML: config.RateLimitConfig{Requests: 1, Window: time.Minute},
 		},
 	})
-	if app.rateLimiters.documentSearch.store != nil {
-		t.Fatal("write-fenced document search limiter uses persistent storage")
-	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/d/abcdefghijklmnopqrstuv", nil)
 	request.RemoteAddr = "192.0.2.44:1234"

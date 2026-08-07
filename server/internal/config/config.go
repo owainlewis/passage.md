@@ -33,7 +33,6 @@ type RateLimitConfig struct {
 type AbuseRateLimitConfig struct {
 	AuthMutation     RateLimitConfig
 	DocumentMutation RateLimitConfig
-	DocumentSearch   RateLimitConfig
 	APIToken         RateLimitConfig
 	SharedHTML       RateLimitConfig
 	RawMarkdown      RateLimitConfig
@@ -111,7 +110,6 @@ func FromEnv() Config {
 		RateLimits: AbuseRateLimitConfig{
 			AuthMutation:     rateLimitFromEnv("PASSAGE_RATE_LIMIT_AUTH", 20, time.Minute),
 			DocumentMutation: rateLimitFromEnv("PASSAGE_RATE_LIMIT_DOCUMENT_MUTATION", 120, time.Minute),
-			DocumentSearch:   rateLimitFromEnv("PASSAGE_RATE_LIMIT_DOCUMENT_SEARCH", 120, time.Minute),
 			APIToken:         rateLimitFromEnv("PASSAGE_RATE_LIMIT_API_TOKEN", 30, time.Minute),
 			SharedHTML:       rateLimitFromEnv("PASSAGE_RATE_LIMIT_SHARED_HTML", 120, time.Minute),
 			RawMarkdown:      rateLimitFromEnv("PASSAGE_RATE_LIMIT_RAW_MARKDOWN", 240, time.Minute),
