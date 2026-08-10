@@ -12,10 +12,10 @@
     "lint": "npm run lint -w @passage/web",
     "postinstall": "node scripts/patch-brace-expansion-commonjs.cjs",
     "typecheck": "npm run typecheck -w @passage/web",
-    "test": "node scripts/patch-brace-expansion-commonjs.test.cjs && npm run test -w @passage/web"
+    "test": "node scripts/patch-brace-expansion-commonjs.test.cjs && npm ls brace-expansion --all && npm run test -w @passage/web"
   },
   "devDependencies": {
-    "brace-expansion": "5.0.8"
+    "brace-expansion": "5.0.9"
   },
   "engines": {
     "node": ">=22.0.0",

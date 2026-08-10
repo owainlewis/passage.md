@@ -2,9 +2,9 @@ const { createHash } = require("node:crypto");
 const { readFileSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 
-const expectedVersion = "5.0.8";
+const expectedVersion = "5.0.9";
 const expectedHash =
-  "994eb761eca1c861f586ce6ab31bc2e7a6bc020dc4d6636d5e8b778c366d133f";
+  "8d1ea713e1dd03f52783bbceea9d85815a3587134d1936ea16257dea83884f15";
 const marker =
   "// passage.md CommonJS compatibility for legacy minimatch consumers";
 const compatibilityPatch = `

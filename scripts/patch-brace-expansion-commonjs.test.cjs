@@ -9,11 +9,17 @@ const legacyConsumers = [
   "eslint-plugin-jsx-a11y",
   "eslint-plugin-react",
 ];
+const patchedBraceExpansionPath = require.resolve("brace-expansion");
 
 for (const consumer of legacyConsumers) {
   const consumerRequire = createRequire(require.resolve(consumer));
   const minimatch = consumerRequire("minimatch");
 
+  assert.equal(
+    consumerRequire.resolve("brace-expansion"),
+    patchedBraceExpansionPath,
+    `${consumer} must resolve the patched brace-expansion package`,
+  );
   assert.equal(
     typeof minimatch,
     "function",
