@@ -39,7 +39,10 @@ describe("Admin", () => {
 
     await vi.waitFor(() => expect(resolveDashboard).toBeDefined());
     resolveDashboard?.(
-      new Response(JSON.stringify({ totals: { users: 0, free: 0, pro: 0 }, users: [] }), { status: 200 })
+      new Response(
+        JSON.stringify({ totals: { users: 0, free: 0, pro: 0, paid: 0, community: 0, mrrCents: 0 }, users: [] }),
+        { status: 200 }
+      )
     );
   });
 
@@ -54,7 +57,7 @@ describe("Admin", () => {
       if (String(input) === "/api/v1/admin/dashboard") {
         return new Response(
           JSON.stringify({
-            totals: { users: 3, free: 1, pro: 2 },
+            totals: { users: 4, free: 1, pro: 3, paid: 1, community: 1, mrrCents: 500 },
             users: [
               {
                 id: "owner",
@@ -83,6 +86,15 @@ describe("Admin", () => {
                 source: "default",
                 savedDocs: 1,
                 storedMarkdownBytes: 0
+              },
+              {
+                id: "community",
+                email: "community@example.com",
+                createdAt: "2026-07-15T10:00:00Z",
+                plan: "pro",
+                source: "community",
+                savedDocs: 3,
+                storedMarkdownBytes: 512
               }
             ]
           }),
@@ -97,12 +109,17 @@ describe("Admin", () => {
 
     expect(await screen.findByRole("heading", { name: "Accounts" })).toBeInTheDocument();
     const totals = await screen.findByLabelText("Account totals");
-    expect(within(totals).getByText("3")).toBeInTheDocument();
-    expect(within(totals).getByText("1")).toBeInTheDocument();
-    expect(within(totals).getByText("2")).toBeInTheDocument();
+    expect(within(totals).getByText("$5.00")).toBeInTheDocument();
+    expect(within(totals).getAllByText("1")).toHaveLength(3);
+    expect(screen.getByText("4 total accounts")).toBeInTheDocument();
+    expect(screen.getByText("Monthly recurring revenue")).toBeInTheDocument();
+    expect(screen.getByText("Paid accounts")).toBeInTheDocument();
+    expect(screen.getByText("Free accounts")).toBeInTheDocument();
+    expect(screen.getByText("Community accounts")).toBeInTheDocument();
     expect(screen.getByText("owain@owainlewis.com")).toBeInTheDocument();
     expect(screen.getByText("paid@example.com")).toBeInTheDocument();
     expect(screen.getByText("free@example.com")).toBeInTheDocument();
+    expect(screen.getByText("community@example.com")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Stored Markdown" })).toBeInTheDocument();
     expect(screen.getByText("2,048 B")).toBeInTheDocument();
@@ -156,7 +173,7 @@ describe("Admin", () => {
         if (dashboardRequests === 1) {
           return new Response(
             JSON.stringify({
-              totals: { users: 1, free: 0, pro: 1 },
+              totals: { users: 1, free: 0, pro: 1, paid: 0, community: 0, mrrCents: 0 },
               users: [{
                 id: "owner",
                 email: "owain@owainlewis.com",

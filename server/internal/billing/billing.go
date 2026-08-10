@@ -26,6 +26,8 @@ const (
 	SourceStripe    = "stripe"
 )
 
+const monthlyProPriceCents = 500
+
 var ErrPaidRequired = errors.New("pro plan required")
 var ErrNotAdmin = errors.New("admin access required")
 var ErrUserNotFound = errors.New("user not found")
@@ -111,9 +113,12 @@ type AdminUser struct {
 }
 
 type AdminTotals struct {
-	Users int `json:"users"`
-	Free  int `json:"free"`
-	Pro   int `json:"pro"`
+	Users     int `json:"users"`
+	Free      int `json:"free"`
+	Pro       int `json:"pro"`
+	Paid      int `json:"paid"`
+	Community int `json:"community"`
+	MRRCents  int `json:"mrrCents"`
 }
 
 type AdminDashboard struct {
@@ -196,6 +201,13 @@ func (s *Service) AdminDashboard(ctx context.Context, admin auth.User) (AdminDas
 			dashboard.Totals.Pro++
 		} else {
 			dashboard.Totals.Free++
+		}
+		if account.Source == SourceStripe && stripeStatusIsCurrentRevenue(account.Subscription.Status) {
+			dashboard.Totals.Paid++
+			dashboard.Totals.MRRCents += monthlyProPriceCents
+		}
+		if account.Source == SourceCommunity {
+			dashboard.Totals.Community++
 		}
 	}
 	sort.SliceStable(dashboard.Users, func(i, j int) bool {
@@ -317,6 +329,10 @@ func (s *Service) accountFromState(email string, state State, savedDocs int) Acc
 
 func stripeStatusIsPaid(status string) bool {
 	return status == "active" || status == "trialing"
+}
+
+func stripeStatusIsCurrentRevenue(status string) bool {
+	return status == "active"
 }
 
 func validPlan(plan Plan) bool {

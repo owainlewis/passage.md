@@ -21,6 +21,9 @@ type AdminDashboard = {
     users: number;
     free: number;
     pro: number;
+    paid: number;
+    community: number;
+    mrrCents: number;
   };
   users: AdminUser[];
 };
@@ -35,6 +38,14 @@ function formatDate(value: string) {
 
 function formatStoredMarkdown(value: number) {
   return `${new Intl.NumberFormat("en-GB").format(value)} B`;
+}
+
+function formatUSD(cents: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2
+  }).format(cents / 100);
 }
 
 function label(value: string) {
@@ -119,27 +130,49 @@ function AdminPage() {
         <section className="adminHeader">
           <p className="adminKicker">Admin</p>
           <h1>Accounts</h1>
-          <p>A simple view of Passage users, active documents, and stored Markdown.</p>
+          <p>Revenue, account mix, and usage across Passage.</p>
         </section>
 
         {!dashboard ? (
           <PendingStatus label="Loading accounts" />
         ) : (
           <>
-            <dl className="adminTotals" aria-label="Account totals">
-              <div>
-                <dt>Users</dt>
-                <dd>{dashboard.totals.users}</dd>
+            <section className="adminOverview" aria-labelledby="admin-overview-heading">
+              <div className="adminSectionHeading adminOverviewHeading">
+                <h2 id="admin-overview-heading">Business overview</h2>
+                <span>{dashboard.totals.users} total accounts</span>
               </div>
-              <div>
-                <dt>Free</dt>
-                <dd>{dashboard.totals.free}</dd>
-              </div>
-              <div>
-                <dt>Pro</dt>
-                <dd>{dashboard.totals.pro}</dd>
-              </div>
-            </dl>
+              <dl className="adminMetrics" aria-label="Account totals">
+                <div className="adminMetric adminMetricRevenue">
+                  <dt>Monthly recurring revenue</dt>
+                  <dd>
+                    <strong>{formatUSD(dashboard.totals.mrrCents)}</strong>
+                    <span>Current Stripe subscriptions</span>
+                  </dd>
+                </div>
+                <div className="adminMetric adminMetricPaid">
+                  <dt>Paid accounts</dt>
+                  <dd>
+                    <strong>{dashboard.totals.paid}</strong>
+                    <span>Active monthly Pro</span>
+                  </dd>
+                </div>
+                <div className="adminMetric">
+                  <dt>Free accounts</dt>
+                  <dd>
+                    <strong>{dashboard.totals.free}</strong>
+                    <span>Current Free plan</span>
+                  </dd>
+                </div>
+                <div className="adminMetric adminMetricCommunity">
+                  <dt>Community accounts</dt>
+                  <dd>
+                    <strong>{dashboard.totals.community}</strong>
+                    <span>Complimentary Pro access</span>
+                  </dd>
+                </div>
+              </dl>
+            </section>
 
             <section className="adminAccounts" aria-labelledby="admin-users-heading">
               <div className="adminSectionHeading">
