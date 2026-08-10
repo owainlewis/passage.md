@@ -352,6 +352,11 @@ func TestAdminDashboardRequiresOwnerAndReturnsAccountSummary(t *testing.T) {
 			User:      auth.User{ID: "user-3", Email: "three@example.com"},
 			CreatedAt: time.Date(2026, time.July, 16, 10, 0, 0, 0, time.UTC),
 		},
+		{
+			User:      auth.User{ID: "user-4", Email: "community@example.com"},
+			CreatedAt: time.Date(2026, time.July, 15, 10, 0, 0, 0, time.UTC),
+			State:     billing.State{CommunityAccess: true},
+		},
 	}
 	app := &App{
 		auth:    auth.NewService(authStore, "test-secret", false),
@@ -387,7 +392,7 @@ func TestAdminDashboardRequiresOwnerAndReturnsAccountSummary(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	for _, want := range []string{
-		`"totals":{"users":3,"free":1,"pro":2}`,
+		`"totals":{"users":4,"free":1,"pro":3,"paid":1,"community":1,"mrrCents":500}`,
 		`"email":"owain@owainlewis.com"`,
 		`"source":"owner"`,
 		`"email":"two@example.com"`,

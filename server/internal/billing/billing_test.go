@@ -122,6 +122,7 @@ func TestEntitlementPrecedenceIncludesCommunity(t *testing.T) {
 
 func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
 	manualFree := PlanFree
+	manualPro := PlanPro
 	createdAt := time.Date(2026, time.July, 18, 10, 0, 0, 0, time.UTC)
 	store := newMemoryStore()
 	store.adminUsers = []AdminUserRecord{
@@ -149,6 +150,21 @@ func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
 			CreatedAt: createdAt.Add(-3 * time.Hour),
 			State:     State{ManualPlan: &manualFree, CommunityAccess: true},
 		},
+		{
+			User:      auth.User{ID: "community", Email: "community@example.com"},
+			CreatedAt: createdAt.Add(-4 * time.Hour),
+			State:     State{CommunityAccess: true, StripeSubscriptionStatus: "active"},
+		},
+		{
+			User:      auth.User{ID: "manual", Email: "manual@example.com"},
+			CreatedAt: createdAt.Add(-5 * time.Hour),
+			State:     State{ManualPlan: &manualPro, StripeSubscriptionStatus: "active"},
+		},
+		{
+			User:      auth.User{ID: "trial", Email: "trial@example.com"},
+			CreatedAt: createdAt.Add(-6 * time.Hour),
+			State:     State{StripeSubscriptionStatus: "trialing"},
+		},
 	}
 	service := NewService(store, config.BillingConfig{
 		FreeMaxSavedDocs: 5,
@@ -160,7 +176,7 @@ func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dashboard.Totals != (AdminTotals{Users: 4, Free: 2, Pro: 2}) {
+	if dashboard.Totals != (AdminTotals{Users: 7, Free: 2, Pro: 5, Paid: 1, Community: 1, MRRCents: 500}) {
 		t.Fatalf("totals = %#v", dashboard.Totals)
 	}
 	if dashboard.Users[0].Email != "paid@example.com" || dashboard.Users[0].Source != SourceStripe || dashboard.Users[0].StoredMarkdownBytes != 800 {
@@ -174,6 +190,15 @@ func TestAdminDashboardSummarizesEffectiveAccounts(t *testing.T) {
 	}
 	if dashboard.Users[3].Plan != PlanFree || dashboard.Users[3].Source != SourceManual {
 		t.Fatalf("free = %#v", dashboard.Users[3])
+	}
+	if dashboard.Users[4].Source != SourceCommunity {
+		t.Fatalf("community = %#v", dashboard.Users[4])
+	}
+	if dashboard.Users[5].Source != SourceManual {
+		t.Fatalf("manual = %#v", dashboard.Users[5])
+	}
+	if dashboard.Users[6].Source != SourceStripe || dashboard.Users[6].SubscriptionStatus != "trialing" {
+		t.Fatalf("trial = %#v", dashboard.Users[6])
 	}
 
 	if _, err := service.AdminDashboard(context.Background(), auth.User{Email: "free@example.com"}); err != ErrNotAdmin {

@@ -2996,32 +2996,71 @@ button {
   font-size: 0.95rem;
 }
 
-.adminTotals {
+.adminOverview {
+  padding: 30px 0 0;
+}
+
+.adminOverviewHeading {
+  margin-bottom: 16px;
+}
+
+.adminMetrics {
   margin: 0;
-  padding: 28px 0;
+  padding: 0 0 30px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.5fr repeat(3, minmax(0, 1fr));
+  gap: 12px;
   border-bottom: 1px solid var(--hairline);
 }
 
-.adminTotals div {
-  padding: 0 24px;
-  border-left: 1px solid var(--hairline);
+.adminMetric {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
 }
 
-.adminTotals div:first-child {
-  padding-left: 0;
-  border-left: 0;
+.adminMetricRevenue {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--hairline));
+  background: var(--accent-tint);
 }
 
-.adminTotals dt {
+.adminMetricPaid {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--hairline));
+}
+
+.adminMetricCommunity {
+  background: color-mix(in srgb, var(--hairline) 18%, transparent);
+}
+
+.adminMetric dt {
   color: var(--muted);
   font-size: 0.82rem;
 }
 
-.adminTotals dd {
-  margin: 8px 0 0;
-  font: 500 1.7rem/1 var(--mono);
+.adminMetric dd {
+  margin: 14px 0 0;
+}
+
+.adminMetric dd strong,
+.adminMetric dd span {
+  display: block;
+}
+
+.adminMetric dd strong {
+  font: 500 1.9rem/1 var(--mono);
+}
+
+.adminMetricRevenue dd strong {
+  color: var(--accent);
+  font-size: 2.25rem;
+}
+
+.adminMetric dd span {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .adminAccounts {
@@ -3207,12 +3246,27 @@ button {
     padding-right: 18px;
   }
 
-  .adminTotals div {
-    padding: 0 16px;
+  .adminMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .adminTotals dd {
-    font-size: 1.45rem;
+  .adminMetricRevenue {
+    grid-column: 1 / -1;
+  }
+
+  .adminMetricCommunity {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 440px) {
+  .adminMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .adminMetricRevenue,
+  .adminMetricCommunity {
+    grid-column: auto;
   }
 }
 
