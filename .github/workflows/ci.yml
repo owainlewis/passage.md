@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      release_sha:
+        description: Exact full main commit SHA approved for production
+        required: true
+        type: string
       stripe_billing_mode:
         description: Preserve, update the monthly price, enable from repository variables, or fully disable live Stripe billing
         required: true
@@ -127,6 +131,28 @@ jobs:
       - name: Build
         run: go build -o /tmp/passage ./cmd/passage
 
+  deployment-request:
+    name: Validate production deployment request
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+    steps:
+      - name: Match the approved main commit
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Production deployments must be dispatched from main." >&2
+            exit 1
+          fi
+          if [[ ! "${RELEASE_SHA}" =~ ^[0-9a-f]{40}$ || "${RELEASE_SHA}" != "${GITHUB_SHA}" ]]; then
+            echo "The approved release SHA does not match the dispatched main commit." >&2
+            exit 1
+          fi
+
   container:
     name: Container
     runs-on: ubuntu-latest
@@ -136,10 +162,12 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Test production deployment gate
         run: scripts/deploy-production.test.sh
@@ -157,51 +185,123 @@ jobs:
         run: ops/monitoring/validate.test.sh
 
       - name: Build production image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
+          load: ${{ github.event_name == 'workflow_dispatch' }}
           push: false
           tags: |
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
 
+      - name: Export the proven production image
+        if: github.event_name == 'workflow_dispatch'
+        run: >-
+          docker save
+          --output "${RUNNER_TEMP}/passage-production-image.tar"
+          "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+
+      - name: Retain the proven production image
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: passage-production-image-${{ github.sha }}
+          path: ${{ runner.temp }}/passage-production-image.tar
+          if-no-files-found: error
+          retention-days: 1
+
   deploy:
     name: Production deployment
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [web, server, container]
+    needs: [web, server, deployment-request, container]
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - name: Check out the approved release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Download the proven production image
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: passage-production-image-${{ github.sha }}
+          path: ${{ runner.temp }}
+
+      - name: Load the proven production image
+        run: docker load --input "${RUNNER_TEMP}/passage-production-image.tar"
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+
+      - name: Verify production readiness metadata
+        run: |
+          set -euo pipefail
+          cloud_sql_instance="${CLOUD_SQL_INSTANCE##*:}"
+          latest_backup="$(
+            gcloud sql backups list \
+              --instance="${cloud_sql_instance}" \
+              --project="${GCP_PROJECT_ID}" \
+              --filter='type=AUTOMATED AND status=SUCCESSFUL' \
+              --sort-by='~endTime' \
+              --limit=1 \
+              --format=json
+          )"
+          if ! jq -e '
+            if length != 1 then false
+            else
+              (.[0].endTime | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $end
+              | now >= $end and (now - $end) <= 86400
+            end
+          ' <<<"${latest_backup}" >/dev/null; then
+            echo "No successful automated backup completed within the last 24 hours." >&2
+            exit 1
+          fi
+          jq -r '.[0] | "backup id=\(.id) status=\(.status) end=\(.endTime) location=\(.location)"' <<<"${latest_backup}"
+
+          service="$(
+            gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format=json
+          )"
+          if ! jq -e '
+            .status.latestReadyRevisionName as $revision
+            | ([.status.traffic[]? | select(.revisionName == $revision and .percent == 100)] | length) == 1
+          ' <<<"${service}" >/dev/null; then
+            echo "Production is not routing 100 percent to its latest ready revision." >&2
+            exit 1
+          fi
+          jq -r '"current revision=\(.status.latestReadyRevisionName) traffic=100"' <<<"${service}"
+
+          health="$(curl --fail-with-body --silent --show-error "${APP_BASE_URL}/api/health")"
+          jq -e '.database == "ok" and .status == "ok"' <<<"${health}" >/dev/null
+          jq '{database, status}' <<<"${health}"
 
       - name: Configure Artifact Registry auth
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
-      - name: Build and push image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
+      - name: Push the proven production image
+        env:
+          IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          MAIN_IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
+        run: |
+          set -euo pipefail
+          docker image inspect "${IMAGE}" >/dev/null
+          docker push "${IMAGE}"
+          docker tag "${IMAGE}" "${MAIN_IMAGE}"
+          docker push "${MAIN_IMAGE}"
 
       - name: Migrate and deploy to Cloud Run
         env:

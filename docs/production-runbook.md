@@ -127,30 +127,43 @@ Before dispatching:
 4. Confirm every pending migration is additive and compatible with the currently serving application revision.
 5. Record the current revision, release commit, target image tag, application rollback revision, and schema rollback plan.
 
-Use `preserve` unless the reviewed release explicitly changes billing:
+Use `preserve` unless the reviewed release explicitly changes billing.
+
+The workflow requires the exact full `main` SHA and rejects a moved or non-main ref before any Google Cloud authentication.
+It builds the production image once in the proof job, retains that exact image as a per-run artifact, and only the gated deployment job may load and publish it.
+
+After authentication, it verifies backup freshness, the current 100 percent traffic revision, and canonical health before publishing the artifact or running migrations.
 
 ```sh
 passage_release_sha="$(gh api repos/owainlewis/passage.md/commits/main --jq '.sha')"
 
-gh workflow run CI \
-  --repo owainlewis/passage.md \
-  --ref main \
-  -f stripe_billing_mode=preserve
-```
-
-Resolve the dispatched run and fail closed unless it is a manual dispatch for the exact release commit:
-
-```sh
-passage_release_run="$(
-  gh run list \
+passage_dispatch_output="$(
+  gh workflow run CI \
     --repo owainlewis/passage.md \
-    --workflow CI \
-    --event workflow_dispatch \
-    --limit 1 \
-    --json databaseId \
-    --jq '.[0].databaseId'
+    --ref main \
+    -f release_sha="${passage_release_sha}" \
+    -f stripe_billing_mode=preserve \
+    2>&1
+)"
+printf '%s\n' "${passage_dispatch_output}"
+
+passage_release_url="$(
+  printf '%s\n' "${passage_dispatch_output}" |
+    grep -Eo 'https://github.com/owainlewis/passage\.md/actions/runs/[0-9]+' |
+    tail -1
 )"
 
+if [[ -z "${passage_release_url}" ]]; then
+  echo "The exact deployment run URL was not returned; do not dispatch another run." >&2
+  exit 1
+fi
+
+passage_release_run="${passage_release_url##*/}"
+```
+
+Fail closed unless the captured run is a manual dispatch for the exact release commit:
+
+```sh
 passage_release_identity="$(
   gh run view "${passage_release_run}" \
     --repo owainlewis/passage.md \
