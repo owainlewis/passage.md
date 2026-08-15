@@ -152,7 +152,7 @@ func (s *Store) Delete(ctx context.Context, ownerID string, slug string) error {
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE documents
-		SET collection_id = NULL, updated_at = now()
+		SET collection_id = NULL
 		WHERE owner_user_id = $1 AND collection_id = $2
 	`, ownerID, collectionID); err != nil {
 		return err

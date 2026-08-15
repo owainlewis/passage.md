@@ -118,6 +118,72 @@ func TestStoreEnforcesOneHundredCollectionLimit(t *testing.T) {
 	}
 }
 
+func TestDeletePreservesDocumentPaginationKeys(t *testing.T) {
+	db := collectionTestDatabase(t)
+	ctx := context.Background()
+	ownerID := insertCollectionTestUser(t, db, fmt.Sprintf("collection-pagination-%d@example.com", time.Now().UnixNano()))
+	t.Cleanup(func() { _, _ = db.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, ownerID) })
+
+	collectionStore := NewStore(db)
+	collection, err := collectionStore.Create(ctx, ownerID, "Later page", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docStore := documents.NewStore(db)
+	newest, err := docStore.Create(ctx, ownerID, "# Newest", documents.NoSavedDocumentLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := docStore.Create(ctx, ownerID, "# Assigned", documents.NoSavedDocumentLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldest, err := docStore.Create(ctx, ownerID, "# Oldest", documents.NoSavedDocumentLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := docStore.Update(ctx, ownerID, assigned.ID, documents.DocumentUpdate{
+		CollectionIDSet: true,
+		CollectionID:    &collection.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	timestamps := map[string]string{
+		newest.ID:   "2026-08-15T12:00:00Z",
+		assigned.ID: "2026-08-15T11:00:00Z",
+		oldest.ID:   "2026-08-15T10:00:00Z",
+	}
+	for id, timestamp := range timestamps {
+		if _, err := db.Exec(ctx, `UPDATE documents SET updated_at = $2 WHERE id = $1`, id, timestamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	firstPage, err := docStore.ListPage(ctx, ownerID, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPage) != 1 || firstPage[0].ID != newest.ID {
+		t.Fatalf("first page = %#v", firstPage)
+	}
+	cursor := &documents.ListCursor{UpdatedAt: firstPage[0].UpdatedAt, ID: firstPage[0].ID}
+	if err := collectionStore.Delete(ctx, ownerID, collection.Slug); err != nil {
+		t.Fatal(err)
+	}
+
+	laterPage, err := docStore.ListPage(ctx, ownerID, 10, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(laterPage) != 2 || laterPage[0].ID != assigned.ID || laterPage[1].ID != oldest.ID {
+		t.Fatalf("later page after deletion = %#v", laterPage)
+	}
+	if !laterPage[0].UpdatedAt.Equal(time.Date(2026, 8, 15, 11, 0, 0, 0, time.UTC)) {
+		t.Fatalf("assigned document timestamp changed to %s", laterPage[0].UpdatedAt)
+	}
+}
+
 func collectionTestDatabase(t *testing.T) *database.Pool {
 	t.Helper()
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
