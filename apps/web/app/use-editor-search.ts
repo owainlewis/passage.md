@@ -36,11 +36,13 @@ export function normalizeEditorSearch(value: string) {
 export function useEditorSearch({
   query,
   scope,
-  userId
+  userId,
+  refreshKey = ""
 }: {
   query: string;
   scope: SearchScope;
   userId?: string;
+  refreshKey?: string;
 }) {
   const normalizedQuery = normalizeEditorSearch(query);
   const active = Boolean(userId && normalizedQuery);
@@ -100,7 +102,7 @@ export function useEditorSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [active, collectionId, invalid, key, normalizedQuery, retryVersion, unfiled, userId]);
+  }, [active, collectionId, invalid, key, normalizedQuery, refreshKey, retryVersion, unfiled, userId]);
 
   const loadMore = useCallback(() => {
     if (!active || invalid || !userId || state.key !== key || !state.nextCursor || state.loading) return;

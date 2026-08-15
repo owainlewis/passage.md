@@ -618,6 +618,7 @@ type WorkspaceSearchProps = {
   scope: string;
   trigger: HTMLElement | null;
   userId?: string;
+  pendingDocumentId?: string;
   onClose: () => void;
   onOpenDocument: (doc: Doc) => void;
   onQueryChange: (query: string) => void;
@@ -633,6 +634,7 @@ export function WorkspaceSearch({
   scope,
   trigger,
   userId,
+  pendingDocumentId,
   onClose,
   onOpenDocument,
   onQueryChange,
@@ -651,10 +653,21 @@ export function WorkspaceSearch({
       : scopedCollection?.id
         ? { collectionId: scopedCollection.id }
         : {},
-    userId: scopedCollection || scope === "all" || scope === "documents" ? userId : undefined
+    userId: scopedCollection || scope === "all" || scope === "documents" ? userId : undefined,
+    refreshKey: pendingDocumentId ?? ""
   });
+  const localResults = searchWorkspaceDocs(docs, query, scope, assignments, deletedCollections).slice(0, 20);
   const recentResults = searchWorkspaceDocs(docs, "", scope, assignments, deletedCollections).slice(0, 20);
-  const results: Array<Doc | SearchDocument> = search.active ? search.documents : recentResults;
+  let results: Array<Doc | SearchDocument> = query ? localResults : recentResults;
+  if (search.active) {
+    const serverResults = pendingDocumentId
+      ? search.documents.filter((doc) => doc.id !== pendingDocumentId)
+      : search.documents;
+    const pendingResult = pendingDocumentId
+      ? localResults.find((doc) => doc.id === pendingDocumentId)
+      : undefined;
+    results = pendingResult ? [pendingResult, ...serverResults] : serverResults;
+  }
 
   useEffect(() => {
     input.current?.focus();

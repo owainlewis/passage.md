@@ -167,6 +167,15 @@ func assertDocumentSearchSchema(t *testing.T, db *database.Pool) {
 	if !strings.Contains(definition, "USING gin (search_vector)") || !strings.Contains(definition, "archived_at IS NULL") {
 		t.Fatalf("search index definition = %q", definition)
 	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO abuse_rate_limits (
+			scope, key_hash, window_started_at, expires_at, requests
+		) VALUES (
+			'document_search', repeat('a', 64), now(), now() + interval '1 minute', 1
+		)
+	`); err != nil {
+		t.Fatalf("document_search rate limit scope is not allowed: %v", err)
+	}
 }
 
 func isolatedMigrationDatabase(t *testing.T) *database.Pool {

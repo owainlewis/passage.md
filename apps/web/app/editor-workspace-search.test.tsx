@@ -82,6 +82,78 @@ it("keeps blank search local and shows loading then empty server results", async
   expect(screen.getByText("No matching documents")).toBeInTheDocument();
 });
 
+it("keeps nonblank search local when there is no authenticated user", () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <WorkspaceSearch
+      assignments={{}}
+      collections={collections}
+      deletedCollections={[]}
+      docs={[
+        { id: "match", body: "# Matching note\n\nA local needle.", bodyLoaded: true },
+        { id: "miss", body: "# Other note\n\nNo match.", bodyLoaded: true }
+      ]}
+      query="needle"
+      scope="all"
+      trigger={null}
+      onClose={vi.fn()}
+      onOpenDocument={vi.fn()}
+      onQueryChange={vi.fn()}
+      onScopeChange={vi.fn()}
+    />
+  );
+
+  expect(screen.getByRole("button", { name: /Matching note/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Other note/ })).not.toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("overlays a pending local edit and removes its stale server match", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    documents: [{ id: "pending", title: "Old title", matchExcerpt: "old needle" }]
+  }), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const baseProps = {
+    assignments: {},
+    collections,
+    deletedCollections: [],
+    query: "needle",
+    scope: "all",
+    trigger: null,
+    userId: "user-1",
+    onClose: vi.fn(),
+    onOpenDocument: vi.fn(),
+    onQueryChange: vi.fn(),
+    onScopeChange: vi.fn()
+  };
+  const view = render(
+    <WorkspaceSearch
+      {...baseProps}
+      docs={[{ id: "pending", body: "# Current draft\n\nA fresh needle.", bodyLoaded: true }]}
+      pendingDocumentId="pending"
+    />
+  );
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(screen.getByRole("button", { name: /Current draft/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Old title/ })).not.toBeInTheDocument();
+
+  view.rerender(
+    <WorkspaceSearch
+      {...baseProps}
+      docs={[{ id: "pending", body: "# Current draft\n\nThe term was removed.", bodyLoaded: true }]}
+      pendingDocumentId="pending"
+    />
+  );
+  expect(screen.queryByRole("button", { name: /Old title/ })).not.toBeInTheDocument();
+  expect(screen.getByText("No matching documents")).toBeInTheDocument();
+});
+
 it("shows a retryable error and renders an untrusted snippet only as text", async () => {
   const snippet = '<img src=x onerror="window.pwned=true">';
   const fetchMock = vi

@@ -108,6 +108,33 @@ it("maps collection and Documents scopes to the authenticated search API", async
   );
 });
 
+it("refreshes an unchanged query after a pending save completes", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(searchResponse([]))
+    .mockResolvedValueOnce(searchResponse([{ id: "saved", title: "Saved", matchExcerpt: "fresh needle" }]));
+  vi.stubGlobal("fetch", fetchMock);
+  const { result, rerender } = renderHook(
+    (props: { refreshKey: string }) =>
+      useEditorSearch({ query: "needle", scope: {}, userId: "user-1", refreshKey: props.refreshKey }),
+    { initialProps: { refreshKey: "pending:doc-1" } }
+  );
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+  });
+  expect(result.current.documents).toEqual([]);
+
+  rerender({ refreshKey: "" });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(result.current.documents.map((doc) => doc.id)).toEqual(["saved"]);
+});
+
 it("paginates without duplicates and preserves results through failure and retry", async () => {
   const fetchMock = vi
     .fn()

@@ -593,6 +593,7 @@ export default function Editor() {
           scope={searchScope}
           trigger={searchTrigger}
           userId={userId}
+          pendingDocumentId={pendingSave?.id}
           onClose={() => setSearchOpen(false)}
           onOpenDocument={selectSearchDocument}
           onQueryChange={setSearchQuery}

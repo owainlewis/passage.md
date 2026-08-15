@@ -168,6 +168,33 @@ func TestPersistentRateLimitConcurrentBoundary(t *testing.T) {
 	}
 }
 
+func TestPersistentDocumentSearchRateLimitScopeIsAllowed(t *testing.T) {
+	db := openRateLimitTestDatabase(t)
+	defer db.Close()
+
+	now := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
+	secret := fmt.Sprintf("document-search-rate-limit-%d", time.Now().UnixNano())
+	limiter := newPersistentFixedWindowLimiter(
+		"document_search",
+		config.RateLimitConfig{Requests: 1, Window: time.Minute},
+		newPGRateLimitStore(db),
+		secret,
+	)
+	limiter.now = func() time.Time { return now }
+	keyHash := newRateLimitKeyHasher(secret, "document_search")("user-search")
+	defer db.Exec(context.Background(), `
+		DELETE FROM abuse_rate_limits
+		WHERE scope = 'document_search' AND key_hash = $1
+	`, keyHash)
+
+	if allowed, _, err := limiter.allowContext(context.Background(), "user-search"); err != nil || !allowed {
+		t.Fatalf("first search allowed/error = %v/%v", allowed, err)
+	}
+	if allowed, retryAfter, err := limiter.allowContext(context.Background(), "user-search"); err != nil || allowed || retryAfter != time.Minute {
+		t.Fatalf("second search allowed/retry/error = %v/%v/%v", allowed, retryAfter, err)
+	}
+}
+
 func TestPersistentPublicDocumentLimitsSpanInstancesAndFormats(t *testing.T) {
 	db := openRateLimitTestDatabase(t)
 	defer db.Close()
