@@ -1320,6 +1320,24 @@ describe("Write (editor)", () => {
     expect(replaceState).toHaveBeenCalledWith(null, "", "/write?view=collections");
   });
 
+  it("keeps a custom collection URL without substituting Documents when collection loading fails", async () => {
+    const baseFetch = stubSignedInFetch([{ id: "doc-research", body: "# Research note" }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections" && (init?.method ?? "GET") === "GET") {
+        return Promise.resolve(new Response(JSON.stringify({ error: "Collections unavailable" }), { status: 503 }));
+      }
+      return baseFetch(input, init);
+    }));
+    window.history.replaceState(null, "", "/write?collection=research");
+
+    render(<Write />);
+
+    expect(await screen.findByLabelText("Collection unavailable")).toHaveTextContent("Collection could not be loaded");
+    expect(screen.getByText("Collections unavailable")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research");
+    expect(screen.queryByLabelText("Documents")).not.toBeInTheDocument();
+  });
+
   it("recovers a stale document URL without showing another document under it", async () => {
     stubSignedInFetch([{ id: "doc-current", publicId: "current", body: "# Current note" }]);
     window.history.replaceState(null, "", "/write/stale");
@@ -1813,16 +1831,15 @@ describe("Write (editor)", () => {
     expect((await screen.findAllByRole("heading", { name: "Shared note", level: 1 })).length).toBeGreaterThan(0);
   });
 
-  it("deletes the final document and shows an empty state", async () => {
+  it("deletes the final document and returns to Home", async () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
 
     const { unmount } = await renderWrite();
 
     deleteActiveDocument();
 
-    await waitFor(() => expect(screen.getByText("No documents yet.")).toBeInTheDocument());
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Only note/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create document" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/write");
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-only", {
       method: "DELETE",
@@ -1832,11 +1849,37 @@ describe("Write (editor)", () => {
     unmount();
     render(<Write />);
 
-    expect(await screen.findByText("No documents yet.")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("does not replace a newer workspace URL when document deletion finishes late", async () => {
+    let resolveDelete: ((response: Response) => void) | undefined;
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-private", body: "# Private note\n\nDraft." },
+      { id: "doc-next", body: "# Next note\n\nKeep." }
+    ]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-private" && init?.method === "DELETE") {
+        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    deleteActiveDocument();
+    await waitFor(() => expect(resolveDelete).toBeDefined());
+    openWorkspaceHome();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
+
+    await act(async () => resolveDelete!(new Response(null, { status: 204 })));
+
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
+    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
   });
 
   it("cancels a pending autosave when deleting its document", async () => {

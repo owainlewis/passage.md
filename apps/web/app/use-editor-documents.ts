@@ -293,9 +293,9 @@ export function useEditorDocuments({
     );
   }
 
-  async function deleteDoc(id: string) {
+  async function deleteDoc(id: string): Promise<Doc | null | false> {
     const doc = docs.find((candidate) => candidate.id === id);
-    if (!doc || isShared(doc)) return;
+    if (!doc || isShared(doc)) return false;
     const cancelledSave = pendingSave?.id === id ? pendingSave : null;
     if (cancelledSave) setPendingSave(null);
     setSaveState("saving");
@@ -324,30 +324,20 @@ export function useEditorDocuments({
         }
       }
       setSaveState("error");
-      return;
+      return false;
     }
-    setDocs((prev) => {
-      const next = prev.filter((candidate) => candidate.id !== id);
-      const filteredDocsRemain = next.some((candidate) => docMatchesFilter(candidate, documentFilter));
-      const replacement =
-        next.find((candidate) => candidate.id === activeId) ??
-        next.find((candidate) => docMatchesFilter(candidate, documentFilter)) ??
-        next[0] ??
-        null;
-      if (id === activeId) {
-        setActiveId(replacement?.id ?? "");
-        if (replacement) {
-          updateEditorURL(replacement, "replace");
-        } else {
-          window.history.replaceState(null, "", "/write");
-        }
-      }
-      if (replacement && !filteredDocsRemain) {
-        setDocumentFilter(ALL_DOCUMENTS);
-      }
-      return next;
-    });
+    const next = docs.filter((candidate) => candidate.id !== id);
+    const filteredDocsRemain = next.some((candidate) => docMatchesFilter(candidate, documentFilter));
+    const replacement =
+      next.find((candidate) => candidate.id === activeId) ??
+      next.find((candidate) => docMatchesFilter(candidate, documentFilter)) ??
+      next[0] ??
+      null;
+    setDocs((current) => current.filter((candidate) => candidate.id !== id));
+    if (id === activeId) setActiveId(replacement?.id ?? "");
+    if (replacement && !filteredDocsRemain) setDocumentFilter(ALL_DOCUMENTS);
     setSaveState("saved");
+    return replacement;
   }
 
   return {

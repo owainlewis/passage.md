@@ -38,6 +38,8 @@ export default function Editor() {
   const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
+  const workspaceViewRef = useRef(workspaceView);
+  workspaceViewRef.current = workspaceView;
 
   const auth = useAuth();
   const userId = auth.user?.id;
@@ -52,7 +54,7 @@ export default function Editor() {
     billingNotice,
     billingNoticeAction,
     createDoc: createDocument,
-    deleteDoc,
+    deleteDoc: archiveDocument,
     docs,
     documentIndexComplete,
     documentIndexError,
@@ -172,6 +174,22 @@ export default function Editor() {
     setMode("edit");
     setWorkspaceView({ type: "document" });
     return true;
+  }
+
+  async function deleteDoc(id: string) {
+    const document = docs.find((candidate) => candidate.id === id);
+    if (!document) return;
+    const startingLocation = `${window.location.pathname}${window.location.search}`;
+    const replacement = await archiveDocument(id);
+    if (replacement === false) return;
+    const currentLocation = `${window.location.pathname}${window.location.search}`;
+    if (workspaceViewRef.current.type !== "document" || currentLocation !== startingLocation) return;
+    if (replacement) {
+      setWorkspaceView({ type: "document" });
+      selectDoc(replacement, "replace");
+      return;
+    }
+    openWorkspaceView({ type: "home" }, "replace");
   }
 
   function openTemplates() {
@@ -515,6 +533,7 @@ export default function Editor() {
           <EditorWorkspace
             assignments={EMPTY_ASSIGNMENTS}
             assignmentDisabled={!collectionState.available}
+            collectionAvailable={collectionState.available}
             collections={collections}
             deletedCollections={NO_DELETED_COLLECTIONS}
             docs={docs}
