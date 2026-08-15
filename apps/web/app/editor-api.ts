@@ -5,6 +5,15 @@ export type DocumentPage = {
   nextCursor: string;
 };
 
+export type Collection = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Template = {
   id: string;
   title: string;
@@ -23,11 +32,7 @@ export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
     throw new Error(typeof body.error === "string" ? body.error : "Documents could not be loaded");
   }
   const documents = Array.isArray(body.documents)
-    ? body.documents.map((doc: Doc) => ({
-        ...doc,
-        body: typeof doc.body === "string" ? doc.body : "",
-        bodyLoaded: typeof doc.body === "string"
-      }))
+    ? body.documents.map((doc: Doc) => normalizeDoc(doc, typeof doc.body === "string"))
     : [];
   return {
     documents,
@@ -41,7 +46,7 @@ export async function apiDoc(id: string): Promise<Doc> {
   if (!res.ok) {
     throw new Error(typeof body.error === "string" ? body.error : "Document could not be loaded");
   }
-  return { ...(body as Doc), bodyLoaded: true };
+  return normalizeDoc(body as Doc, true);
 }
 
 export async function apiCreateDoc(body: string): Promise<Doc> {
@@ -55,7 +60,7 @@ export async function apiCreateDoc(body: string): Promise<Doc> {
   if (!res.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be created");
   }
-  return { ...(payload as Doc), bodyLoaded: true };
+  return normalizeDoc(payload as Doc, true);
 }
 
 export async function apiUpdateDoc(id: string, body: string): Promise<Doc> {
@@ -69,7 +74,84 @@ export async function apiUpdateDoc(id: string, body: string): Promise<Doc> {
   if (!res.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be saved");
   }
-  return { ...(payload as Doc), bodyLoaded: true };
+  return normalizeDoc(payload as Doc, true);
+}
+
+export async function apiUpdateDocMetadata(
+  id: string,
+  update: { collectionId?: string | null; starred?: boolean }
+): Promise<Doc> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update)
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Document metadata could not be saved");
+  }
+  return normalizeDoc(payload as Doc, true);
+}
+
+export async function apiCollections(): Promise<Collection[]> {
+  const res = await fetch("/api/v1/collections", { credentials: "include" });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Collections could not be loaded");
+  }
+  return Array.isArray(payload.collections) ? payload.collections : [];
+}
+
+export async function apiCreateCollection(title: string, description: string): Promise<Collection> {
+  return mutateCollection("/api/v1/collections", "POST", title, description);
+}
+
+export async function apiUpdateCollection(slug: string, title: string, description: string): Promise<Collection> {
+  return mutateCollection(`/api/v1/collections/${encodeURIComponent(slug)}`, "PATCH", title, description);
+}
+
+export async function apiDeleteCollection(slug: string): Promise<void> {
+  const res = await fetch(`/api/v1/collections/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : "Collection could not be deleted");
+  }
+}
+
+async function mutateCollection(
+  path: string,
+  method: "POST" | "PATCH",
+  title: string,
+  description: string
+): Promise<Collection> {
+  const res = await fetch(path, {
+    method,
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, description: description || null })
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Collection could not be saved");
+  }
+  return payload as Collection;
+}
+
+function normalizeDoc(doc: Doc, bodyLoaded: boolean): Doc {
+  const starred = typeof doc.starred === "boolean" ? doc.starred : Boolean(doc.pinned);
+  return {
+    ...doc,
+    body: typeof doc.body === "string" ? doc.body : "",
+    bodyLoaded,
+    starred,
+    pinned: starred,
+    collectionId: doc.collectionId ?? null,
+    collectionSlug: doc.collectionSlug ?? null
+  };
 }
 
 export async function apiArchiveDoc(id: string): Promise<void> {

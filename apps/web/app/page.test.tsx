@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import Account from "./account/page";
 import { AppProviders } from "./app-providers";
 import { AuthProvider } from "./auth";
@@ -47,6 +48,9 @@ type TestDoc = {
   publicId?: string;
   body: string;
   pinned?: boolean;
+  starred?: boolean;
+  collectionId?: string | null;
+  collectionSlug?: string | null;
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;
@@ -58,6 +62,12 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     ...doc
   }));
   let nextDoc = docs.length + 1;
+  let collections = [
+    { id: "collection-context", slug: "operating-context", title: "Operating Context", description: "Stable context.", createdAt: "2026-08-01T10:00:00Z", updatedAt: "2026-08-01T10:00:00Z" },
+    { id: "collection-content", slug: "content-studio", title: "Content Studio", description: "Content work.", createdAt: "2026-08-01T10:01:00Z", updatedAt: "2026-08-01T10:01:00Z" },
+    { id: "collection-passage", slug: "passage", title: "Passage", description: "Passage work.", createdAt: "2026-08-01T10:02:00Z", updatedAt: "2026-08-01T10:02:00Z" },
+    { id: "collection-research", slug: "research", title: "Research", description: "Research notes.", createdAt: "2026-08-01T10:03:00Z", updatedAt: "2026-08-01T10:03:00Z" }
+  ];
   let templates: Array<{ id: string; title: string; description: string; body: string; createdAt: string; updatedAt: string }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -70,6 +80,34 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     }
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
+    }
+    if (url === "/api/v1/collections" && method === "GET") {
+      return new Response(JSON.stringify({ collections }), { status: 200 });
+    }
+    if (url === "/api/v1/collections" && method === "POST") {
+      const input = JSON.parse(String(init?.body ?? "{}"));
+      const base = String(input.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "collection";
+      let slug = base;
+      let suffix = 2;
+      while (["all", "documents"].includes(slug) || collections.some((collection) => collection.slug === slug)) slug = `${base}-${suffix++}`;
+      const collection = { id: `collection-${collections.length + 1}`, slug, title: input.title, description: input.description, createdAt: "2026-08-01T11:00:00Z", updatedAt: "2026-08-01T11:00:00Z" };
+      collections = [...collections, collection];
+      return new Response(JSON.stringify(collection), { status: 201 });
+    }
+    if (url.startsWith("/api/v1/collections/") && method === "PATCH") {
+      const slug = url.split("/")[4];
+      const input = JSON.parse(String(init?.body ?? "{}"));
+      const current = collections.find((collection) => collection.slug === slug)!;
+      const updated = { ...current, title: input.title, description: input.description, updatedAt: "2026-08-01T11:01:00Z" };
+      collections = collections.map((collection) => collection.slug === slug ? updated : collection);
+      return new Response(JSON.stringify(updated), { status: 200 });
+    }
+    if (url.startsWith("/api/v1/collections/") && method === "DELETE") {
+      const slug = url.split("/")[4];
+      const removed = collections.find((collection) => collection.slug === slug);
+      collections = collections.filter((collection) => collection.slug !== slug);
+      docs = docs.map((doc) => doc.collectionId === removed?.id ? { ...doc, collectionId: null, collectionSlug: null } : doc);
+      return new Response(null, { status: 204 });
     }
     if (url === "/api/v1/templates" && method === "GET") {
       return new Response(JSON.stringify({ templates }), { status: 200 });
@@ -109,9 +147,19 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     }
     if (url.startsWith("/api/v1/docs/") && method === "PATCH") {
       const id = url.split("/")[4];
-      const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
-      const doc = docs.find((existing) => existing.id === id) ?? { id, publicId: "public-updated" };
-      const updated = { ...doc, body };
+      const input = JSON.parse(String(init?.body ?? "{}"));
+      const doc = docs.find((existing) => existing.id === id) ?? { id, publicId: "public-updated", body: "" };
+      const collection = Object.prototype.hasOwnProperty.call(input, "collectionId")
+        ? collections.find((candidate) => candidate.id === input.collectionId)
+        : undefined;
+      const updated = {
+        ...doc,
+        ...(Object.prototype.hasOwnProperty.call(input, "body") ? { body: input.body } : {}),
+        ...(Object.prototype.hasOwnProperty.call(input, "starred") ? { starred: input.starred, pinned: input.starred } : {}),
+        ...(Object.prototype.hasOwnProperty.call(input, "collectionId")
+          ? { collectionId: input.collectionId, collectionSlug: collection?.slug ?? null }
+          : {})
+      };
       docs = docs.map((existing) => (existing.id === id ? updated : existing));
       return new Response(JSON.stringify(updated), { status: 200 });
     }
@@ -141,8 +189,22 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
   return fetchMock;
 }
 
-async function renderWrite() {
-  const view = render(<Write />);
+async function renderWrite(ui: ReactNode = <Write />) {
+  const view = render(ui);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Markdown editor" }) ?? screen.queryByLabelText("Workspace home")
+    ).not.toBeNull();
+  });
+  if (screen.queryByLabelText("Workspace home")) {
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
+    const firstDocument = await waitFor(() => {
+      const button = view.container.querySelector<HTMLButtonElement>(".workspaceDocumentOpen");
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    fireEvent.click(firstDocument);
+  }
   await screen.findByRole("region", { name: "Markdown editor" });
   await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
   return view;
@@ -151,6 +213,34 @@ async function renderWrite() {
 async function createBlankDocument() {
   fireEvent.click(screen.getByRole("button", { name: "New document" }));
   fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
+}
+
+function openWorkspaceSearch() {
+  fireEvent.keyDown(window, { key: "k", metaKey: true });
+}
+
+function openWorkspaceHome() {
+  fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
+}
+
+function openSidebarCollection(name: string | RegExp) {
+  const sidebar = screen.getByLabelText("Workspace navigation");
+  const button = Array.from(sidebar.querySelectorAll("button")).find((candidate) =>
+    typeof name === "string" ? candidate.textContent?.startsWith(name) : name.test(candidate.textContent ?? "")
+  );
+  expect(button).toBeDefined();
+  fireEvent.click(button!);
+}
+
+async function openDocumentFromSearch(name: string | RegExp) {
+  openWorkspaceSearch();
+  const result = await screen.findByRole("button", { name });
+  fireEvent.click(result);
+  await screen.findByRole("region", { name: "Markdown editor" });
+}
+
+function deleteActiveDocument() {
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 }
 
 beforeEach(() => {
@@ -612,7 +702,7 @@ describe("Referral signup", () => {
 describe("Write (editor)", () => {
   it("surfaces repeated session failures and retries", async () => {
     let sessionRequests = 0;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/v1/me") {
         sessionRequests += 1;
@@ -725,7 +815,6 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     expect(await screen.findByRole("status", { name: "Loading saved docs" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
 
@@ -744,7 +833,7 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     expect(screen.getAllByText("Markdown for agents and humans").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Documents")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workspace navigation")).toBeInTheDocument();
   });
 
   it("switches to edit mode to reveal the Markdown textarea", async () => {
@@ -954,13 +1043,14 @@ describe("Write (editor)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Launch note\n\nRoadmap coverage." }
     });
+    openWorkspaceSearch();
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "roadmap" }
     });
 
     const launchNote = screen.getByRole("button", { name: /Launch note/ });
     expect(launchNote).toBeInTheDocument();
-    expect(launchNote).not.toHaveTextContent("Roadmap coverage");
+    expect(launchNote).toHaveTextContent("Roadmap coverage");
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
   });
 
@@ -976,10 +1066,39 @@ describe("Write (editor)", () => {
     expect((await screen.findAllByRole("heading", { name: "Video script", level: 1 })).length).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/write/scripts-public-id");
 
-    fireEvent.click(screen.getByRole("button", { name: /Agent notes/ }));
+    await openDocumentFromSearch(/Agent notes/);
 
     expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/write/notes-public-id");
+  });
+
+  it("restores workspace home when browser history returns to /write", async () => {
+    stubSignedInFetch([{ id: "doc-notes", publicId: "notes-public-id", body: "# Agent notes\n\nFollow ups." }]);
+
+    await renderWrite();
+    expect(window.location.pathname).toBe("/write/notes-public-id");
+
+    act(() => {
+      window.history.pushState(null, "", "/write");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
+  });
+
+  it("restores a document when browser history returns to its stable URL", async () => {
+    stubSignedInFetch([{ id: "doc-notes", publicId: "notes-public-id", body: "# Agent notes\n\nFollow ups." }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    act(() => {
+      window.history.pushState(null, "", "/write/notes-public-id");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(await screen.findByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
   });
 
   it("filters the document list by frontmatter tags", async () => {
@@ -989,8 +1108,7 @@ describe("Write (editor)", () => {
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Agent notes/ });
-
+    openWorkspaceSearch();
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "scripts" }
     });
@@ -999,122 +1117,415 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
   });
 
-  it("filters the document list by typing in the tag filter", async () => {
+  it("scopes workspace search to persisted collection membership without inferring tags", async () => {
     stubSignedInFetch([
-      { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
-      { id: "doc-scripts", body: "---\ntags: [scripts]\n---\n\n# Video script\n\nOpening line." }
+      { id: "doc-notes", body: "---\ntags: [content-studio]\n---\n\n# Agent notes\n\nFollow ups.", collectionId: "collection-context", collectionSlug: "operating-context" },
+      { id: "doc-scripts", body: "# Video script\n\nOpening line.", collectionId: "collection-content", collectionSlug: "content-studio" }
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Agent notes/ });
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Filter by tag" }), {
-      target: { value: "script" }
-    });
-
+    openWorkspaceSearch();
+    fireEvent.click(screen.getByRole("button", { name: "Content Studio" }));
     expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
     expect(screen.getByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
   });
 
-  it("shows one flat document list and filters by sharing state", async () => {
+  it("groups documents in collections instead of one flat sidebar", async () => {
     stubSignedInFetch([
-      { id: "doc-private", body: "# Private note\n\nDraft." },
-      { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
+      { id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" },
+      { id: "doc-draft", body: "# Newsletter draft\n\nWorking copy.", collectionId: "collection-content", collectionSlug: "content-studio" }
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Private note/ });
-
-    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
-    expect(sharingFilter).toHaveValue("all");
-    expect(screen.queryByText("Folders")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
-    expect(screen.getByLabelText("Shared document")).toBeInTheDocument();
-
-    fireEvent.change(sharingFilter, { target: { value: "shared" } });
-
-    expect(sharingFilter).toHaveValue("shared");
-    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Published.").length).toBeGreaterThan(0);
+    openWorkspaceHome();
+    openSidebarCollection("Operating Context");
+    const collection = screen.getByLabelText("Operating Context");
+    expect(collection).toBeInTheDocument();
+    expect(collection).toHaveTextContent("About me");
+    expect(screen.queryByRole("button", { name: /Newsletter draft/ })).not.toBeInTheDocument();
   });
 
-  it("clears the typed tag filter when changing the sharing filter", async () => {
-    stubSignedInFetch([
-      { id: "doc-private", body: "---\ntags: [notes]\n---\n\n# Private note\n\nDraft." },
-      { id: "doc-shared", body: "---\ntags: [published]\n---\n\n# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
-    ]);
-
-    await renderWrite();
-    await screen.findByRole("button", { name: /Private note/ });
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Filter by tag" }), {
-      target: { value: "notes" }
-    });
-
-    expect(screen.getByRole("button", { name: /Private note/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Shared note/ })).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter documents by sharing" }), {
-      target: { value: "shared" }
-    });
-
-    expect(screen.getByRole("textbox", { name: "Filter by tag" })).toHaveValue("");
-    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
-  });
-
-  it("allows an empty sharing filter without restoring folder sections", async () => {
+  it("persists a document move before showing it in the new collection", async () => {
     stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Private note/ });
+    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), {
+      target: { value: "research" }
+    });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).not.toBeDisabled());
+    openWorkspaceHome();
+    openSidebarCollection("Research");
 
-    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
-    fireEvent.change(sharingFilter, { target: { value: "shared" } });
-
-    expect(sharingFilter).toHaveValue("shared");
-    expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
-    expect(screen.getByText("No documents match.")).toBeInTheDocument();
-    expect(screen.queryByText("Folders")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Research")).toHaveTextContent("Private note");
+    expect(screen.getByLabelText("Research")).toHaveTextContent("Research notes.");
   });
 
-  it("returns to All after deleting the last document in a sharing filter", async () => {
+  it("shows a clear empty state for a collection with no documents", async () => {
+    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+
+    expect(screen.getByText("No documents here yet. Use + in the top bar to add the first one.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "New document" }).length).toBeGreaterThan(0);
+  });
+
+  it("disables star and collection controls while persistence is pending", async () => {
+    const baseFetch = stubSignedInFetch([{
+      id: "doc-pending",
+      body: "# Pending controls",
+      pinned: false,
+      starred: false
+    }]);
+    let resolveStar: ((response: Response) => void) | undefined;
+    let resolveCollection: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (url === "/api/v1/docs/doc-pending" && method === "PATCH" && Object.prototype.hasOwnProperty.call(body, "starred")) {
+        return new Promise<Response>((resolve) => { resolveStar = resolve; });
+      }
+      if (url === "/api/v1/collections" && method === "POST") {
+        return new Promise<Response>((resolve) => { resolveCollection = resolve; });
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Star document" })).toBeDisabled());
+    await act(async () => {
+      resolveStar!(new Response(JSON.stringify({
+        id: "doc-pending",
+        publicId: "public-1",
+        body: "# Pending controls",
+        collectionId: null,
+        collectionSlug: null,
+        starred: true
+      }), { status: 200 }));
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled());
+
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Pending collection" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled());
+    expect(screen.getByRole("textbox", { name: "Collection title" })).toBeDisabled();
+    await act(async () => {
+      resolveCollection!(new Response(JSON.stringify({
+        id: "collection-pending",
+        slug: "pending-collection",
+        title: "Pending collection",
+        description: null,
+        createdAt: "2026-08-15T10:00:00Z",
+        updatedAt: "2026-08-15T10:00:00Z"
+      }), { status: 201 }));
+    });
+    expect(await screen.findByLabelText("Pending collection")).toBeInTheDocument();
+  });
+
+  it("keeps assignment disabled until collections load and after failure", async () => {
+    let rejectCollections: ((reason?: unknown) => void) | undefined;
+    const baseFetch = stubSignedInFetch([{
+      id: "doc-assigned",
+      publicId: "assigned",
+      body: "# Assigned note",
+      collectionId: "collection-research",
+      collectionSlug: "research"
+    }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections" && (init?.method ?? "GET") === "GET") {
+        return new Promise<Response>((_, reject) => { rejectCollections = reject; });
+      }
+      return baseFetch(input, init);
+    }));
+    window.history.replaceState(null, "", "/write/assigned");
+
+    render(<Write />);
+    const collection = await screen.findByRole("combobox", { name: "Collection for Assigned note" });
+    expect(collection).toBeDisabled();
+    await act(async () => rejectCollections!(new Error("collection outage")));
+
+    expect(await screen.findByText("collection outage")).toBeInTheDocument();
+    expect(collection).toBeDisabled();
+    fireEvent.change(collection, { target: { value: "documents" } });
+    expect(baseFetch).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-assigned",
+      expect.objectContaining({ method: "PATCH" })
+    );
+  });
+
+  it("creates a collection and makes it available across the workspace", async () => {
+    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection description" }), { target: { value: "Briefs and decisions." } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+
+    expect(await screen.findByLabelText("Client Work")).toHaveTextContent("Briefs and decisions.");
+    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
+    openWorkspaceSearch();
+    expect(screen.getByRole("button", { name: "Client Work" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Search workspace" }), { key: "Escape" });
+    openSidebarCollection("Documents");
+    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "client-work" } });
+    await waitFor(() => expect(screen.getByLabelText("Documents")).not.toHaveTextContent("Private note"));
+    openSidebarCollection("Client Work");
+    expect(screen.getByLabelText("Client Work")).toHaveTextContent("Private note");
+  });
+
+  it("keeps a user-created Documents collection distinct from the fallback", async () => {
+    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "New collection" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Documents" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Documents"));
+    openSidebarCollection("Documents");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("renames a collection and keeps its document assignments", async () => {
+    stubSignedInFetch([{ id: "doc-context", body: "# Findings", collectionId: "collection-research", collectionSlug: "research" }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Discovery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByLabelText("Discovery")).toHaveTextContent("Findings");
+    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Discovery");
+  });
+
+  it("closes collection creation with Escape without adding it", async () => {
+    stubSignedInFetch();
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "New collection" }), { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "New collection" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("New collection");
+  });
+
+  it("opens collection creation from the sidebar while Collections is already open", async () => {
+    stubSignedInFetch();
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" })[0]);
+
+    expect(screen.getByRole("dialog", { name: "New collection" })).toBeInTheDocument();
+  });
+
+  it("can recreate a deleted custom collection name", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    stubSignedInFetch();
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+    await screen.findByLabelText("Client Work");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByLabelText("Workspace home");
+    fireEvent.click(screen.getByRole("button", { name: "New collection" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+
+    expect(await screen.findByLabelText("Client Work")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
+  });
+
+  it("assigns a document created from a collection back to that collection", async () => {
+    stubSignedInFetch([{ id: "doc-private", body: "# Private note" }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
+    await screen.findByRole("region", { name: "Markdown editor" });
+
+    expect(screen.getByRole("combobox", { name: "Collection for Untitled" })).toHaveValue("research");
+    openSidebarCollection("Research");
+    expect(screen.getByLabelText("Research")).toHaveTextContent("Untitled");
+  });
+
+  it("deletes a collection and moves its documents to Documents after server confirmation", async () => {
+    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+    stubSignedInFetch([{ id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Operating Context");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(confirmDelete).toHaveBeenCalledWith("Delete “Operating Context”? 1 document will move to Documents.");
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Operating Context");
+    openSidebarCollection("Documents");
+    expect(screen.getByLabelText("Documents")).toHaveTextContent("About me");
+  });
+
+  it("discards an assignment response after its collection is deleted", async () => {
+    let resolveAssignment: ((response: Response) => void) | undefined;
+    const baseFetch = stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (String(input) === "/api/v1/docs/doc-private" && init?.method === "PATCH" && body.collectionId === "collection-research") {
+        return new Promise<Response>((resolve) => { resolveAssignment = resolve; });
+      }
+      return baseFetch(input, init);
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    await renderWrite();
+    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "research" } });
+    await waitFor(() => expect(resolveAssignment).toBeDefined());
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByLabelText("Workspace home");
+    await act(async () => {
+      resolveAssignment!(new Response(JSON.stringify({
+        id: "doc-private",
+        publicId: "public-1",
+        body: "# Private note\n\nDraft.",
+        collectionId: "collection-research",
+        collectionSlug: "research",
+        starred: false
+      }), { status: 200 }));
+    });
+
+    openSidebarCollection("Documents");
+    expect(screen.getByLabelText("Documents")).toHaveTextContent("Private note");
+    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Research");
+  });
+
+  it("shows a later-loaded document from a deleted collection as Documents", async () => {
+    let resolveLaterPage: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/collections" && !init?.method) {
+        return new Response(JSON.stringify({ collections: [
+          { id: "collection-research", slug: "research", title: "Research", description: "Research notes.", createdAt: "2026-08-01T10:00:00Z", updatedAt: "2026-08-01T10:00:00Z" }
+        ] }), { status: 200 });
+      }
+      if (url === "/api/v1/collections/research" && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-context", publicId: "context", body: "# First research", collectionId: "collection-research", collectionSlug: "research", starred: false }], nextCursor: "page-two" }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50&cursor=page-two") {
+        return new Promise<Response>((resolve) => { resolveLaterPage = resolve; });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<Write />);
+    await screen.findByLabelText("Workspace home");
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByLabelText("Workspace home");
+    await waitFor(() => expect(resolveLaterPage).toBeDefined());
+    resolveLaterPage?.(
+      new Response(
+        JSON.stringify({ documents: [{ id: "doc-later", publicId: "later", body: "# Later research", collectionId: "collection-research", collectionSlug: "research", starred: false }] }),
+        { status: 200 }
+      )
+    );
+
+    openWorkspaceSearch();
+    const searchDialog = await screen.findByRole("dialog", { name: "Search workspace" });
+    const searchResult = await waitFor(() => {
+      const result = Array.from(searchDialog.querySelectorAll<HTMLButtonElement>(".workspaceSearchResults button"))
+        .find((button) => button.textContent?.includes("Later research"));
+      expect(result).toBeDefined();
+      return result!;
+    });
+    fireEvent.click(searchResult);
+    await screen.findByRole("region", { name: "Markdown editor" });
+    expect(screen.getByRole("combobox", { name: "Collection for Later research" })).toHaveValue("documents");
+  });
+
+  it("keeps a collection when deletion is cancelled", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    stubSignedInFetch([{ id: "doc-context", body: "---\ntags: [operating-context]\n---\n\n# About me" }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Operating Context");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(screen.getByLabelText("Operating Context")).toBeInTheDocument();
+    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Operating Context");
+  });
+
+  it("protects the Documents fallback collection from deletion", async () => {
+    stubSignedInFetch([{ id: "doc-general", body: "# Scratch" }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Documents");
+
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("continues to the next document after deleting the active document", async () => {
     stubSignedInFetch([
       { id: "doc-private", body: "# Private note\n\nDraft." },
       { id: "doc-shared", body: "# Shared note\n\nPublished.", sharedAt: "2026-07-09T08:00:00Z" }
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Private note/ });
+    deleteActiveDocument();
 
-    const sharingFilter = screen.getByRole("combobox", { name: "Filter documents by sharing" });
-    fireEvent.change(sharingFilter, { target: { value: "private" } });
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
-
-    await waitFor(() => expect(sharingFilter).toHaveValue("all"));
-    expect(screen.getByRole("button", { name: /Shared note/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Private note/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Shared note", level: 1 }).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("heading", { name: "Shared note", level: 1 })).length).toBeGreaterThan(0);
   });
 
   it("deletes the final document and shows an empty state", async () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
 
     const { unmount } = await renderWrite();
-    await screen.findByRole("button", { name: /Only note/ });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
+    deleteActiveDocument();
 
     await waitFor(() => expect(screen.getByText("No documents yet.")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /Only note/ })).not.toBeInTheDocument();
-    expect(screen.getByText("No documents.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create document" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/write");
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-only", {
@@ -1136,13 +1547,12 @@ describe("Write (editor)", () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Only note/ });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Edited note\n\nUnsaved." }
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
+    deleteActiveDocument();
 
     await waitFor(() => expect(screen.getByText("No documents yet.")).toBeInTheDocument());
     await new Promise((resolve) => window.setTimeout(resolve, 600));
@@ -1170,14 +1580,13 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    await screen.findByRole("button", { name: /First note/ });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# First edit\n\nUnsaved." }
     });
-    fireEvent.click(screen.getAllByRole("button", { name: "Delete document" })[0]);
+    deleteActiveDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Second note/ }));
+    await openDocumentFromSearch(/Second note/);
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Second edit\n\nKeep this." }
     });
@@ -1201,7 +1610,7 @@ describe("Write (editor)", () => {
     );
   });
 
-  it("orders documents by latest with pinned documents first", async () => {
+  it("keeps starred documents separate from the recent ordering", async () => {
     stubSignedInFetch([
       {
         id: "doc-old",
@@ -1222,15 +1631,52 @@ describe("Write (editor)", () => {
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Pinned note/ });
-
-    const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
-    expect(rows[0]).toContain("Pinned note");
-    expect(rows[1]).toContain("Latest note");
-    expect(rows[2]).toContain("Old note");
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: /Recent/ })[0]);
+    const rows = Array.from(screen.getByLabelText("Recent").querySelectorAll<HTMLButtonElement>(".workspaceDocumentOpen"))
+      .map((button) => button.textContent ?? "");
+    expect(rows[0]).toContain("Latest note");
+    expect(rows[1]).toContain("Old note");
+    expect(rows[2]).toContain("Pinned note");
+    fireEvent.click(screen.getAllByRole("button", { name: /Starred/ })[0]);
+    expect(screen.getByLabelText("Starred")).toHaveTextContent("Pinned note");
+    expect(screen.queryByRole("button", { name: /Latest note/ })).not.toBeInTheDocument();
   });
 
-  it("marks a document as shared without moving it to another section", async () => {
+  it("moves a metadata-updated document to its confirmed recent position", async () => {
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-old", body: "# Older note", updatedAt: "2026-08-15T08:00:00Z" },
+      { id: "doc-new", body: "# Newer note", updatedAt: "2026-08-15T09:00:00Z" }
+    ]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-old" && init?.method === "PATCH") {
+        return Promise.resolve(new Response(JSON.stringify({
+          id: "doc-old",
+          publicId: "public-1",
+          body: "# Older note",
+          collectionId: null,
+          collectionSlug: null,
+          starred: true,
+          updatedAt: "2026-08-15T10:00:00Z"
+        }), { status: 200 }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    await openDocumentFromSearch(/Older note/);
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await screen.findByRole("button", { name: "Unstar document" });
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
+
+    const recent = await screen.findByLabelText("Recent");
+    const rows = recent.querySelectorAll(".workspaceDocumentOpen");
+    expect(rows[0]).toHaveTextContent("Older note");
+    expect(rows[1]).toHaveTextContent("Newer note");
+  });
+
+  it("marks a document as shared without leaving the editor", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1238,16 +1684,13 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Markdown for agents and humans/ });
-
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(screen.getByLabelText("Shared document")).toBeInTheDocument());
-    expect(screen.getByRole("combobox", { name: "Filter documents by sharing" })).toHaveValue("all");
-    expect(await screen.findByRole("button", { name: /Markdown for agents and humans/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
-  it("orders a newly shared document as latest in the flat list", async () => {
+  it("keeps sharing independent from collection assignment", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1259,31 +1702,26 @@ describe("Write (editor)", () => {
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Private note/ });
-
+    await openDocumentFromSearch(/Private note/);
+    const collection = screen.getByRole("combobox", { name: /Collection for/ });
+    fireEvent.change(collection, { target: { value: "research" } });
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
 
-    await waitFor(() => expect(screen.getByLabelText("Shared document")).toBeInTheDocument());
-    const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
-    expect(rows[0]).toContain("Private note");
-    expect(rows[1]).toContain("Shared note");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+    expect(collection).toHaveValue("research");
   });
 
-  it("removes the shared marker without moving the document", async () => {
+  it("removes the shared state without leaving the editor", async () => {
     stubSignedInFetch([{ id: "doc-shared", body: "# Shared draft", shareToken: "share-token", sharedAt: "2026-07-09T08:00:00Z" }]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Shared draft/ });
-
-    expect(screen.getByLabelText("Shared document")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
 
-    await waitFor(() => expect(screen.queryByLabelText("Shared document")).not.toBeInTheDocument());
-    expect(screen.getByRole("combobox", { name: "Filter documents by sharing" })).toHaveValue("all");
-    expect(screen.getByRole("button", { name: /Shared draft/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false"));
+    expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
-  it("orders a newly unshared document as latest in the flat list", async () => {
+  it("keeps collection assignment after a document is unshared", async () => {
     stubSignedInFetch([
       {
         id: "doc-shared",
@@ -1296,33 +1734,31 @@ describe("Write (editor)", () => {
     ]);
 
     await renderWrite();
-    await screen.findByRole("button", { name: /Shared note/ });
-
+    await openDocumentFromSearch(/Shared note/);
+    const collection = screen.getByRole("combobox", { name: /Collection for/ });
+    fireEvent.change(collection, { target: { value: "passage" } });
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
 
-    await waitFor(() => expect(screen.queryByLabelText("Shared document")).not.toBeInTheDocument());
-    const rows = screen.getAllByRole("button", { name: /note/ }).map((button) => button.textContent ?? "");
-    expect(rows[0]).toContain("Shared note");
-    expect(rows[1]).toContain("Private note");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false"));
+    expect(collection).toHaveValue("passage");
   });
 
-  it("keeps the footer tag control filter-only", async () => {
+  it("uses document frontmatter as a collection signal without adding tag controls", async () => {
     await renderWrite();
-    await screen.findByRole("button", { name: /Markdown for agents and humans/ });
-
-    expect(screen.getByRole("textbox", { name: "Filter by tag" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Collection for Markdown for agents and humans" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Filter by tag" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Document tags" })).not.toBeInTheDocument();
   });
 
   it("keeps document row actions as native keyboard-reachable buttons", async () => {
     await renderWrite();
 
-    const pin = screen.getByRole("button", { name: "Unpin document" });
+    const pin = screen.getByRole("button", { name: "Unstar document" });
     expect(pin.tagName).toBe("BUTTON");
 
     await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
-    const remove = await screen.findByRole("button", { name: "Delete document" });
+    const remove = await screen.findByRole("button", { name: "Delete" });
     expect(remove.tagName).toBe("BUTTON");
   });
 
@@ -1334,8 +1770,8 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    expect(await screen.findByRole("button", { name: /Lead magnet/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Delete document" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Lead magnet", level: 1 }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("still renders when browser storage reads are blocked", async () => {
@@ -1389,6 +1825,9 @@ describe("Write (editor)", () => {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
+      }
+      if (url === "/api/v1/collections" && method === "GET") {
+        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -1454,6 +1893,9 @@ describe("Write (editor)", () => {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
+      }
+      if (url === "/api/v1/collections" && method === "GET") {
+        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -1703,7 +2145,7 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Write />);
+    await renderWrite();
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.queryByText("Loading saved docs")).not.toBeInTheDocument());
@@ -1759,6 +2201,7 @@ describe("Write (editor)", () => {
     const second = await screen.findByRole("button", { name: /Second/ });
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50&cursor=page-two", { credentials: "include" });
 
+    openWorkspaceSearch();
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "Second" }
     });
@@ -1767,6 +2210,204 @@ describe("Write (editor)", () => {
     fireEvent.click(second);
     expect((await screen.findAllByText("Full second body")).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-2", { credentials: "include" });
+    expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
+  });
+
+  it("preserves newer collection and star state when a slow body read finishes", async () => {
+    let resolveBody: ((response: Response) => void) | undefined;
+    let confirmedCollectionId: string | null = null;
+    let confirmedCollectionSlug: string | null = null;
+    let confirmedStarred = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        return new Response(JSON.stringify({
+          documents: [{
+            id: "doc-race",
+            publicId: "public-race",
+            title: "Race metadata",
+            excerpt: "Race metadata\n\nPreview",
+            updatedAt: "2026-08-15T08:00:00Z",
+            collectionId: null,
+            collectionSlug: null,
+            starred: false
+          }, {
+            id: "doc-newer",
+            publicId: "public-newer",
+            title: "Newer metadata",
+            excerpt: "Newer metadata",
+            updatedAt: "2026-08-15T09:30:00Z",
+            collectionId: null,
+            collectionSlug: null,
+            starred: false
+          }]
+        }), { status: 200 });
+      }
+      if (url === "/api/v1/docs/doc-race" && method === "GET") {
+        return new Promise<Response>((resolve) => { resolveBody = resolve; });
+      }
+      if (url === "/api/v1/docs/doc-race" && method === "PATCH") {
+        const update = JSON.parse(String(init?.body ?? "{}"));
+        if (Object.prototype.hasOwnProperty.call(update, "collectionId")) {
+          confirmedCollectionId = update.collectionId;
+          confirmedCollectionSlug = update.collectionId ? "research" : null;
+        }
+        if (Object.prototype.hasOwnProperty.call(update, "starred")) confirmedStarred = update.starred;
+        return new Response(JSON.stringify({
+          id: "doc-race",
+          publicId: "public-race",
+          body: "# Race metadata\n\nFull body",
+          collectionId: confirmedCollectionId,
+          collectionSlug: confirmedCollectionSlug,
+          starred: confirmedStarred,
+          updatedAt: "2026-08-15T10:00:00Z"
+        }), { status: 200 });
+      }
+      if (url === "/api/v1/collections") {
+        return new Response(JSON.stringify({ collections: [{
+          id: "collection-research",
+          slug: "research",
+          title: "Research",
+          description: "Research notes.",
+          createdAt: "2026-08-15T10:00:00Z",
+          updatedAt: "2026-08-15T10:00:00Z"
+        }] }), { status: 200 });
+      }
+      if (url === "/api/v1/templates") {
+        return new Response(JSON.stringify({ templates: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${method} ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+    const open = await screen.findByRole("button", { name: /Race metadata.*Preview/ });
+    fireEvent.click(open);
+    const collection = await screen.findByRole("combobox");
+    fireEvent.change(collection, { target: { value: "research" } });
+    await waitFor(() => expect(collection).toHaveValue("research"));
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await screen.findByRole("button", { name: "Unstar document" });
+
+    await act(async () => {
+      resolveBody!(new Response(JSON.stringify({
+        id: "doc-race",
+        publicId: "public-race",
+        body: "# Race metadata\n\nFull body",
+        collectionId: null,
+        collectionSlug: null,
+        starred: false,
+        updatedAt: "2026-08-15T09:00:00Z"
+      }), { status: 200 }));
+    });
+
+    expect((await screen.findAllByText("Full body")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("combobox", { name: "Collection for Race metadata" })).toHaveValue("research");
+    expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
+    const rows = screen.getByLabelText("Recent").querySelectorAll(".workspaceDocumentOpen");
+    expect(rows[0]).toHaveTextContent("Race metadata");
+    expect(rows[1]).toHaveTextContent("Newer metadata");
+  });
+
+  it("preserves newer metadata when an older body save finishes", async () => {
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-old", body: "# Older note\n\nDraft.", updatedAt: "2026-08-15T08:00:00Z" },
+      { id: "doc-new", body: "# Newer note", updatedAt: "2026-08-15T09:30:00Z" }
+    ]);
+    let resolveBodySave: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-old" && init?.method === "PATCH") {
+        const update = JSON.parse(String(init.body ?? "{}"));
+        if (Object.prototype.hasOwnProperty.call(update, "body")) {
+          return new Promise<Response>((resolve) => { resolveBodySave = resolve; });
+        }
+        if (Object.prototype.hasOwnProperty.call(update, "starred")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            id: "doc-old",
+            publicId: "public-1",
+            body: "# Older note\n\nEdited.",
+            collectionId: null,
+            collectionSlug: null,
+            starred: true,
+            updatedAt: "2026-08-15T10:00:00Z"
+          }), { status: 200 }));
+        }
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    await openDocumentFromSearch(/Older note/);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Older note\n\nEdited." }
+    });
+    await waitFor(() => expect(resolveBodySave).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await screen.findByRole("button", { name: "Unstar document" });
+
+    await act(async () => {
+      resolveBodySave!(new Response(JSON.stringify({
+        id: "doc-old",
+        publicId: "public-1",
+        body: "# Older note\n\nEdited.",
+        collectionId: null,
+        collectionSlug: null,
+        starred: false,
+        updatedAt: "2026-08-15T09:00:00Z"
+      }), { status: 200 }));
+    });
+
+    expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
+    const rows = screen.getByLabelText("Recent").querySelectorAll(".workspaceDocumentOpen");
+    expect(rows[0]).toHaveTextContent("Older note");
+    expect(rows[1]).toHaveTextContent("Newer note");
+  });
+
+  it("lets users retry after a background document page fails", async () => {
+    let laterPageRequests = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        return new Response(
+          JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# First" }], nextCursor: "page-two" }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50&cursor=page-two") {
+        laterPageRequests += 1;
+        if (laterPageRequests === 1) return new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 });
+        return new Response(JSON.stringify({ documents: [{ id: "doc-2", publicId: "public-2", body: "# Recovered document" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+
+    const retry = await screen.findByRole("button", { name: "Load more documents" });
+    expect(screen.getByText("Some documents could not be indexed. Load the next page to try again.")).toBeInTheDocument();
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole("button", { name: /Recovered document/ })).toBeInTheDocument();
+    expect(laterPageRequests).toBe(2);
     expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
   });
 
@@ -1799,6 +2440,7 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
+    window.history.replaceState(null, "", "/write/public-1");
     render(<Write />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Document could not be loaded.");
@@ -1896,7 +2538,7 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Write />);
+    await renderWrite();
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
@@ -1941,7 +2583,7 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(
+    await renderWrite(
       <AppProviders>
         <Write />
       </AppProviders>
@@ -1994,13 +2636,13 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(
+    await renderWrite(
       <AppProviders>
         <Write />
       </AppProviders>
     );
 
-    expect(await screen.findByRole("button", { name: /First account/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "First account", level: 1 }).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# First account\n\nMust not cross accounts." }
@@ -2008,8 +2650,8 @@ describe("Write (editor)", () => {
 
     window.dispatchEvent(new Event("focus"));
 
-    expect(await screen.findByRole("button", { name: /Second account/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /First account/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(document.body).toHaveTextContent("Second account"));
+    expect(document.body).not.toHaveTextContent("First account\n\nMust not cross accounts.");
     await new Promise((resolve) => window.setTimeout(resolve, 600));
     expect(documentLoads).toBe(2);
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -2106,7 +2748,7 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Write />);
+    await renderWrite();
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
@@ -2142,7 +2784,7 @@ describe("Write (editor)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<Write />);
+    await renderWrite();
 
     const shared = await screen.findByRole("button", { name: "Shared" });
     expect(shared).toHaveAttribute("aria-pressed", "true");

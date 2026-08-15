@@ -164,6 +164,91 @@ Clients should treat the `error` value as user-facing text.
 
 Clients should branch on HTTP status, not on exact error strings.
 
+## Collection Object
+
+Collections are private, owner-scoped document groups.
+
+The built-in `Documents` view represents documents whose `collectionId` is `null`.
+
+It is not a stored collection and does not appear in collection API responses.
+
+Collection objects use this shape:
+
+```json
+{
+  "id": "22222222-2222-2222-2222-222222222222",
+  "slug": "research",
+  "title": "Research",
+  "description": "Sources, findings, and notes worth returning to.",
+  "createdAt": "2026-06-28T12:00:00Z",
+  "updatedAt": "2026-06-28T12:00:00Z"
+}
+```
+
+Each account starts with `Operating Context`, `Content Studio`, `Passage`, and `Research` once.
+
+Collection slugs are created by the server and never change when a collection is renamed.
+
+An account can have at most 100 collections.
+
+Titles must contain 1 to 80 characters after trimming.
+
+Descriptions are optional and can contain at most 180 characters.
+
+### List Collections
+
+```http
+GET /api/v1/collections
+```
+
+Returns `{"collections":[...]}` for the authenticated owner.
+
+### Create Collection
+
+```http
+POST /api/v1/collections
+Content-Type: application/json
+```
+
+```json
+{"title":"Customer research","description":"Interview notes and findings."}
+```
+
+Returns the collection with `201 Created`.
+
+The server derives a unique, stable slug from the title.
+
+The 101st collection returns `409`.
+
+### Update Collection
+
+```http
+PATCH /api/v1/collections/{slug}
+Content-Type: application/json
+```
+
+```json
+{"title":"Product research","description":null}
+```
+
+The title and description can change.
+
+The slug cannot change.
+
+Missing collections and collections owned by another account return `404`.
+
+### Delete Collection
+
+```http
+DELETE /api/v1/collections/{slug}
+```
+
+Returns `204 No Content`.
+
+Deletion atomically moves the collection's documents into the built-in `Documents` view.
+
+It does not change Markdown bodies, stars, public links, or raw Markdown responses.
+
 ## Document Object
 
 Document objects use this shape:
@@ -174,6 +259,9 @@ Document objects use this shape:
   "publicId": "abcdefghijklmnopqrstuv",
   "title": "Example",
   "body": "# Example\n\nMarkdown body.",
+  "collectionId": "22222222-2222-2222-2222-222222222222",
+  "collectionSlug": "research",
+  "starred": true,
   "sharedAt": "2026-06-28T12:00:00Z",
   "createdAt": "2026-06-28T12:00:00Z",
   "updatedAt": "2026-06-28T12:00:00Z"
@@ -186,6 +274,9 @@ Fields:
 - `publicId`: stable public URL identifier.
 - `title`: server-derived title from the Markdown body.
 - `body`: full Markdown body.
+- `collectionId`: private collection UUID, or `null` for the built-in `Documents` view.
+- `collectionSlug`: stable private collection slug, or `null` for the built-in `Documents` view.
+- `starred`: private owner star state.
 - `shareToken`: optional legacy public share token.
 - `sharedAt`: optional share creation timestamp.
 - `createdAt`: creation timestamp.
@@ -195,6 +286,10 @@ Fields:
 New clients should use `publicId` when building public document URLs.
 
 Legacy `shareToken` values may still appear for older shared documents.
+
+Collection and star fields appear only on authenticated document API responses.
+
+They do not appear in public HTML, raw Markdown, or exported Markdown bodies.
 
 `title` is derived from the first non-empty Markdown line.
 
@@ -227,6 +322,9 @@ Content-Type: application/json
       "publicId": "abcdefghijklmnopqrstuv",
       "title": "Example",
       "body": "# Example",
+      "collectionId": null,
+      "collectionSlug": null,
+      "starred": false,
       "createdAt": "2026-06-28T12:00:00Z",
       "updatedAt": "2026-06-28T12:00:00Z"
     }
@@ -268,6 +366,9 @@ They include metadata and a bounded excerpt, but never the complete Markdown bod
       "title": "Example",
       "excerpt": "# Example\n\nThe beginning of the document.",
       "tags": ["agents", "notes"],
+      "collectionId": null,
+      "collectionSlug": null,
+      "starred": false,
       "createdAt": "2026-06-28T12:00:00Z",
       "updatedAt": "2026-06-28T12:00:00Z"
     }
@@ -316,6 +417,9 @@ Content-Type: application/json
   "publicId": "abcdefghijklmnopqrstuv",
   "title": "New document",
   "body": "# New document\n\nMarkdown body.",
+  "collectionId": null,
+  "collectionSlug": null,
+  "starred": false,
   "createdAt": "2026-06-28T12:00:00Z",
   "updatedAt": "2026-06-28T12:00:00Z"
 }
@@ -349,6 +453,9 @@ Content-Type: application/json
   "publicId": "abcdefghijklmnopqrstuv",
   "title": "Example",
   "body": "# Example",
+  "collectionId": null,
+  "collectionSlug": null,
+  "starred": false,
   "createdAt": "2026-06-28T12:00:00Z",
   "updatedAt": "2026-06-28T12:00:00Z"
 }
@@ -367,7 +474,23 @@ Request:
 {"body":"# Revised document\n\nUpdated Markdown body."}
 ```
 
-`PATCH` replaces the full Markdown body.
+`PATCH` accepts any non-empty combination of `body`, `collectionId`, and `starred`.
+
+`body` replaces the full Markdown body when present.
+
+Omitting `body` leaves the Markdown body unchanged, so metadata-only updates are supported:
+
+```json
+{"collectionId":"22222222-2222-2222-2222-222222222222","starred":true}
+```
+
+Send `{"collectionId":null}` to move the document into the built-in `Documents` view.
+
+The collection must belong to the authenticated document owner.
+
+Missing and cross-owner collection IDs return `400` without changing the document.
+
+Existing body-only API and CLI requests remain compatible.
 
 CLI append behavior should read the current body, append client-side, then send the full replacement body.
 
@@ -384,6 +507,9 @@ Content-Type: application/json
   "publicId": "abcdefghijklmnopqrstuv",
   "title": "Revised document",
   "body": "# Revised document\n\nUpdated Markdown body.",
+  "collectionId": null,
+  "collectionSlug": null,
+  "starred": false,
   "createdAt": "2026-06-28T12:00:00Z",
   "updatedAt": "2026-06-28T12:05:00Z"
 }

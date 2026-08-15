@@ -6,28 +6,38 @@ import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { EditorSidebar } from "./editor-sidebar";
-import { docMatchesFilter, firstDocInFilter } from "./editor-list";
-import { DocumentFilter, isShared, Mode } from "./editor-model";
+import { isShared, Mode, publicIdFromPath } from "./editor-model";
 import { EditorStatusBar } from "./editor-status-bar";
+import { EditorWorkspace, WorkspaceSearch } from "./editor-workspace";
+import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
 import { useEntitlements } from "./entitlements";
-import { PlusIcon, SidebarIcon, UserIcon } from "./icons";
+import { PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
 import { MarkdownView } from "./markdown-view";
 import { TemplateWorkspace } from "./template-workspace";
 import { useEditorDocuments } from "./use-editor-documents";
+import { useEditorCollections } from "./use-editor-collections";
 import { useEditorSharing } from "./use-editor-sharing";
 import { useEditorTemplates } from "./use-editor-templates";
 import { useEditorTheme } from "./use-editor-theme";
+
+const EMPTY_ASSIGNMENTS: Record<string, string> = {};
+const NO_DELETED_COLLECTIONS: string[] = [];
 
 export default function Editor() {
   const [mode, setMode] = useState<Mode>("preview");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [filter, setFilter] = useState("");
-  const [tagFilter, setTagFilter] = useState("");
   const [authError, setAuthError] = useState("");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState("");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => publicIdFromPath() ? { type: "document" } : { type: "home" });
+  const [newDocumentCollection, setNewDocumentCollection] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchScope, setSearchScope] = useState("all");
+  const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const writingPaneRef = useRef<HTMLElement>(null);
 
   const auth = useAuth();
   const userId = auth.user?.id;
@@ -51,19 +61,24 @@ export default function Editor() {
     retryActive,
     saveState,
     selectDoc,
-    documentFilter,
     setBillingNotice,
     setDocs,
     setPendingSave,
     setSaveState,
     setDocumentFilter,
-    togglePin,
     updateBody
   } = useEditorDocuments({
     userId,
     maxSavedDocs: entitlements.maxSavedDocs,
     plan: entitlements.plan,
     focusEditor: () => textareaRef.current?.focus()
+  });
+
+  const collectionState = useEditorCollections({
+    userId,
+    docs,
+    setDocs,
+    setNotice: setBillingNotice
   });
 
   const activeShared = active ? isShared(active) : false;
@@ -108,6 +123,16 @@ export default function Editor() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (!searchOpen) {
+          setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+        }
+        setSearchScope("all");
+        setSearchQuery("");
+        setSearchOpen(true);
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
         event.preventDefault();
         toggleMode();
@@ -115,47 +140,108 @@ export default function Editor() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleMode]);
+  }, [searchOpen, toggleMode]);
+
+  useEffect(() => {
+    function onPopState() {
+      const publicId = publicIdFromPath();
+      if (!publicId) {
+        setTemplatesOpen(false);
+        setWorkspaceView({ type: "home" });
+        return;
+      }
+      const doc = docs.find((candidate) => candidate.publicId === publicId);
+      if (doc) {
+        setTemplatesOpen(false);
+        setWorkspaceView({ type: "document" });
+        selectDoc(doc, "none");
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [docs, selectDoc]);
 
   async function createDoc(body = "") {
     const created = await createDocument(body);
     if (!created) return false;
+    if (newDocumentCollection) {
+      await collectionState.assignCollection(created.id, newDocumentCollection);
+    }
+    setNewDocumentCollection(null);
     setTemplatesOpen(false);
     setActiveTemplateId("");
     setMode("edit");
-    setFilter("");
-    setTagFilter("");
+    setWorkspaceView({ type: "document" });
     return true;
   }
 
   function openTemplates() {
+    setNewDocumentCollection(workspaceView.type === "collection" ? workspaceView.slug : null);
     setTemplatesOpen(true);
     setActiveTemplateId("");
+    window.history.pushState(null, "", "/write");
   }
 
   function selectDocument(doc: Parameters<typeof selectDoc>[0]) {
     setTemplatesOpen(false);
     setActiveTemplateId("");
-    selectDoc(doc);
+    setWorkspaceView({ type: "document" });
+    selectDoc(doc, "push");
+    if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarOpen(false);
   }
 
-  function selectDocumentFilter(nextFilter: DocumentFilter) {
+  function selectSearchDocument(doc: Parameters<typeof selectDoc>[0]) {
+    setSearchOpen(false);
+    selectDocument(doc);
+    requestAnimationFrame(() => writingPaneRef.current?.focus());
+  }
+
+  function openWorkspaceView(view: WorkspaceView) {
     setTemplatesOpen(false);
     setActiveTemplateId("");
-    if (nextFilter !== documentFilter) {
-      clearTagFilter();
-    }
-    setDocumentFilter(nextFilter);
-    if (active && docMatchesFilter(active, nextFilter)) {
-      return;
-    }
-    const nextDoc = firstDocInFilter(docs, nextFilter);
-    if (!nextDoc) return;
-    selectDoc(nextDoc);
+    setWorkspaceView(view);
+    if (view.type !== "document") window.history.pushState(null, "", "/write");
+    if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarOpen(false);
   }
 
-  function clearTagFilter() {
-    setTagFilter("");
+  function openCollection(slug: string) {
+    openWorkspaceView({ type: "collection", slug });
+  }
+
+  function openSearch(scope = "all") {
+    if (!searchOpen) {
+      setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    }
+    setSearchScope(scope);
+    setSearchQuery("");
+    setSearchOpen(true);
+  }
+
+  async function createCollection(title: string, description: string) {
+    const collection = await collectionState.createCollection(title, description);
+    if (!collection) return false;
+    openCollection(collection.slug);
+    return true;
+  }
+
+  function updateCollection(slug: string, title: string, description: string) {
+    return collectionState.updateCollection(slug, title, description);
+  }
+
+  async function deleteCollection(slug: string) {
+    if (slug === "documents") return;
+    const collection = collections.find((candidate) => candidate.slug === slug);
+    if (!collection) return;
+    const collectionDocs = docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === slug);
+    const count = collectionDocs.length;
+    const noun = count === 1 ? "document" : "documents";
+    const moveSummary = hasMoreDocs
+      ? "Its documents will move to Documents."
+      : `${count} ${noun} will move to Documents.`;
+    if (!window.confirm(`Delete “${collection.title}”? ${moveSummary}`)) return;
+    if (!await collectionState.deleteCollection(slug)) return;
+    setSearchScope("all");
+    openWorkspaceView({ type: "home" });
   }
 
   async function signOut() {
@@ -173,42 +259,47 @@ export default function Editor() {
 
   const words = active ? wordCount(active.body) : 0;
   const title = active ? titleOf(active.body) : "";
-  const docsReady = saveState !== "loading";
+  const docsReady = saveState !== "loading" && !collectionState.loading;
   const showSaveState = saveState !== "saved";
   const savedDocs = auth.account?.usage.savedDocs ?? 0;
   const nearDocumentLimit =
     entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
   const nearDocumentLimitNotice = `You're using ${formatDocumentCount(savedDocs)} of ${formatDocumentCount(entitlements.maxSavedDocs)} saved documents.`;
+  const collections = [...collectionState.collections, ...WORKSPACE_COLLECTIONS];
+  const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
+  const workspaceTitle = templatesOpen
+    ? "Templates"
+    : workspaceView.type === "document"
+      ? title
+      : workspaceView.type === "collection"
+        ? collectionLabel(workspaceView.slug, collections)
+        : workspaceView.type === "home"
+          ? "Home"
+          : workspaceView.type.charAt(0).toUpperCase() + workspaceView.type.slice(1);
+  const showDocument = !templatesOpen && workspaceView.type === "document";
+  const showTopBarTitle = docsReady && (templatesOpen || (showDocument && mode === "edit"));
+  const canDeleteActive = Boolean(active && !isShared(active));
 
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
       <EditorSidebar
-        active={active}
+        assignments={EMPTY_ASSIGNMENTS}
+        collections={collections}
+        deletedCollections={NO_DELETED_COLLECTIONS}
         docs={docs}
-        docsReady={docsReady}
-        filter={filter}
-        onClearTagFilter={clearTagFilter}
-        onDeleteDoc={(id) => void deleteDoc(id)}
-        onFilterChange={setFilter}
-        onLoadMore={() => void loadMoreDocs()}
+        onOpenCollection={openCollection}
+        onOpenSearch={() => openSearch()}
         onOpenTemplates={openTemplates}
-        onSelectDoc={selectDocument}
-        onDocumentFilterChange={selectDocumentFilter}
-        onTagFilterChange={setTagFilter}
+        onOpenView={openWorkspaceView}
         onToggleDarkMode={toggleDarkMode}
-        onTogglePin={togglePin}
-        saveState={saveState}
-        hasMoreDocs={hasMoreDocs}
-        loadingMore={loadingMore}
-        documentFilter={documentFilter}
         sidebarOpen={sidebarOpen}
-        tagFilter={tagFilter}
         templateCount={templateState.templates.length}
         templatesActive={templatesOpen}
         theme={theme}
+        view={workspaceView}
       />
 
-      <div className="main">
+      <div className="main" inert={searchOpen ? true : undefined}>
         <header className="topBar">
           <div className="topCluster">
             <button
@@ -224,18 +315,50 @@ export default function Editor() {
               type="button"
               className="iconButton"
               aria-label="New document"
-              disabled={saveState === "loading"}
+              disabled={!docsReady}
               onClick={openTemplates}
             >
               <PlusIcon />
             </button>
           </div>
 
-          <h1 className="docTitle" title={templatesOpen ? "Templates" : docsReady ? title : ""}>
-            {templatesOpen ? "Templates" : docsReady ? title : ""}
-          </h1>
+          {showTopBarTitle
+            ? <h1 className="docTitle" title={workspaceTitle}>{workspaceTitle}</h1>
+            : <span className="docTitle" aria-hidden="true" />}
 
           <div className="topCluster end">
+            {showDocument && active && (
+              <>
+                <select
+                  className="topBarCollectionSelect"
+                  aria-label={`Collection for ${title}`}
+                  value={activeCollection}
+                  disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
+                  onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
+                >
+                  {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
+                </select>
+                <button
+                  type="button"
+                  className="iconButton"
+                  aria-label={active.pinned ? "Unstar document" : "Star document"}
+                  disabled={collectionState.pendingDocIds.has(active.id)}
+                  onClick={() => void collectionState.toggleStar(active.id)}
+                >
+                  <StarIcon filled={Boolean(active.pinned)} />
+                </button>
+                {canDeleteActive && (
+                  <button
+                    type="button"
+                    className="topBarDelete"
+                    disabled={collectionState.pendingDocIds.has(active.id)}
+                    onClick={() => void deleteDoc(active.id)}
+                  >
+                    Delete
+                  </button>
+                )}
+              </>
+            )}
             <div className="userMenuWrap">
               <button
                 type="button"
@@ -300,7 +423,7 @@ export default function Editor() {
             onShowLibrary={() => setActiveTemplateId("")}
             onUpdateTemplate={templateState.updateTemplate}
           />
-        ) : <section className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
+        ) : showDocument ? <section ref={writingPaneRef} tabIndex={-1} className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
           {saveState === "loading" || activeLoading ? (
             <PendingStatus label="Loading saved docs" />
           ) : activeLoadError ? (
@@ -334,9 +457,33 @@ export default function Editor() {
           ) : (
             <MarkdownView source={bodyWithoutFrontmatter(active.body)} theme={darkActive ? "dark" : "light"} />
           )}
-        </section>}
+        </section> : (
+          <EditorWorkspace
+            assignments={EMPTY_ASSIGNMENTS}
+            assignmentDisabled={!collectionState.available}
+            collections={collections}
+            deletedCollections={NO_DELETED_COLLECTIONS}
+            docs={docs}
+            saveState={collectionState.loading ? "loading" : saveState}
+            view={workspaceView}
+            onAssignCollection={collectionState.assignCollection}
+            onCreateCollection={createCollection}
+            onDeleteCollection={(slug) => void deleteCollection(slug)}
+            onOpenCollection={openCollection}
+            onOpenDocument={selectDocument}
+            onOpenSearch={openSearch}
+            onOpenView={openWorkspaceView}
+            hasMoreDocs={hasMoreDocs}
+            loadingMore={loadingMore}
+            onLoadMoreDocs={() => void loadMoreDocs()}
+            onToggleStar={collectionState.toggleStar}
+            onUpdateCollection={updateCollection}
+            pendingCollectionSlugs={collectionState.pendingCollectionSlugs}
+            pendingDocIds={collectionState.pendingDocIds}
+          />
+        )}
 
-        {!templatesOpen && docsReady && active?.bodyLoaded && (
+        {showDocument && docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
             mode={mode}
@@ -353,6 +500,21 @@ export default function Editor() {
           />
         )}
       </div>
+      {searchOpen && (
+        <WorkspaceSearch
+          assignments={EMPTY_ASSIGNMENTS}
+          collections={collections}
+          deletedCollections={NO_DELETED_COLLECTIONS}
+          docs={docs}
+          query={searchQuery}
+          scope={searchScope}
+          trigger={searchTrigger}
+          onClose={() => setSearchOpen(false)}
+          onOpenDocument={selectSearchDocument}
+          onQueryChange={setSearchQuery}
+          onScopeChange={setSearchScope}
+        />
+      )}
     </div>
   );
 }

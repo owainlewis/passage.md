@@ -41,7 +41,7 @@ export function SearchIcon() {
   );
 }
 
-export function PinIcon({ filled }: { filled: boolean }) {
+export function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -52,8 +52,7 @@ export function PinIcon({ filled }: { filled: boolean }) {
       strokeWidth="1.5"
       aria-hidden="true"
     >
-      <path d="M9 4.5h6l-1 4.6 2.6 2.9V13.4H7.4v-1.4L10 9.1 9 4.5Z" strokeLinejoin="round" />
-      <line x1="12" y1="13.4" x2="12" y2="19.5" strokeLinecap="round" />
+      <path d="m12 3.8 2.45 4.96 5.48.8-3.97 3.86.94 5.46L12 16.3l-4.9 2.58.94-5.46-3.97-3.86 5.48-.8L12 3.8Z" strokeLinejoin="round" />
     </svg>
   );
 }

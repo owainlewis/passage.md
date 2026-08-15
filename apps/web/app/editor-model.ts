@@ -9,6 +9,9 @@ export type Doc = {
   excerpt?: string;
   tags?: string[];
   pinned?: boolean;
+  starred?: boolean;
+  collectionId?: string | null;
+  collectionSlug?: string | null;
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;
@@ -39,6 +42,12 @@ export function saveLabel(state: SaveState) {
     default:
       return "Saved";
   }
+}
+
+export function newestTimestamp(current?: string, saved?: string) {
+  if (!saved) return current;
+  if (!current) return saved;
+  return Date.parse(saved) > Date.parse(current) ? saved : current;
 }
 
 const welcomeBody = `# Markdown for agents and humans

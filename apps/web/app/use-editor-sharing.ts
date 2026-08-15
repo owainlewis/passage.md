@@ -3,7 +3,7 @@
 import { Dispatch, SetStateAction, useRef, useState } from "react";
 import { apiShareDoc, apiUnshareDoc, apiUpdateDoc } from "./editor-api";
 import { titleOf } from "./doc-utils";
-import { ALL_DOCUMENTS, Doc, DocumentFilter, SaveState, ShareState } from "./editor-model";
+import { ALL_DOCUMENTS, Doc, DocumentFilter, newestTimestamp, SaveState, ShareState } from "./editor-model";
 import { PendingSave } from "./use-editor-documents";
 
 type EditorSharingOptions = {
@@ -74,7 +74,20 @@ export function useEditorSharing({
       if (pendingSave?.id === active.id) {
         setSaveState("saving");
         const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
-        setDocs((prev) => prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc)));
+        setDocs((prev) =>
+          prev.map((doc) =>
+            doc.id === saved.id
+              ? {
+                  ...saved,
+                  collectionId: doc.collectionId,
+                  collectionSlug: doc.collectionSlug,
+                  starred: doc.starred,
+                  pinned: doc.pinned,
+                  updatedAt: newestTimestamp(doc.updatedAt, saved.updatedAt)
+                }
+              : doc
+          )
+        );
         setPendingSave(null);
         setSaveState("saved");
       }
