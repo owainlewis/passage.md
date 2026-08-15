@@ -122,7 +122,23 @@ export function useEditorDocuments({
     setDocumentLoadError("");
     try {
       const loaded = await apiDoc(doc.id);
-      setDocs((prev) => prev.map((candidate) => (candidate.id === loaded.id ? { ...candidate, ...loaded } : candidate)));
+      setDocs((prev) => prev.map((candidate) => {
+        if (candidate.id !== loaded.id) return candidate;
+        const metadataChanged = candidate.collectionId !== doc.collectionId
+          || candidate.collectionSlug !== doc.collectionSlug
+          || candidate.starred !== doc.starred
+          || candidate.pinned !== doc.pinned;
+        return metadataChanged
+          ? {
+            ...candidate,
+            ...loaded,
+            collectionId: candidate.collectionId,
+            collectionSlug: candidate.collectionSlug,
+            starred: candidate.starred,
+            pinned: candidate.pinned
+          }
+          : { ...candidate, ...loaded };
+      }));
     } catch {
       if (activeRequest.current === request) {
         setDocumentLoadError(doc.id);

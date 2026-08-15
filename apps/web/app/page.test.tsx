@@ -2099,6 +2099,94 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
   });
 
+  it("preserves newer collection and star state when a slow body read finishes", async () => {
+    let resolveBody: ((response: Response) => void) | undefined;
+    let confirmedCollectionId: string | null = null;
+    let confirmedCollectionSlug: string | null = null;
+    let confirmedStarred = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v1/me") {
+        return new Response(
+          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+          { status: 200 }
+        );
+      }
+      if (url === "/api/v1/docs?limit=50") {
+        return new Response(JSON.stringify({
+          documents: [{
+            id: "doc-race",
+            publicId: "public-race",
+            title: "Race metadata",
+            excerpt: "Race metadata\n\nPreview",
+            collectionId: null,
+            collectionSlug: null,
+            starred: false
+          }]
+        }), { status: 200 });
+      }
+      if (url === "/api/v1/docs/doc-race" && method === "GET") {
+        return new Promise<Response>((resolve) => { resolveBody = resolve; });
+      }
+      if (url === "/api/v1/docs/doc-race" && method === "PATCH") {
+        const update = JSON.parse(String(init?.body ?? "{}"));
+        if (Object.prototype.hasOwnProperty.call(update, "collectionId")) {
+          confirmedCollectionId = update.collectionId;
+          confirmedCollectionSlug = update.collectionId ? "research" : null;
+        }
+        if (Object.prototype.hasOwnProperty.call(update, "starred")) confirmedStarred = update.starred;
+        return new Response(JSON.stringify({
+          id: "doc-race",
+          publicId: "public-race",
+          body: "# Race metadata\n\nFull body",
+          collectionId: confirmedCollectionId,
+          collectionSlug: confirmedCollectionSlug,
+          starred: confirmedStarred
+        }), { status: 200 });
+      }
+      if (url === "/api/v1/collections") {
+        return new Response(JSON.stringify({ collections: [{
+          id: "collection-research",
+          slug: "research",
+          title: "Research",
+          description: "Research notes.",
+          createdAt: "2026-08-15T10:00:00Z",
+          updatedAt: "2026-08-15T10:00:00Z"
+        }] }), { status: 200 });
+      }
+      if (url === "/api/v1/templates") {
+        return new Response(JSON.stringify({ templates: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: `unexpected request: ${method} ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Write />);
+    const open = await screen.findByRole("button", { name: /Race metadata.*Preview/ });
+    fireEvent.click(open);
+    const collection = await screen.findByRole("combobox");
+    fireEvent.change(collection, { target: { value: "research" } });
+    await waitFor(() => expect(collection).toHaveValue("research"));
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await screen.findByRole("button", { name: "Unstar document" });
+
+    await act(async () => {
+      resolveBody!(new Response(JSON.stringify({
+        id: "doc-race",
+        publicId: "public-race",
+        body: "# Race metadata\n\nFull body",
+        collectionId: null,
+        collectionSlug: null,
+        starred: false
+      }), { status: 200 }));
+    });
+
+    expect((await screen.findAllByText("Full body")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("combobox", { name: "Collection for Race metadata" })).toHaveValue("research");
+    expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
+  });
+
   it("lets users retry after a background document page fails", async () => {
     let laterPageRequests = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
