@@ -704,8 +704,15 @@ button {
 }
 
 .workspaceDestination span,
-.workspaceSidebarCollection > span:nth-child(2) {
+.workspaceSidebarCollection > span:first-child {
   flex: 1 1 auto;
+}
+
+.workspaceSidebarCollection > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workspaceDestination small,
@@ -795,6 +802,7 @@ button {
 
 .workspaceHub {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: clamp(36px, 5vw, 60px) clamp(24px, 6vw, 76px) 104px;
   background: var(--bg);
@@ -804,6 +812,10 @@ button {
   width: min(100%, 1080px);
   margin-left: auto;
   margin-right: auto;
+}
+
+.workspaceHome > * {
+  margin-left: 0;
 }
 
 .workspaceHubLoading {
@@ -1107,15 +1119,22 @@ button {
 }
 
 .workspaceCollectionTitle strong {
+  min-width: 0;
+  flex: 1 1 auto;
   font-family: var(--serif);
   font-size: 0.98rem;
   font-weight: 400;
+  overflow-wrap: anywhere;
 }
 
 .workspaceCollectionTitle small {
   color: var(--faint);
   font-size: 0.625rem;
   white-space: nowrap;
+}
+
+.workspaceCollectionDescription {
+  overflow-wrap: anywhere;
 }
 
 .workspaceDocumentList {

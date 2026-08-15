@@ -191,7 +191,7 @@ function WorkspaceHome({
   const recent = recentDocs(docs).slice(0, 6);
 
   return (
-    <div className="workspaceHub" aria-label="Workspace home">
+    <div className="workspaceHub workspaceHome" aria-label="Workspace home">
       <header className="workspaceHero">
         <h1>Documents</h1>
         <p>Markdown, organised for writing and reuse.</p>
@@ -284,7 +284,7 @@ function CollectionGrid({
           <button type="button" className="workspaceCollectionCard" key={collection.slug} onClick={() => onOpenCollection(collection.slug)}>
             <span className="workspaceCollectionBody">
               <span className="workspaceCollectionTitle"><strong>{collection.title}</strong><small>{count} {count === 1 ? "file" : "files"}</small></span>
-              <span>{collection.description}</span>
+              <span className="workspaceCollectionDescription">{collection.description}</span>
             </span>
           </button>
         );
