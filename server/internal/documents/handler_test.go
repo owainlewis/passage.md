@@ -163,6 +163,61 @@ func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 	}
 }
 
+func TestHandlerKeepsBodyOnlyUpdatesCompatibleAndSupportsMetadataOnlyUpdates(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store)
+	user := auth.User{ID: "user-1"}
+	id := "11111111-1111-1111-1111-111111111111"
+
+	bodyOnly := httptest.NewRecorder()
+	bodyRequest := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(`{"body":"# Updated"}`))
+	bodyRequest.Header.Set("Content-Type", "application/json")
+	bodyRequest.SetPathValue("id", id)
+	handler.Update(bodyOnly, bodyRequest, user)
+	if bodyOnly.Code != http.StatusOK || store.update.Body == nil || *store.update.Body != "# Updated" {
+		t.Fatalf("body-only status/update = %d/%#v", bodyOnly.Code, store.update)
+	}
+	if store.update.CollectionIDSet || store.update.Starred != nil {
+		t.Fatalf("body-only update changed metadata: %#v", store.update)
+	}
+
+	collectionID := "22222222-2222-2222-2222-222222222222"
+	metadataOnly := httptest.NewRecorder()
+	metadataRequest := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(`{"collectionId":"`+collectionID+`","starred":true}`))
+	metadataRequest.Header.Set("Content-Type", "application/json")
+	metadataRequest.SetPathValue("id", id)
+	handler.Update(metadataOnly, metadataRequest, user)
+	if metadataOnly.Code != http.StatusOK || store.update.Body != nil || !store.update.CollectionIDSet || store.update.CollectionID == nil || *store.update.CollectionID != collectionID || store.update.Starred == nil || !*store.update.Starred {
+		t.Fatalf("metadata-only status/update = %d/%#v", metadataOnly.Code, store.update)
+	}
+
+	unfiled := httptest.NewRecorder()
+	unfiledRequest := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(`{"collectionId":null}`))
+	unfiledRequest.Header.Set("Content-Type", "application/json")
+	unfiledRequest.SetPathValue("id", id)
+	handler.Update(unfiled, unfiledRequest, user)
+	if unfiled.Code != http.StatusOK || !store.update.CollectionIDSet || store.update.CollectionID != nil {
+		t.Fatalf("unfiled status/update = %d/%#v", unfiled.Code, store.update)
+	}
+}
+
+func TestHandlerRejectsEmptyAndInvalidCollectionUpdates(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store)
+	user := auth.User{ID: "user-1"}
+	id := "11111111-1111-1111-1111-111111111111"
+	for _, input := range []string{`{}`, `{"collectionId":"another-owner"}`} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(input))
+		request.Header.Set("Content-Type", "application/json")
+		request.SetPathValue("id", id)
+		handler.Update(recorder, request, user)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("input %s status = %d, body = %s", input, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestHandlerReportsSavedDocumentLimit(t *testing.T) {
 	store := &fakeStore{createErr: ErrLimitReached}
 	handler := NewHandler(store)
@@ -399,6 +454,7 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 type fakeStore struct {
 	ownerID      string
 	body         string
+	update       DocumentUpdate
 	maxSavedDocs int
 	createErr    error
 	getErr       error
@@ -441,10 +497,13 @@ func (s *fakeStore) Get(ctx context.Context, ownerID string, id string) (Documen
 	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}, nil
 }
 
-func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, body string) (Document, error) {
+func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error) {
 	s.ownerID = ownerID
-	s.body = body
-	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: body}, nil
+	s.update = update
+	if update.Body != nil {
+		s.body = *update.Body
+	}
+	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: s.body}, nil
 }
 
 func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) error {

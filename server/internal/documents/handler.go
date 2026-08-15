@@ -34,7 +34,7 @@ type documentStore interface {
 	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
 	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
-	Update(ctx context.Context, ownerID string, id string, body string) (Document, error)
+	Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error)
 	Archive(ctx context.Context, ownerID string, id string) error
 	Share(ctx context.Context, ownerID string, id string) (Document, error)
 	Unshare(ctx context.Context, ownerID string, id string) error
@@ -165,11 +165,19 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 	if !validateJSONMutation(w, r) {
 		return
 	}
-	var input bodyInput
+	var input documentUpdateInput
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if !validateDocumentBody(w, input.Body) {
+	if input.Body == nil && !input.CollectionID.Set && input.Starred == nil {
+		writeError(w, http.StatusBadRequest, "document update is empty")
+		return
+	}
+	if input.Body != nil && !validateDocumentBody(w, *input.Body) {
+		return
+	}
+	if input.CollectionID.Value != nil && !validUUID(*input.CollectionID.Value) {
+		writeError(w, http.StatusBadRequest, "collection not found")
 		return
 	}
 	id := r.PathValue("id")
@@ -177,9 +185,18 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
-	doc, err := h.store.Update(r.Context(), user.ID, id, input.Body)
+	doc, err := h.store.Update(r.Context(), user.ID, id, DocumentUpdate{
+		Body:            input.Body,
+		CollectionIDSet: input.CollectionID.Set,
+		CollectionID:    input.CollectionID.Value,
+		Starred:         input.Starred,
+	})
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	if errors.Is(err, ErrCollectionNotFound) {
+		writeError(w, http.StatusBadRequest, "collection not found")
 		return
 	}
 	if err != nil {
@@ -301,6 +318,31 @@ func (h *Handler) Public(w http.ResponseWriter, r *http.Request) {
 
 type bodyInput struct {
 	Body string `json:"body"`
+}
+
+type documentUpdateInput struct {
+	Body         *string        `json:"body"`
+	CollectionID nullableString `json:"collectionId"`
+	Starred      *bool          `json:"starred"`
+}
+
+type nullableString struct {
+	Set   bool
+	Value *string
+}
+
+func (value *nullableString) UnmarshalJSON(data []byte) error {
+	value.Set = true
+	if string(data) == "null" {
+		value.Value = nil
+		return nil
+	}
+	var decoded string
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	value.Value = &decoded
+	return nil
 }
 
 type shareResponse struct {

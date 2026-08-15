@@ -142,7 +142,17 @@ export function useEditorDocuments({
           const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
           if (cancelled) return;
           setDocs((prev) =>
-            prev.map((doc) => (doc.id === saved.id ? { ...saved, pinned: doc.pinned } : doc))
+            prev.map((doc) =>
+              doc.id === saved.id
+                ? {
+                    ...saved,
+                    collectionId: doc.collectionId,
+                    collectionSlug: doc.collectionSlug,
+                    starred: doc.starred,
+                    pinned: doc.pinned
+                  }
+                : doc
+            )
           );
           setSaveState("saved");
           setPendingSave(null);
@@ -166,14 +176,6 @@ export function useEditorDocuments({
     }
   }, [active, loadDocBody, userId]);
 
-  useEffect(() => {
-    if (!userId || saveState === "loading" || !active?.publicId) return;
-    const nextPath = `/write/${encodeURIComponent(active.publicId)}`;
-    if (window.location.pathname !== nextPath) {
-      window.history.replaceState(null, "", nextPath);
-    }
-  }, [active?.id, active?.publicId, saveState, userId]);
-
   function updateBody(body: string) {
     if (!active) return;
     setSaveState("saving");
@@ -188,9 +190,9 @@ export function useEditorDocuments({
     window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextPath);
   }
 
-  function selectDoc(doc: Doc) {
+  function selectDoc(doc: Doc, history: "push" | "replace" | "none" = "push") {
     setActiveId(doc.id);
-    updateEditorURL(doc, "push");
+    if (history !== "none") updateEditorURL(doc, history);
     void loadDocBody(doc);
   }
 
@@ -253,13 +255,9 @@ export function useEditorDocuments({
     );
   }
 
-  function togglePin(id: string) {
-    setDocs((prev) => prev.map((doc) => (doc.id === id ? { ...doc, pinned: !doc.pinned } : doc)));
-  }
-
   async function deleteDoc(id: string) {
     const doc = docs.find((candidate) => candidate.id === id);
-    if (!doc || doc.pinned || isShared(doc)) return;
+    if (!doc || isShared(doc)) return;
     const cancelledSave = pendingSave?.id === id ? pendingSave : null;
     if (cancelledSave) setPendingSave(null);
     setSaveState("saving");
@@ -270,7 +268,17 @@ export function useEditorDocuments({
         try {
           const saved = await apiUpdateDoc(cancelledSave.id, cancelledSave.body);
           setDocs((prev) =>
-            prev.map((current) => (current.id === saved.id ? { ...saved, pinned: current.pinned } : current))
+            prev.map((current) =>
+              current.id === saved.id
+                ? {
+                    ...saved,
+                    collectionId: current.collectionId,
+                    collectionSlug: current.collectionSlug,
+                    starred: current.starred,
+                    pinned: current.pinned
+                  }
+                : current
+            )
           );
         } catch {
           // The error state below covers both the failed deletion and failed save recovery.
@@ -328,7 +336,6 @@ export function useEditorDocuments({
     setPendingSave,
     setSaveState,
     setDocumentFilter,
-    togglePin,
     updateBody
   };
 }

@@ -14,6 +14,7 @@ import (
 )
 
 var ErrNotFound = errors.New("document not found")
+var ErrCollectionNotFound = errors.New("collection not found")
 var ErrShared = errors.New("shared document cannot be archived")
 var ErrLimitReached = errors.New("saved document limit reached")
 var errPublicIDCollision = errors.New("public id collision")
@@ -21,27 +22,40 @@ var errPublicIDCollision = errors.New("public id collision")
 const NoSavedDocumentLimit = -1
 
 type Document struct {
-	ID         string     `json:"id"`
-	PublicID   string     `json:"publicId"`
-	Title      string     `json:"title"`
-	Body       string     `json:"body"`
-	ShareToken *string    `json:"shareToken,omitempty"`
-	SharedAt   *time.Time `json:"sharedAt,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
-	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	ID             string     `json:"id"`
+	PublicID       string     `json:"publicId"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	CollectionID   *string    `json:"collectionId"`
+	CollectionSlug *string    `json:"collectionSlug"`
+	Starred        bool       `json:"starred"`
+	ShareToken     *string    `json:"shareToken,omitempty"`
+	SharedAt       *time.Time `json:"sharedAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	ArchivedAt     *time.Time `json:"archivedAt,omitempty"`
 }
 
 type DocumentMetadata struct {
-	ID         string     `json:"id"`
-	PublicID   string     `json:"publicId"`
-	Title      string     `json:"title"`
-	Excerpt    string     `json:"excerpt"`
-	Tags       []string   `json:"tags"`
-	ShareToken *string    `json:"shareToken,omitempty"`
-	SharedAt   *time.Time `json:"sharedAt,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
+	ID             string     `json:"id"`
+	PublicID       string     `json:"publicId"`
+	Title          string     `json:"title"`
+	Excerpt        string     `json:"excerpt"`
+	Tags           []string   `json:"tags"`
+	CollectionID   *string    `json:"collectionId"`
+	CollectionSlug *string    `json:"collectionSlug"`
+	Starred        bool       `json:"starred"`
+	ShareToken     *string    `json:"shareToken,omitempty"`
+	SharedAt       *time.Time `json:"sharedAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+}
+
+type DocumentUpdate struct {
+	Body            *string
+	CollectionIDSet bool
+	CollectionID    *string
+	Starred         *bool
 }
 
 type ListCursor struct {
@@ -59,11 +73,14 @@ func NewStore(db *database.Pool) *Store {
 
 func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
-		FROM documents
-		WHERE owner_user_id = $1
-		  AND archived_at IS NULL
-		ORDER BY updated_at DESC
+		SELECT d.id::text, d.public_id, d.title, d.body,
+		       d.collection_id::text, c.slug, d.starred,
+		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
+		FROM documents d
+		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
+		WHERE d.owner_user_id = $1
+		  AND d.archived_at IS NULL
+		ORDER BY d.updated_at DESC
 	`, ownerID)
 	if err != nil {
 		return nil, err
@@ -89,12 +106,15 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 		cursorID = &cursor.ID
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, public_id, left(body, 4096), share_token, shared_at, created_at, updated_at
-		FROM documents
-		WHERE owner_user_id = $1
-		  AND archived_at IS NULL
-		  AND ($2::timestamptz IS NULL OR (updated_at, id) < ($2, $3::uuid))
-		ORDER BY updated_at DESC, id DESC
+		SELECT d.id::text, d.public_id, left(d.body, 4096),
+		       d.collection_id::text, c.slug, d.starred,
+		       d.share_token, d.shared_at, d.created_at, d.updated_at
+		FROM documents d
+		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
+		WHERE d.owner_user_id = $1
+		  AND d.archived_at IS NULL
+		  AND ($2::timestamptz IS NULL OR (d.updated_at, d.id) < ($2, $3::uuid))
+		ORDER BY d.updated_at DESC, d.id DESC
 		LIMIT $4
 	`, ownerID, cursorUpdatedAt, cursorID, limit)
 	if err != nil {
@@ -105,7 +125,18 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 	docs := []DocumentMetadata{}
 	for rows.Next() {
 		var doc DocumentMetadata
-		if err := rows.Scan(&doc.ID, &doc.PublicID, &doc.Excerpt, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&doc.ID,
+			&doc.PublicID,
+			&doc.Excerpt,
+			&doc.CollectionID,
+			&doc.CollectionSlug,
+			&doc.Starred,
+			&doc.ShareToken,
+			&doc.SharedAt,
+			&doc.CreatedAt,
+			&doc.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		doc.Title = titleOf(doc.Excerpt)
@@ -158,8 +189,23 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 	err = tx.QueryRow(ctx, `
 		INSERT INTO documents (owner_user_id, public_id, title, body)
 		VALUES ($1, $2, $3, $4)
-		RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, publicID, titleOf(body), body).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+		RETURNING id::text, public_id, title, body,
+		          collection_id::text, NULL::text, starred,
+		          share_token, shared_at, created_at, updated_at, archived_at
+	`, ownerID, publicID, titleOf(body), body).Scan(
+		&doc.ID,
+		&doc.PublicID,
+		&doc.Title,
+		&doc.Body,
+		&doc.CollectionID,
+		&doc.CollectionSlug,
+		&doc.Starred,
+		&doc.ShareToken,
+		&doc.SharedAt,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+		&doc.ArchivedAt,
+	)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return Document{}, errPublicIDCollision
@@ -179,34 +225,102 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, e
 	}
 	var doc Document
 	err := s.db.QueryRow(ctx, `
-		SELECT id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
-		FROM documents
-		WHERE owner_user_id = $1
-		  AND id = $2
-		  AND archived_at IS NULL
-	`, ownerID, id).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+		SELECT d.id::text, d.public_id, d.title, d.body,
+		       d.collection_id::text, c.slug, d.starred,
+		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
+		FROM documents d
+		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
+		WHERE d.owner_user_id = $1
+		  AND d.id = $2
+		  AND d.archived_at IS NULL
+	`, ownerID, id).Scan(
+		&doc.ID,
+		&doc.PublicID,
+		&doc.Title,
+		&doc.Body,
+		&doc.CollectionID,
+		&doc.CollectionSlug,
+		&doc.Starred,
+		&doc.ShareToken,
+		&doc.SharedAt,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+		&doc.ArchivedAt,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
 	return doc, err
 }
 
-func (s *Store) Update(ctx context.Context, ownerID string, id string, body string) (Document, error) {
+func (s *Store) Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error) {
 	if !validUUID(id) {
 		return Document{}, ErrNotFound
 	}
+	body := ""
+	bodySet := update.Body != nil
+	if bodySet {
+		body = *update.Body
+	}
+	starred := false
+	starredSet := update.Starred != nil
+	if starredSet {
+		starred = *update.Starred
+	}
 	var doc Document
 	err := s.db.QueryRow(ctx, `
-		UPDATE documents
-		SET title = $3,
-		    body = $4,
-		    updated_at = now()
-		WHERE owner_user_id = $1
-		  AND id = $2
-		  AND archived_at IS NULL
-		RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, id, titleOf(body), body).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+		WITH updated AS (
+			UPDATE documents d
+			SET title = CASE WHEN $3 THEN $4 ELSE d.title END,
+			    body = CASE WHEN $3 THEN $5 ELSE d.body END,
+			    collection_id = CASE WHEN $6 THEN $7 ELSE d.collection_id END,
+			    starred = CASE WHEN $8 THEN $9 ELSE d.starred END,
+			    updated_at = now()
+			WHERE d.owner_user_id = $1
+			  AND d.id = $2
+			  AND d.archived_at IS NULL
+			  AND (
+			    NOT $6
+			    OR $7::uuid IS NULL
+			    OR EXISTS (
+			      SELECT 1 FROM collections c
+			      WHERE c.owner_user_id = $1 AND c.id = $7
+			    )
+			  )
+			RETURNING d.*
+		)
+		SELECT d.id::text, d.public_id, d.title, d.body,
+		       d.collection_id::text, c.slug, d.starred,
+		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
+		FROM updated d
+		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
+	`, ownerID, id, bodySet, titleOf(body), body, update.CollectionIDSet, update.CollectionID, starredSet, starred).Scan(
+		&doc.ID,
+		&doc.PublicID,
+		&doc.Title,
+		&doc.Body,
+		&doc.CollectionID,
+		&doc.CollectionSlug,
+		&doc.Starred,
+		&doc.ShareToken,
+		&doc.SharedAt,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+		&doc.ArchivedAt,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
+		var documentExists bool
+		if existsErr := s.db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM documents
+				WHERE owner_user_id = $1 AND id = $2 AND archived_at IS NULL
+			)
+		`, ownerID, id).Scan(&documentExists); existsErr != nil {
+			return Document{}, existsErr
+		}
+		if documentExists && update.CollectionIDSet && update.CollectionID != nil {
+			return Document{}, ErrCollectionNotFound
+		}
 		return Document{}, ErrNotFound
 	}
 	return doc, err
@@ -263,14 +377,34 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 	}
 	var doc Document
 	err := s.db.QueryRow(ctx, `
+		WITH updated AS (
 		UPDATE documents
 		SET shared_at = COALESCE(shared_at, now()),
 		    updated_at = now()
 		WHERE owner_user_id = $1
 		  AND id = $2
 		  AND archived_at IS NULL
-		RETURNING id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, id).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+		RETURNING *
+		)
+		SELECT d.id::text, d.public_id, d.title, d.body,
+		       d.collection_id::text, c.slug, d.starred,
+		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
+		FROM updated d
+		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
+	`, ownerID, id).Scan(
+		&doc.ID,
+		&doc.PublicID,
+		&doc.Title,
+		&doc.Body,
+		&doc.CollectionID,
+		&doc.CollectionSlug,
+		&doc.Starred,
+		&doc.ShareToken,
+		&doc.SharedAt,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+		&doc.ArchivedAt,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
@@ -304,7 +438,9 @@ func (s *Store) GetPublic(ctx context.Context, token string) (Document, error) {
 	}
 	var doc Document
 	err := s.db.QueryRow(ctx, `
-		SELECT id::text, public_id, title, body, share_token, shared_at, created_at, updated_at, archived_at
+		SELECT id::text, public_id, title, body,
+		       NULL::text, NULL::text, false,
+		       share_token, shared_at, created_at, updated_at, archived_at
 		FROM documents
 		WHERE (public_id = $1 OR share_token = $1)
 		  AND shared_at IS NOT NULL
@@ -322,7 +458,20 @@ type scanner interface {
 
 func scanDocument(row scanner) (Document, error) {
 	var doc Document
-	err := row.Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	err := row.Scan(
+		&doc.ID,
+		&doc.PublicID,
+		&doc.Title,
+		&doc.Body,
+		&doc.CollectionID,
+		&doc.CollectionSlug,
+		&doc.Starred,
+		&doc.ShareToken,
+		&doc.SharedAt,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+		&doc.ArchivedAt,
+	)
 	return doc, err
 }
 

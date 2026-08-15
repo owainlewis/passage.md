@@ -166,13 +166,15 @@ func (s *routeDocumentStore) Get(ctx context.Context, ownerID string, id string)
 	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body}, nil
 }
 
-func (s *routeDocumentStore) Update(ctx context.Context, ownerID string, id string, body string) (documents.Document, error) {
+func (s *routeDocumentStore) Update(ctx context.Context, ownerID string, id string, update documents.DocumentUpdate) (documents.Document, error) {
 	s.ownerID = ownerID
 	if ownerID != "user-1" || id != "11111111-1111-1111-1111-111111111111" {
 		return documents.Document{}, documents.ErrNotFound
 	}
-	s.body = body
-	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil
+	if update.Body != nil {
+		s.body = *update.Body
+	}
+	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body}, nil
 }
 
 func (s *routeDocumentStore) Archive(ctx context.Context, ownerID string, id string) error {

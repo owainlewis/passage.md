@@ -627,6 +627,974 @@ button {
   opacity: 0.7;
 }
 
+/* ------------------------------------------------------- workspace direction */
+
+.workspaceSidebarHead {
+  padding-bottom: 20px;
+}
+
+.workspaceSidebarSearch {
+  min-width: 268px;
+  padding: 0 10px 14px;
+}
+
+.workspaceSidebarSearch > button {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  box-shadow: 0 1px 2px rgba(27, 26, 23, 0.025);
+}
+
+.workspaceSidebarSearch > button:hover,
+.workspaceSidebarSearch > button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--hairline-strong));
+  color: var(--ink);
+}
+
+.workspaceSidebarSearch svg {
+  width: 15px;
+  height: 15px;
+}
+
+.workspaceSidebarSearch span {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.workspaceSidebarSearch kbd,
+.workspaceSearchInput kbd,
+.workspaceSearchButton kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--sidebar-bg);
+  color: var(--faint);
+  font: 0.625rem/1.2 var(--mono);
+}
+
+.workspaceDestinations {
+  min-width: 268px;
+  padding: 0 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.workspaceDestination,
+.workspaceSidebarCollection {
+  width: 100%;
+  min-height: 35px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 550;
+  text-align: left;
+}
+
+.workspaceDestination span,
+.workspaceSidebarCollection > span:nth-child(2) {
+  flex: 1 1 auto;
+}
+
+.workspaceDestination small,
+.workspaceSidebarCollection small {
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+
+.workspaceDestination:hover,
+.workspaceDestination:focus-visible,
+.workspaceSidebarCollection:hover,
+.workspaceSidebarCollection:focus-visible,
+.workspaceDestination[data-active="true"],
+.workspaceSidebarCollection[data-active="true"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.workspaceDestination[data-active="true"],
+.workspaceSidebarCollection[data-active="true"] {
+  font-weight: 650;
+}
+
+.workspaceSidebarCollections {
+  min-width: 268px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 10px;
+}
+
+.workspaceSidebarLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px 7px;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.workspaceSidebarLabel button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.workspaceSidebarLabel .workspaceSidebarCollectionsLink {
+  font-size: 0.6875rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.workspaceSidebarLabel .workspaceSidebarCollectionAdd {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.workspaceSidebarLabel .workspaceSidebarCollectionAdd:hover,
+.workspaceSidebarLabel .workspaceSidebarCollectionAdd:focus-visible {
+  background: var(--hover-soft);
+}
+
+.workspaceSidebarLabel button:hover,
+.workspaceSidebarLabel button:focus-visible {
+  color: var(--ink);
+}
+
+.workspaceSidebarFoot {
+  gap: 0;
+}
+
+.workspaceMobileNav {
+  display: none;
+}
+
+.workspaceHub {
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(36px, 5vw, 60px) clamp(24px, 6vw, 76px) 104px;
+  background: var(--bg);
+}
+
+.workspaceHub > * {
+  width: min(100%, 1080px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.workspaceHubLoading {
+  position: relative;
+}
+
+.workspaceHubLoading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px;
+  border: 2px solid var(--hairline);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.workspaceHero,
+.workspacePageHeader,
+.workspaceCollectionHeader {
+  max-width: 760px;
+  margin-left: 0;
+}
+
+.workspaceHero {
+  margin-bottom: 40px;
+}
+
+.workspaceHero h1,
+.workspacePageHeader h1,
+.workspaceCollectionHeader h1 {
+  margin: 0;
+  color: var(--ink-display);
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+}
+
+.workspaceHero h1 {
+  max-width: none;
+  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+  line-height: 1.12;
+}
+
+.workspacePageHeader h1,
+.workspaceCollectionHeader h1 {
+  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+  line-height: 1.1;
+}
+
+.workspaceHero > p:last-of-type,
+.workspacePageHeader > p:last-child,
+.workspaceCollectionHeader > p {
+  max-width: 650px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.workspacePageHeader {
+  margin-bottom: 34px;
+}
+
+.workspacePageHeaderLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.workspacePageHeaderLine button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.workspacePageHeaderLine button:hover,
+.workspacePageHeaderLine button:focus-visible {
+  background: var(--hover-soft);
+  color: var(--ink);
+}
+
+.workspaceHeroActions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.workspaceSearchButton {
+  width: min(100%, 580px);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 15px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.workspaceSearchButton:hover,
+.workspaceSearchButton:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--hairline-strong));
+  color: var(--ink);
+}
+
+.workspaceSearchButton span {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.workspaceSecondaryButton {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.workspaceSecondaryButton {
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.workspaceSecondaryButton:hover,
+.workspaceSecondaryButton:focus-visible {
+  background: var(--hover-soft);
+  color: var(--ink);
+}
+
+.workspaceCollectionDelete {
+  min-height: 38px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 0.7rem;
+}
+
+.workspaceCollectionDelete:hover,
+.workspaceCollectionDelete:focus-visible {
+  color: #a04a3e;
+}
+
+.workspaceCollectionSection {
+  margin-top: 24px;
+}
+
+.workspaceCollectionToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 34px;
+  margin-bottom: 10px;
+}
+
+.workspaceCollectionToolbarTitle span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.workspaceCollectionUtilityActions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.workspaceCollectionUtilityActions button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 550;
+}
+
+.workspaceCollectionUtilityActions button:hover,
+.workspaceCollectionUtilityActions button:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--hover-soft);
+  color: var(--ink);
+}
+
+.workspaceCollectionUtilityActions .workspaceCollectionDelete {
+  min-height: 30px;
+  margin-left: 5px;
+  padding-left: 11px;
+  border-left-color: var(--hairline);
+  border-radius: 0;
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.workspaceCollectionUtilityActions .workspaceCollectionDelete:hover,
+.workspaceCollectionUtilityActions .workspaceCollectionDelete:focus-visible {
+  border-top-color: transparent;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  background: transparent;
+  color: #a04a3e;
+}
+
+.workspaceSection {
+  margin-top: 36px;
+}
+
+.workspaceSectionHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.workspaceSectionHeading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.workspaceSectionHeading button,
+.workspaceSectionHeading span {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+
+.workspaceSectionHeading button:hover,
+.workspaceSectionHeading button:focus-visible {
+  color: var(--ink);
+}
+
+.workspaceCollectionGrid {
+  display: block;
+  border-top: 1px solid var(--hairline);
+}
+
+.workspaceCollectionCard {
+  width: 100%;
+  min-height: 76px;
+  display: block;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.workspaceCollectionCard:hover,
+.workspaceCollectionCard:focus-visible {
+  background: var(--hover-soft);
+}
+
+.workspaceCollectionBody {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.workspaceCollectionTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.workspaceCollectionTitle strong {
+  font-family: var(--serif);
+  font-size: 0.98rem;
+  font-weight: 400;
+}
+
+.workspaceCollectionTitle small {
+  color: var(--faint);
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+.workspaceDocumentList {
+  border-top: 1px solid var(--hairline);
+  background: transparent;
+}
+
+.workspaceDocumentRow {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+  transition: background 0.12s ease;
+}
+
+.workspaceDocumentRow:last-child {
+  border-bottom: 0;
+}
+
+.workspaceDocumentOpen {
+  min-width: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 12px 8px 12px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.workspaceDocumentOpen:hover,
+.workspaceDocumentOpen:focus-visible {
+  outline: 0;
+}
+
+.workspaceDocumentRow:hover,
+.workspaceDocumentRow:focus-within {
+  background: var(--hover-soft);
+}
+
+.workspaceDocumentIcon {
+  width: 30px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--sidebar-bg);
+  color: var(--muted);
+}
+
+.workspaceDocumentText {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workspaceDocumentText strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceDocumentText small {
+  color: var(--faint);
+  font-size: 0.625rem;
+}
+
+.workspaceDocumentMeta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspaceDocumentSummary {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceCollectionSelect,
+.topBarCollectionSelect {
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 600 0.6875rem/1 var(--sans);
+}
+
+.workspaceCollectionSelect {
+  max-width: 132px;
+  min-height: 30px;
+  padding: 0 24px 0 8px;
+  border-color: transparent;
+}
+
+.topBarCollectionSelect {
+  max-width: 145px;
+  min-height: 30px;
+  padding: 0 24px 0 8px;
+}
+
+.workspaceStarButton {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--faint);
+}
+
+.workspaceStarButton:hover,
+.workspaceStarButton:focus-visible {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.workspaceStarButton svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspaceDocumentActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.workspaceDocumentActions:has(.workspaceStarButton[data-pinned="true"]) {
+  opacity: 1;
+}
+
+.workspaceDocumentRow:hover .workspaceDocumentActions,
+.workspaceDocumentRow:focus-within .workspaceDocumentActions {
+  opacity: 1;
+}
+
+.workspaceStarButton[data-pinned="true"] {
+  color: var(--accent);
+}
+
+.workspaceEmptyList {
+  margin: 0;
+  padding: 38px 20px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.workspaceCollectionDialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 30%, transparent);
+}
+
+.workspaceCollectionDialog {
+  width: min(100%, 420px);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px color-mix(in srgb, #000 20%, transparent);
+}
+
+.workspaceCollectionDialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+}
+
+.workspaceCollectionDialog header h2 {
+  margin: 0;
+  color: var(--ink-display);
+  font-family: var(--serif);
+  font-size: 1.4rem;
+  font-weight: 400;
+}
+
+.workspaceCollectionDialog header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.workspaceCollectionDialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.workspaceCollectionDialog label small {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.workspaceCollectionDialog input,
+.workspaceCollectionDialog textarea {
+  width: 100%;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 0.82rem/1.45 var(--sans);
+}
+
+.workspaceCollectionDialog input {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.workspaceCollectionDialog textarea {
+  resize: vertical;
+  padding: 9px 10px;
+}
+
+.workspaceCollectionDialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspaceCollectionDialog footer button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.workspaceCollectionDialog footer button[type="submit"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--accent-contrast);
+}
+
+.workspaceCollectionDialog footer button:disabled {
+  opacity: 0.45;
+}
+
+@media (hover: none) {
+  .workspaceDocumentActions {
+    opacity: 1;
+  }
+}
+
+.topBarDelete {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.topBarDelete:hover,
+.topBarDelete:focus-visible {
+  border-color: color-mix(in srgb, #a04a3e 32%, var(--hairline));
+  color: #a04a3e;
+}
+
+.workspaceSearchBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 9vh 20px 20px;
+  background: rgba(27, 26, 23, 0.24);
+}
+
+.workspaceSearchDialog {
+  width: min(640px, 100%);
+  max-height: 78vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--elevated);
+  box-shadow: 0 20px 60px rgba(27, 26, 23, 0.16);
+}
+
+.workspaceSearchInput {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.workspaceSearchInput svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+
+.workspaceSearchInput input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.workspaceSearchScopes {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.workspaceSearchScopes button {
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.workspaceSearchScopes button[data-active="true"] {
+  box-shadow: inset 0 -1px var(--ink);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.workspaceSearchResults {
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.workspaceSearchResults > p {
+  margin: 6px 9px 8px;
+  color: var(--faint);
+  font: 600 0.625rem/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workspaceSearchResults > button {
+  width: 100%;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.workspaceSearchResults > button:hover,
+.workspaceSearchResults > button:focus-visible {
+  background: var(--hover-soft);
+}
+
+.workspaceSearchResults > button > span:nth-child(2) {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+}
+
+.workspaceSearchResults strong {
+  font-size: 0.78rem;
+}
+
+.workspaceSearchResults small {
+  color: var(--faint);
+  font-size: 0.625rem;
+}
+
+.workspaceSearchResults em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceSearchResults > button > svg {
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+}
+
+.workspaceSearchEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 48px 20px;
+  color: var(--muted);
+}
+
+.workspaceSearchEmpty span {
+  font-size: 0.75rem;
+}
+
+.workspaceSearchFooter {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 15px;
+  border-top: 1px solid var(--hairline);
+  background: var(--sidebar-bg);
+  color: var(--faint);
+  font-size: 0.625rem;
+}
+
+.workspaceLoadMore {
+  display: flex;
+  justify-content: center;
+  padding: 0 32px 48px;
+}
+
+.workspaceLoadMore button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted-strong);
+  font: 600 12px/1 var(--font-sans);
+  padding: 11px 18px;
+}
+
+.workspaceLoadMore button:hover,
+.workspaceLoadMore button:focus-visible {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+.workspaceSearchFooter span:last-child {
+  margin-left: auto;
+}
+
+
 /* -------------------------------------------------------------------- main */
 
 .main {
@@ -3381,4 +4349,173 @@ button {
     --text-h1: 1.875rem;
     --text-h2: 1.375rem;
   }
+}
+
+@media (max-width: 720px) {
+  .workspace {
+    padding-bottom: 64px;
+  }
+
+  .topBar {
+    grid-template-columns: auto 1fr;
+    gap: 6px;
+    padding: 0 8px;
+    overflow: hidden;
+  }
+
+  .topCluster.end {
+    min-width: 0;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    position: absolute;
+    z-index: 20;
+    top: 56px;
+    bottom: 0;
+    left: 0;
+    box-shadow: 4px 0 24px rgba(27, 26, 23, 0.12);
+  }
+
+  .workspaceMobileNav {
+    position: fixed;
+    z-index: 90;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 64px;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    padding: 5px 8px max(5px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .workspaceMobileNav button {
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 0.625rem;
+  }
+
+  .workspaceMobileNav button[data-active="true"] {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .workspaceMobileNav button small {
+    display: none;
+  }
+
+  .workspaceMobileNav svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .docTitle {
+    display: none;
+  }
+
+  .modeToggle button {
+    padding: 7px 10px;
+  }
+
+  .userMenuWrap {
+    margin-left: 0;
+  }
+
+  .writingPane,
+  .shareScroll {
+    padding: 40px 22px 18vh;
+  }
+
+  .workspaceHub {
+    padding: 38px 18px 80px;
+  }
+
+  .workspaceHero {
+    margin-bottom: 40px;
+  }
+
+  .workspaceHero h1 {
+    font-size: 2.35rem;
+  }
+
+  .workspaceHero > p:last-of-type,
+  .workspacePageHeader > p:last-child,
+  .workspaceCollectionHeader > p {
+    font-size: 0.98rem;
+  }
+
+  .workspaceHeroActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspaceSearchButton {
+    width: 100%;
+  }
+
+  .workspaceSearchButton kbd {
+    display: none;
+  }
+
+  .workspaceCollectionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspaceCollectionCard {
+    min-height: 76px;
+  }
+
+  .workspaceDocumentSummary,
+  .workspaceCollectionSelect {
+    display: none;
+  }
+
+  .workspaceDocumentText {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .workspaceCollectionToolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .workspaceCollectionUtilityActions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .workspaceSearchBackdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .workspaceSearchDialog {
+    width: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .workspaceSearchFooter {
+    display: none;
+  }
+
+  .topBarCollectionSelect {
+    display: none;
+  }
+
 }

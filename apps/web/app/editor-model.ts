@@ -9,6 +9,9 @@ export type Doc = {
   excerpt?: string;
   tags?: string[];
   pinned?: boolean;
+  starred?: boolean;
+  collectionId?: string | null;
+  collectionSlug?: string | null;
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;

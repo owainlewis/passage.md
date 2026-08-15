@@ -40,7 +40,7 @@ func TestStoreRejectsMalformedDocumentIDsWithoutDatabase(t *testing.T) {
 	if _, err := store.Get(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get error = %v, want %v", err, ErrNotFound)
 	}
-	if _, err := store.Update(context.Background(), "user-1", "not-a-uuid", "# One"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Update(context.Background(), "user-1", "not-a-uuid", DocumentUpdate{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Update error = %v, want %v", err, ErrNotFound)
 	}
 	if err := store.Archive(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {
