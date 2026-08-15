@@ -34,22 +34,35 @@ function contrast(first: string, second: string) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function compositeBlack(background: string, overlay: string) {
-  const alpha = Number.parseFloat(overlay.match(/rgba\(0, 0, 0, ([\d.]+)\)/)?.[1] ?? "0");
+function composite(background: string, overlay: string) {
+  const match = overlay.match(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/);
+  const foreground = match ? match.slice(1, 4).map(Number) : [0, 0, 0];
+  const alpha = Number.parseFloat(match?.[4] ?? "0");
   return `#${rgb(background)
-    .map((channel) => Math.round(channel * (1 - alpha)).toString(16).padStart(2, "0"))
+    .map((channel, index) => Math.round(channel * (1 - alpha) + foreground[index] * alpha).toString(16).padStart(2, "0"))
     .join("")}`;
 }
 
 describe("light workspace contrast", () => {
   const light = customProperties(declarationsFor(':root:not([data-theme="dark"]) .workspace'));
-  const backgrounds = ["#fbfbf9", "#f5f4f1"];
+  const backgrounds = [light["--surface"], light["--sidebar-bg"]];
   const stateBackgrounds = backgrounds.flatMap((background) => [
     background,
-    compositeBlack(background, light["--hover-soft"]),
-    compositeBlack(background, light["--hover"]),
-    compositeBlack(background, light["--hover-strong"])
+    composite(background, light["--hover-soft"]),
+    composite(background, light["--hover"]),
+    composite(background, light["--hover-strong"])
   ]);
+
+  it("uses warmer, dimmer paper surfaces and quiet decorative rules", () => {
+    expect(light).toMatchObject({
+      "--bg": "#f2efe8",
+      "--sidebar-bg": "#efebe2",
+      "--surface": "#f7f4ed",
+      "--hairline": "#d9d4c9"
+    });
+    expect(luminance(light["--surface"])).toBeLessThan(luminance("#fbfbf9"));
+    expect(contrast(light["--hairline"], light["--surface"])).toBeLessThan(1.5);
+  });
 
   it.each(["--muted", "--faint"])("keeps %s normal text at WCAG AA contrast in every interaction state", (token) => {
     for (const background of stateBackgrounds) {
@@ -59,7 +72,7 @@ describe("light workspace contrast", () => {
 
   it("preserves a secondary hierarchy without making faint copy non-compliant", () => {
     expect(luminance(light["--faint"])).toBeGreaterThan(luminance(light["--muted"]));
-    expect(contrast(light["--faint"], "#f5f4f1")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(light["--faint"], light["--sidebar-bg"])).toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps meaningful control boundaries at non-text contrast", () => {
@@ -108,10 +121,11 @@ describe("light workspace contrast", () => {
   });
 
   it("provides a three-to-one focus indicator without changing dark theme tokens", () => {
-    expect(contrast("#48685f", "#fbfbf9")).toBeGreaterThanOrEqual(3);
+    expect(contrast("#48685f", light["--surface"])).toBeGreaterThanOrEqual(3);
     expect(stylesheet).toMatch(
       /:root:not\(\[data-theme="dark"\]\) \.workspace\s+:is\(button, a, select, input, textarea\)[^{]*:focus-visible\s*\{[^}]*outline: 2px solid var\(--accent\);/
     );
+    expect(declarationsFor(':root[data-theme="dark"] .statusDock')).toContain("border-color: var(--hairline-strong);");
 
     const dark = customProperties(declarationsFor(':root[data-theme="dark"]'));
     expect(dark).toMatchObject({
@@ -134,9 +148,9 @@ describe("light workspace contrast", () => {
 
   it("keeps hover, active, selected, disabled, and error states distinct", () => {
     expect(light).toMatchObject({
-      "--hover": "rgba(0, 0, 0, 0.075)",
-      "--hover-soft": "rgba(0, 0, 0, 0.055)",
-      "--hover-strong": "rgba(0, 0, 0, 0.11)"
+      "--hover": "rgba(55, 50, 42, 0.07)",
+      "--hover-soft": "rgba(55, 50, 42, 0.045)",
+      "--hover-strong": "rgba(55, 50, 42, 0.105)"
     });
     expect(declarationsFor('.workspaceDestination[data-active="true"],\n.workspaceSidebarCollection[data-active="true"]')).toContain(
       "font-weight: 650"

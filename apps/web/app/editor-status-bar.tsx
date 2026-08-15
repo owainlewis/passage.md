@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Mode, saveLabel, SaveState, ShareState } from "./editor-model";
 import { DownloadIcon, EyeIcon, PencilIcon, SaveStatusIcon, ShareIcon } from "./icons";
 
@@ -9,10 +8,9 @@ type EditorStatusBarProps = {
   mode: Mode;
   onExport: () => void;
   onModeChange: (mode: Mode) => void;
-  onShare: () => void;
-  onUnshare: () => void;
-  publicDocPath: string;
+  onOpenShare: () => void;
   saveState: SaveState;
+  shareDialogOpen: boolean;
   shareButtonLabel: string;
   shareState: ShareState;
   showSaveState: boolean;
@@ -24,10 +22,9 @@ export function EditorStatusBar({
   mode,
   onExport,
   onModeChange,
-  onShare,
-  onUnshare,
-  publicDocPath,
+  onOpenShare,
   saveState,
+  shareDialogOpen,
   shareButtonLabel,
   shareState,
   showSaveState,
@@ -71,31 +68,15 @@ export function EditorStatusBar({
           <button
             type="button"
             className="dockButton shareToggle"
-            aria-pressed={activeShared}
-            onClick={() => void (activeShared ? onUnshare() : onShare())}
-            title={
-              shareState === "toolong"
-                ? "This document is too long to share as a link"
-                : activeShared
-                  ? "Click to unshare"
-                  : undefined
-            }
+            aria-expanded={shareDialogOpen}
+            aria-haspopup="dialog"
+            data-shared={activeShared}
+            onClick={onOpenShare}
+            title={shareState === "toolong" ? "This document is too long to share as a link" : undefined}
           >
             <ShareIcon />
             <span>{shareButtonLabel}</span>
           </button>
-          {publicDocPath && (
-            <Link
-              className="dockButton publicDocLink"
-              href={publicDocPath}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Open public document"
-            >
-              <EyeIcon />
-              <span>View</span>
-            </Link>
-          )}
           <button type="button" className="dockButton" onClick={onExport}>
             <DownloadIcon />
             <span>Export</span>

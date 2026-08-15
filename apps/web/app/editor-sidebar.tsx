@@ -1,9 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Brand } from "./brand";
 import { Doc } from "./editor-model";
 import { collectionForDoc, WorkspaceCollection, WorkspaceView } from "./editor-workspace-model";
-import { DocIcon, SearchIcon } from "./icons";
+import { DocIcon, HomeIcon, RecentIcon, SearchIcon, StarIcon } from "./icons";
 
 type EditorSidebarProps = {
   assignments: Record<string, string>;
@@ -43,7 +44,13 @@ export function EditorSidebar({
 
   return (
     <>
-      <aside className="sidebar workspaceSidebar" aria-label="Workspace navigation" data-open={sidebarOpen}>
+      <aside
+        className="sidebar workspaceSidebar"
+        aria-hidden={!sidebarOpen}
+        aria-label="Workspace navigation"
+        data-open={sidebarOpen}
+        inert={sidebarOpen ? undefined : true}
+      >
         <div className="sidebarHead workspaceSidebarHead">
           <Brand href="/write" />
         </div>
@@ -104,13 +111,22 @@ export function EditorSidebar({
       </aside>
 
       <nav className="workspaceMobileNav" aria-label="Mobile workspace navigation">
-        <SidebarDestination active={view.type === "home" && !templatesActive} label="Home" onClick={() => onOpenView({ type: "home" })} />
-        <SidebarDestination active={view.type === "starred" && !templatesActive} label="Starred" onClick={() => onOpenView({ type: "starred" })} />
-        <button type="button" onClick={onOpenSearch}><SearchIcon /><span>Search</span></button>
-        <SidebarDestination active={view.type === "recent" && !templatesActive} label="Recent" onClick={() => onOpenView({ type: "recent" })} />
-        <button type="button" data-active={view.type === "collections" || view.type === "collection"} onClick={() => onOpenView({ type: "collections" })}><DocIcon /><span>Collections</span></button>
+        <MobileDestination active={view.type === "home" && !templatesActive} icon={<HomeIcon />} label="Home" onClick={() => onOpenView({ type: "home" })} />
+        <MobileDestination active={view.type === "starred" && !templatesActive} icon={<StarIcon filled={false} />} label="Starred" onClick={() => onOpenView({ type: "starred" })} />
+        <MobileDestination active={false} icon={<SearchIcon />} label="Search" onClick={onOpenSearch} />
+        <MobileDestination active={view.type === "recent" && !templatesActive} icon={<RecentIcon />} label="Recent" onClick={() => onOpenView({ type: "recent" })} />
+        <MobileDestination active={view.type === "collections" || view.type === "collection"} icon={<DocIcon />} label="Collections" onClick={() => onOpenView({ type: "collections" })} />
       </nav>
     </>
+  );
+}
+
+function MobileDestination({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button type="button" data-active={active} onClick={onClick}>
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }
 
