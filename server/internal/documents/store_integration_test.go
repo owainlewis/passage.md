@@ -110,11 +110,19 @@ func TestStoreSearchCoversFullBodiesRankingScopesAndIsolation(t *testing.T) {
 		_, _ = db.Exec(context.Background(), `DELETE FROM users WHERE id = ANY($1::uuid[])`, []string{ownerID, otherID})
 	})
 	var researchID string
-	if err := db.QueryRow(ctx, `SELECT id::text FROM collections WHERE owner_user_id = $1 AND slug = 'research'`, ownerID).Scan(&researchID); err != nil {
+	if err := db.QueryRow(ctx, `
+		INSERT INTO collections (owner_user_id, slug, title)
+		VALUES ($1, 'research', 'Research')
+		RETURNING id::text
+	`, ownerID).Scan(&researchID); err != nil {
 		t.Fatal(err)
 	}
 	var otherCollectionID string
-	if err := db.QueryRow(ctx, `SELECT id::text FROM collections WHERE owner_user_id = $1 AND slug = 'research'`, otherID).Scan(&otherCollectionID); err != nil {
+	if err := db.QueryRow(ctx, `
+		INSERT INTO collections (owner_user_id, slug, title)
+		VALUES ($1, 'research', 'Research')
+		RETURNING id::text
+	`, otherID).Scan(&otherCollectionID); err != nil {
 		t.Fatal(err)
 	}
 

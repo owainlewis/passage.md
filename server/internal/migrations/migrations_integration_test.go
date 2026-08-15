@@ -15,7 +15,7 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/database"
 )
 
-func TestCollectionsMigrationPreservesPopulatedDataAndIsIdempotent(t *testing.T) {
+func TestCollectionMigrationsPreservePopulatedDataAndStopDefaults(t *testing.T) {
 	db := isolatedMigrationDatabase(t)
 	ctx := context.Background()
 	applyBeforeCollections(t, db)
@@ -44,10 +44,10 @@ func TestCollectionsMigrationPreservesPopulatedDataAndIsIdempotent(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "023_collections,024_document_full_text_search" {
+	if strings.Join(applied, ",") != "023_collections,024_document_full_text_search,025_remove_seeded_collections" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
-	assertFourDefaultCollections(t, db, ownerID)
+	assertNoCollections(t, db, ownerID)
 
 	var gotOwnerID, gotPublicID, gotBody string
 	var gotShareToken *string
@@ -74,7 +74,7 @@ func TestCollectionsMigrationPreservesPopulatedDataAndIsIdempotent(t *testing.T)
 	if len(applied) != 0 {
 		t.Fatalf("repeated migration applied %q", applied)
 	}
-	assertFourDefaultCollections(t, db, ownerID)
+	assertNoCollections(t, db, ownerID)
 
 	var newOwnerID string
 	if err := db.QueryRow(ctx, `
@@ -84,7 +84,7 @@ func TestCollectionsMigrationPreservesPopulatedDataAndIsIdempotent(t *testing.T)
 	`).Scan(&newOwnerID); err != nil {
 		t.Fatal(err)
 	}
-	assertFourDefaultCollections(t, db, newOwnerID)
+	assertNoCollections(t, db, newOwnerID)
 }
 
 func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T) {
@@ -122,7 +122,7 @@ func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Join(applied, ",") != "024_document_full_text_search" {
+		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections" {
 			t.Fatalf("applied migrations = %q", applied)
 		}
 		assertDocumentSearchSchema(t, db)
@@ -263,7 +263,7 @@ func applyBeforeMigration(t *testing.T, db *database.Pool, stopBefore string) {
 	}
 }
 
-func assertFourDefaultCollections(t *testing.T, db *database.Pool, ownerID string) {
+func assertNoCollections(t *testing.T, db *database.Pool, ownerID string) {
 	t.Helper()
 	rows, err := db.Query(context.Background(), `
 		SELECT slug FROM collections WHERE owner_user_id = $1 ORDER BY slug
@@ -283,7 +283,7 @@ func assertFourDefaultCollections(t *testing.T, db *database.Pool, ownerID strin
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(slugs, ","); got != "content-studio,operating-context,passage,research" {
-		t.Fatalf("default collection slugs = %q", got)
+	if len(slugs) != 0 {
+		t.Fatalf("stored collection slugs = %q, want none", strings.Join(slugs, ","))
 	}
 }

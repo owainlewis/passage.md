@@ -185,7 +185,9 @@ Collection objects use this shape:
 }
 ```
 
-Each account starts with `Operating Context`, `Content Studio`, `Passage`, and `Research` once.
+Accounts start with no stored collections.
+
+The virtual `Documents` view remains available without creating a collection row.
 
 Collection slugs are created by the server and never change when a collection is renamed.
 
