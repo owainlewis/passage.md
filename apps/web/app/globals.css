@@ -1337,18 +1337,22 @@ button {
   text-align: center;
 }
 
-.workspaceCollectionDialogBackdrop {
+.workspace.workspaceCollectionDialogBackdrop {
   position: fixed;
   inset: 0;
   z-index: 120;
   display: grid;
   place-items: center;
   padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: color-mix(in srgb, #000 30%, transparent);
 }
 
 .workspaceCollectionDialog {
   width: min(100%, 420px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
   background: var(--surface);
@@ -1375,6 +1379,7 @@ button {
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .workspaceCollectionDialog label {
@@ -1432,6 +1437,21 @@ button {
   border-color: var(--accent-strong);
   background: var(--accent-strong);
   color: var(--accent-contrast);
+}
+
+.workspaceCollectionDialog footer button.workspaceCollectionDialogDanger {
+  border-color: #a04a3e;
+  background: #a04a3e;
+  color: #fff;
+}
+
+.workspaceCollectionDialogError {
+  margin: -4px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid #a04a3e;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .workspaceCollectionDialog footer button:disabled {

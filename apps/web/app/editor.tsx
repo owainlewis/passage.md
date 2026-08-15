@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
@@ -78,11 +78,18 @@ export default function Editor() {
     focusEditor: () => textareaRef.current?.focus()
   });
 
+  const collectionNotice = useRef("");
+  const setCollectionNotice = useCallback<Dispatch<SetStateAction<string>>>((notice) => {
+    const message = typeof notice === "function" ? notice(collectionNotice.current) : notice;
+    collectionNotice.current = message;
+    setBillingNotice(message);
+  }, [setBillingNotice]);
+
   const collectionState = useEditorCollections({
     userId,
     docs,
     setDocs,
-    setNotice: setBillingNotice
+    setNotice: setCollectionNotice
   });
 
   const activeShared = active ? isShared(active) : false;
@@ -129,6 +136,7 @@ export default function Editor() {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         if (!searchOpen) {
           setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
         }
@@ -248,30 +256,41 @@ export default function Editor() {
 
   async function createCollection(title: string, description: string) {
     const collection = await collectionState.createCollection(title, description);
-    if (!collection) return false;
+    if (!collection) {
+      const error = collectionNotice.current || "Collection could not be created";
+      setCollectionNotice("");
+      return error;
+    }
     openCollection(collection.slug);
-    return true;
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-collection-dialog-focus-destination]")?.focus();
+    });
+    return null;
   }
 
-  function updateCollection(slug: string, title: string, description: string) {
-    return collectionState.updateCollection(slug, title, description);
+  async function updateCollection(slug: string, title: string, description: string) {
+    const saved = await collectionState.updateCollection(slug, title, description);
+    if (saved) return null;
+    const error = collectionNotice.current || "Collection could not be saved";
+    setCollectionNotice("");
+    return error;
   }
 
   async function deleteCollection(slug: string) {
-    if (slug === "documents") return;
+    if (slug === "documents") return false;
     const collection = collections.find((candidate) => candidate.slug === slug);
-    if (!collection) return;
-    const collectionDocs = docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === slug);
-    const count = collectionDocs.length;
-    const noun = count === 1 ? "document" : "documents";
-    const moveSummary = hasMoreDocs
-      ? "Its documents will move to Documents."
-      : `${count} ${noun} will move to Documents.`;
-    if (!window.confirm(`Delete “${collection.title}”? ${moveSummary}`)) return;
-    if (!await collectionState.deleteCollection(slug)) return;
+    if (!collection) return false;
+    if (!await collectionState.deleteCollection(slug)) {
+      setBillingNotice("");
+      return false;
+    }
     setSearchScope("all");
     setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
     openWorkspaceView({ type: "collections" }, "replace");
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-collection-dialog-focus-fallback]")?.focus();
+    });
+    return true;
   }
 
   async function signOut() {
@@ -551,7 +570,7 @@ export default function Editor() {
             view={workspaceView}
             onAssignCollection={collectionState.assignCollection}
             onCreateCollection={createCollection}
-            onDeleteCollection={(slug) => void deleteCollection(slug)}
+            onDeleteCollection={deleteCollection}
             onOpenCollection={openCollection}
             onOpenDocument={selectDocument}
             onOpenSearch={openSearch}

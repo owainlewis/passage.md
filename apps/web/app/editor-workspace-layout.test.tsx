@@ -79,6 +79,18 @@ it("keeps the virtual Documents view and empty sections readable", () => {
   expect(within(recent).getByText("No documents yet.")).toBeInTheDocument();
 });
 
+it("keeps collection modal surfaces fixed to the full viewport", () => {
+  expect(declarationsFor(".workspace.workspaceCollectionDialogBackdrop")).toMatch(/position: fixed;.*inset: 0;/);
+  expect(declarationsFor(".workspace.workspaceCollectionDialogBackdrop")).toContain("place-items: center;");
+  expect(declarationsFor(".workspace.workspaceCollectionDialogBackdrop")).toContain("padding: 24px;");
+  expect(declarationsFor(".workspace.workspaceCollectionDialogBackdrop")).toContain("overscroll-behavior: contain;");
+  expect(declarationsFor(".workspaceCollectionDialog")).toContain("max-height: calc(100dvh - 48px);");
+  expect(declarationsFor(".workspaceCollectionDialog")).toContain("overflow-y: auto;");
+  expect(declarationsFor(".workspaceCollectionDialog header p")).toContain("overflow-wrap: anywhere;");
+  expect(declarationsFor(".workspaceCollectionDialog footer button.workspaceCollectionDialogDanger"))
+    .toContain("background: #a04a3e;");
+});
+
 it("wraps long collection copy while preserving a large count", () => {
   const longTitle = "Collection".repeat(20);
   const longDescription = "description".repeat(24);
