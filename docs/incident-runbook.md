@@ -139,18 +139,23 @@ Confirm checkout and webhook endpoints return service unavailable, while `/api/h
 Then run the audited full disable from exact `main`:
 
 ```sh
+passage_disable_sha="$(gh api repos/owainlewis/passage.md/commits/main --jq '.sha')"
+
 gh workflow run CI \
   --repo owainlewis/passage.md \
   --ref main \
+  -f release_sha="${passage_disable_sha}" \
   -f stripe_billing_mode=disable
 ```
+Capture the returned run URL and apply the exact run identity and watch checks from the manual production deployment procedure before treating the disable as started.
+
 
 The full disable deploys with `STRIPE_BILLING_ENABLED=false` and removes `STRIPE_MONTHLY_PRICE_ID`, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET` from the new Cloud Run revision.
 
 Confirm the workflow is green, `/api/health` stays healthy, public registration remains closed, and the billing endpoints return the disabled response.
 
-Normal `main` deployments use Stripe billing mode `preserve`.
-They do not write or bind Stripe configuration, so deploying alone does not undo the emergency toggle or reintroduce removed credentials.
+An explicit deployment with Stripe billing mode `preserve` does not write or bind Stripe configuration, so it does not undo the emergency toggle or reintroduce removed credentials.
+Pushes to `main` do not publish an image or deploy.
 
 Do not restore billing with a direct `gcloud` toggle.
 
@@ -172,7 +177,9 @@ In Stripe Workbench, check webhook delivery status by event ID, confirm the endp
 
 ## Deployment failures
 
-Failed `main` CI runs create or update an assigned `Production deployment failed` GitHub issue with the failing run URL.
+Failed manual `CI` workflow dispatches create or update an assigned `Production deployment failed` GitHub issue with the failing run URL.
+
+Failed pull-request or `main` push CI does not represent a production deployment failure because those events cannot publish an image, run migrations, or deploy.
 
 Inspect the failing job before retrying.
 
@@ -182,7 +189,7 @@ If production changed before failure, compare the active Cloud Run revision with
 
 Production application instances never apply migrations during startup.
 
-The `main` workflow builds and pushes one commit-tagged image, configures the `passage-md-migrate` Cloud Run Job to use that image, runs one migration task with no retries, and waits for success.
+An explicit `CI` workflow dispatch from `main` retains the image built by the production proof job and publishes that exact commit-tagged artifact, configures the `passage-md-migrate` Cloud Run Job to use it, runs one migration task with no retries, and waits for success.
 It then deploys a ready application revision without traffic, resolves that exact revision name, and pins 100% traffic to it as the final step.
 
 If the migration job fails, the workflow exits before `gcloud run deploy`.

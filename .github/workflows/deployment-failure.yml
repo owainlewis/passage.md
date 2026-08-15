@@ -13,7 +13,7 @@ jobs:
   notify:
     if: >-
       contains(fromJSON('["failure", "timed_out"]'), github.event.workflow_run.conclusion) &&
-      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -25,7 +25,7 @@ jobs:
             const title = "Production deployment failed";
             const run = context.payload.workflow_run;
             const body = [
-              `The production CI and deployment workflow failed for \`${run.head_sha}\`.`,
+              `The manual production deployment workflow failed for \`${run.head_sha}\`.`,
               "",
               `Run: ${run.html_url}`,
               "",
