@@ -43,6 +43,8 @@ export function useEditorDocuments({
   const [billingNoticeAction, setBillingNoticeAction] = useState<BillingNoticeAction>(null);
   const [nextCursor, setNextCursor] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  const [documentIndexComplete, setDocumentIndexComplete] = useState(false);
+  const [documentIndexError, setDocumentIndexError] = useState(false);
   const [documentLoadError, setDocumentLoadError] = useState("");
   const initialURLPublicId = useRef("");
   const activeRequest = useRef(0);
@@ -70,6 +72,8 @@ export function useEditorDocuments({
       setSaveState("loading");
       setNextCursor("");
       setLoadingMore(false);
+      setDocumentIndexComplete(false);
+      setDocumentIndexError(false);
       try {
         const firstPage = await apiDocsPage();
         let savedDocs = firstPage.documents;
@@ -89,6 +93,7 @@ export function useEditorDocuments({
         setSaveState("saved");
         setPendingSave(null);
         setLoadingMore(Boolean(cursor));
+        let indexFailed = false;
         while (cursor && !cancelled) {
           try {
             const page = await apiDocsPage(cursor);
@@ -102,12 +107,20 @@ export function useEditorDocuments({
           } catch {
             if (cancelled || accountGeneration.current !== generation) return;
             setBillingNotice("Some documents could not be indexed. Load the next page to try again.");
+            setDocumentIndexError(true);
+            indexFailed = true;
             break;
           }
         }
-        if (!cancelled) setLoadingMore(false);
+        if (!cancelled) {
+          setLoadingMore(false);
+          if (!indexFailed) setDocumentIndexComplete(true);
+        }
       } catch {
-        if (!cancelled) setSaveState("error");
+        if (!cancelled) {
+          setSaveState("error");
+          setDocumentIndexError(true);
+        }
       }
     })();
     return () => {
@@ -222,6 +235,7 @@ export function useEditorDocuments({
     if (!nextCursor || loadingMore) return;
     const generation = accountGeneration.current;
     setLoadingMore(true);
+    setDocumentIndexError(false);
     try {
       const page = await apiDocsPage(nextCursor);
       if (accountGeneration.current !== generation) return;
@@ -230,9 +244,11 @@ export function useEditorDocuments({
         return [...prev, ...page.documents.filter((doc) => !known.has(doc.id))];
       });
       setNextCursor(page.nextCursor);
+      setDocumentIndexComplete(!page.nextCursor);
     } catch {
       if (accountGeneration.current !== generation) return;
       setSaveState("error");
+      setDocumentIndexError(true);
     } finally {
       if (accountGeneration.current === generation) setLoadingMore(false);
     }
@@ -344,6 +360,8 @@ export function useEditorDocuments({
     createDoc,
     deleteDoc,
     docs,
+    documentIndexComplete,
+    documentIndexError,
     hasMoreDocs: Boolean(nextCursor),
     loadMoreDocs,
     loadingMore,

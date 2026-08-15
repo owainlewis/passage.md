@@ -1101,6 +1101,107 @@ describe("Write (editor)", () => {
     expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
   });
 
+  it("restores a document requested by popstate during the initial document load", async () => {
+    let resolveDocs: ((response: Response) => void) | undefined;
+    const baseFetch = stubSignedInFetch();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs?limit=50") {
+        return new Promise<Response>((resolve) => { resolveDocs = resolve; });
+      }
+      return baseFetch(input, init);
+    }));
+    window.history.replaceState(null, "", "/write");
+    render(<Write />);
+    await waitFor(() => expect(resolveDocs).toBeDefined());
+
+    act(() => {
+      window.history.pushState(null, "", "/write/later");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(await screen.findByRole("status", { name: "Loading document" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/write/later");
+    await act(async () => {
+      resolveDocs!(new Response(JSON.stringify({
+        documents: [{ id: "doc-later", publicId: "later", body: "# Later note" }]
+      }), { status: 200 }));
+    });
+
+    expect((await screen.findAllByRole("heading", { name: "Later note", level: 1 })).length).toBeGreaterThan(0);
+    expect(window.location.pathname).toBe("/write/later");
+  });
+
+  it("waits for a later document page before resolving popstate", async () => {
+    let resolveLaterPage: ((response: Response) => void) | undefined;
+    const baseFetch = stubSignedInFetch();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/docs?limit=50") {
+        return Promise.resolve(new Response(JSON.stringify({
+          documents: [{ id: "doc-current", publicId: "current", body: "# Current note" }],
+          nextCursor: "page-two"
+        }), { status: 200 }));
+      }
+      if (url === "/api/v1/docs?limit=50&cursor=page-two") {
+        return new Promise<Response>((resolve) => { resolveLaterPage = resolve; });
+      }
+      return baseFetch(input, init);
+    }));
+    window.history.replaceState(null, "", "/write/current");
+    render(<Write />);
+    expect((await screen.findAllByRole("heading", { name: "Current note", level: 1 })).length).toBeGreaterThan(0);
+    await waitFor(() => expect(resolveLaterPage).toBeDefined());
+
+    act(() => {
+      window.history.pushState(null, "", "/write/later");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    const writingPane = await screen.findByRole("region", { name: "Markdown editor" });
+    expect(await screen.findByRole("status", { name: "Loading document" })).toBeInTheDocument();
+    expect(writingPane).not.toHaveTextContent("Current note");
+    expect(window.location.pathname).toBe("/write/later");
+    await act(async () => {
+      resolveLaterPage!(new Response(JSON.stringify({
+        documents: [{ id: "doc-later", publicId: "later", body: "# Later note" }]
+      }), { status: 200 }));
+    });
+
+    expect((await screen.findAllByRole("heading", { name: "Later note", level: 1 })).length).toBeGreaterThan(0);
+    expect(window.location.pathname).toBe("/write/later");
+  });
+
+  it("keeps a document history URL when a later document page fails", async () => {
+    const baseFetch = stubSignedInFetch();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/docs?limit=50") {
+        return Promise.resolve(new Response(JSON.stringify({
+          documents: [{ id: "doc-current", publicId: "current", body: "# Current note" }],
+          nextCursor: "page-two"
+        }), { status: 200 }));
+      }
+      if (url === "/api/v1/docs?limit=50&cursor=page-two") {
+        return Promise.resolve(new Response(JSON.stringify({ error: "temporary failure" }), { status: 503 }));
+      }
+      return baseFetch(input, init);
+    }));
+    window.history.replaceState(null, "", "/write/current");
+    render(<Write />);
+    expect((await screen.findAllByRole("heading", { name: "Current note", level: 1 })).length).toBeGreaterThan(0);
+    await screen.findByText("Some documents could not be indexed. Load the next page to try again.");
+
+    act(() => {
+      window.history.pushState(null, "", "/write/later");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    const writingPane = await screen.findByRole("region", { name: "Markdown editor" });
+    expect(await screen.findByRole("heading", { name: "Document could not be checked." })).toBeInTheDocument();
+    expect(writingPane).not.toHaveTextContent("Current note");
+    expect(window.location.pathname).toBe("/write/later");
+  });
+
   it.each([
     ["/write", "Workspace home"],
     ["/write?view=starred", "Starred"],

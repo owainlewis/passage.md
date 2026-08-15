@@ -54,6 +54,8 @@ export default function Editor() {
     createDoc: createDocument,
     deleteDoc,
     docs,
+    documentIndexComplete,
+    documentIndexError,
     hasMoreDocs,
     loadMoreDocs,
     loadingMore,
@@ -153,20 +155,11 @@ export default function Editor() {
         setWorkspaceView(location.view);
         return;
       }
-      const publicId = publicIdFromPath();
-      const doc = docs.find((candidate) => candidate.publicId === publicId);
-      if (doc) {
-        setWorkspaceView({ type: "document" });
-        selectDoc(doc, "none");
-      } else if (saveState !== "loading") {
-        setBillingNotice("Document could not be found");
-        setWorkspaceView({ type: "home" });
-        window.history.replaceState(null, "", "/write");
-      }
+      setWorkspaceView({ type: "document" });
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [docs, saveState, selectDoc, setBillingNotice]);
+  }, []);
 
   async function createDoc(body = "") {
     const created = await createDocument(body);
@@ -287,15 +280,20 @@ export default function Editor() {
   }, []);
 
   useEffect(() => {
-    if (saveState === "loading" || workspaceView.type !== "document") return;
+    if (workspaceView.type !== "document") return;
     const publicId = publicIdFromPath();
     if (!publicId && !/^\/write\/[^/]+$/.test(window.location.pathname)) return;
-    if (publicId && docs.some((doc) => doc.publicId === publicId)) return;
+    const requestedDocument = docs.find((doc) => doc.publicId === publicId);
+    if (requestedDocument) {
+      if (requestedDocument.id !== activeId) selectDoc(requestedDocument, "none");
+      return;
+    }
+    if (!documentIndexComplete) return;
     setBillingNotice("Document could not be found");
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWorkspaceView({ type: "home" });
     window.history.replaceState(null, "", "/write");
-  }, [docs, saveState, setBillingNotice, workspaceView.type]);
+  }, [activeId, docs, documentIndexComplete, selectDoc, setBillingNotice, workspaceView.type]);
 
   useEffect(() => {
     if (!collectionState.available || workspaceView.type !== "collection") return;
@@ -308,6 +306,13 @@ export default function Editor() {
 
   const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
   const templatesOpen = workspaceView.type === "templates";
+  const hasDocumentRoute = workspaceView.type === "document"
+    && typeof window !== "undefined"
+    && /^\/write\/[^/]+$/.test(window.location.pathname);
+  const requestedDocumentPublicId = workspaceView.type === "document" ? publicIdFromPath() : "";
+  const documentRouteResolved = workspaceView.type !== "document"
+    || !hasDocumentRoute
+    || active?.publicId === requestedDocumentPublicId;
   const workspaceTitle = templatesOpen
     ? "Templates"
     : workspaceView.type === "document"
@@ -318,7 +323,8 @@ export default function Editor() {
           ? "Home"
           : workspaceView.type.charAt(0).toUpperCase() + workspaceView.type.slice(1);
   const showDocument = !templatesOpen && workspaceView.type === "document";
-  const showTopBarTitle = docsReady && (templatesOpen || (showDocument && mode === "edit"));
+  const showResolvedDocument = showDocument && documentRouteResolved;
+  const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
   const canDeleteActive = Boolean(active && !isShared(active));
 
   return (
@@ -368,7 +374,7 @@ export default function Editor() {
             : <span className="docTitle" aria-hidden="true" />}
 
           <div className="topCluster end">
-            {showDocument && active && (
+            {showResolvedDocument && active && (
               <>
                 <select
                   className="topBarCollectionSelect"
@@ -464,8 +470,15 @@ export default function Editor() {
             onShowLibrary={() => setActiveTemplateId("")}
             onUpdateTemplate={templateState.updateTemplate}
           />
-        ) : showDocument ? <section ref={writingPaneRef} tabIndex={-1} className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
-          {saveState === "loading" || activeLoading ? (
+        ) : showDocument ? <section ref={writingPaneRef} tabIndex={-1} className={`writingPane ${active && documentRouteResolved ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
+          {!documentRouteResolved ? (
+            documentIndexError ? (
+              <div className="emptyDocuments" role="alert">
+                <h2>Document could not be checked.</h2>
+                <p>Your document URL has been kept. Reload to try again.</p>
+              </div>
+            ) : <PendingStatus label="Loading document" />
+          ) : saveState === "loading" || activeLoading ? (
             <PendingStatus label="Loading saved docs" />
           ) : activeLoadError ? (
             <div className="emptyDocuments" role="alert">
@@ -524,7 +537,7 @@ export default function Editor() {
           />
         )}
 
-        {showDocument && docsReady && active?.bodyLoaded && (
+        {showResolvedDocument && docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
             mode={mode}
