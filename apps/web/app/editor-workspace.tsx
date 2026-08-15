@@ -19,6 +19,7 @@ import { DocIcon, SearchIcon, StarIcon } from "./icons";
 type EditorWorkspaceProps = {
   assignments: Record<string, string>;
   assignmentDisabled: boolean;
+  collectionAvailable: boolean;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
@@ -43,6 +44,7 @@ type EditorWorkspaceProps = {
 export function EditorWorkspace({
   assignments,
   assignmentDisabled,
+  collectionAvailable,
   collections,
   docs,
   deletedCollections,
@@ -63,7 +65,7 @@ export function EditorWorkspace({
   pendingCollectionSlugs,
   pendingDocIds
 }: EditorWorkspaceProps) {
-  if (view.type === "document") return null;
+  if (view.type === "document" || view.type === "templates") return null;
 
   if (saveState === "loading") {
     return <div className="workspaceHub workspaceHubLoading" role="status" aria-label="Loading saved docs" />;
@@ -98,8 +100,8 @@ export function EditorWorkspace({
       />
     );
   } else if (view.type === "collection") {
-    const collection = collections.find((item) => item.slug === view.slug) ?? collections.at(-1)!;
-    content = (
+    const collection = collections.find((item) => item.slug === view.slug);
+    content = collection ? (
       <WorkspaceCollectionView
         assignments={assignments}
         assignmentDisabled={assignmentDisabled}
@@ -116,6 +118,15 @@ export function EditorWorkspace({
         pendingCollectionSlugs={pendingCollectionSlugs}
         pendingDocIds={pendingDocIds}
       />
+    ) : (
+      <div className="workspaceHub" aria-label="Collection unavailable">
+        <header className="workspaceHero">
+          <h1>{collectionAvailable ? "Collection could not be found" : "Collection could not be loaded"}</h1>
+          <p>{collectionAvailable
+            ? "Choose another collection from the workspace."
+            : "This link has been kept. Reload to try again."}</p>
+        </header>
+      </div>
     );
   } else {
     const list = view.type === "starred" ? docs.filter((doc) => doc.pinned) : recentDocs(docs);
@@ -520,12 +531,18 @@ function CollectionDialog({
 }) {
   const dialog = useRef<HTMLElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+  const trigger = useRef<HTMLElement | null>(null);
   const [title, setTitle] = useState(collection?.title ?? "");
   const [description, setDescription] = useState(collection?.description ?? "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     titleInput.current?.focus();
+    return () => {
+      const element = trigger.current;
+      if (element?.isConnected) element.focus();
+    };
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {

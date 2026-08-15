@@ -13,6 +13,7 @@ export type WorkspaceView =
   | { type: "home" }
   | { type: "starred" }
   | { type: "recent" }
+  | { type: "templates" }
   | { type: "collections"; createRequest?: number }
   | { type: "collection"; slug: string }
   | { type: "document" };

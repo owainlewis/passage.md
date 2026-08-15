@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
@@ -9,6 +9,7 @@ import { EditorSidebar } from "./editor-sidebar";
 import { isShared, Mode, publicIdFromPath } from "./editor-model";
 import { EditorStatusBar } from "./editor-status-bar";
 import { EditorWorkspace, WorkspaceSearch } from "./editor-workspace";
+import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
 import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
 import { useEntitlements } from "./entitlements";
 import { PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
@@ -28,9 +29,8 @@ export default function Editor() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [authError, setAuthError] = useState("");
-  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState("");
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => publicIdFromPath() ? { type: "document" } : { type: "home" });
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => currentWorkspaceLocation().view);
   const [newDocumentCollection, setNewDocumentCollection] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,6 +38,8 @@ export default function Editor() {
   const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
+  const workspaceViewRef = useRef(workspaceView);
+  workspaceViewRef.current = workspaceView;
 
   const auth = useAuth();
   const userId = auth.user?.id;
@@ -52,8 +54,10 @@ export default function Editor() {
     billingNotice,
     billingNoticeAction,
     createDoc: createDocument,
-    deleteDoc,
+    deleteDoc: archiveDocument,
     docs,
+    documentIndexComplete,
+    documentIndexError,
     hasMoreDocs,
     loadMoreDocs,
     loadingMore,
@@ -144,22 +148,20 @@ export default function Editor() {
 
   useEffect(() => {
     function onPopState() {
-      const publicId = publicIdFromPath();
-      if (!publicId) {
-        setTemplatesOpen(false);
-        setWorkspaceView({ type: "home" });
+      const location = currentWorkspaceLocation();
+      setActiveTemplateId("");
+      if (location.shouldReplace) {
+        window.history.replaceState(null, "", location.canonicalPath);
+      }
+      if (location.view.type !== "document") {
+        setWorkspaceView(location.view);
         return;
       }
-      const doc = docs.find((candidate) => candidate.publicId === publicId);
-      if (doc) {
-        setTemplatesOpen(false);
-        setWorkspaceView({ type: "document" });
-        selectDoc(doc, "none");
-      }
+      setWorkspaceView({ type: "document" });
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [docs, selectDoc]);
+  }, []);
 
   async function createDoc(body = "") {
     const created = await createDocument(body);
@@ -168,22 +170,36 @@ export default function Editor() {
       await collectionState.assignCollection(created.id, newDocumentCollection);
     }
     setNewDocumentCollection(null);
-    setTemplatesOpen(false);
     setActiveTemplateId("");
     setMode("edit");
     setWorkspaceView({ type: "document" });
     return true;
   }
 
+  async function deleteDoc(id: string) {
+    const document = docs.find((candidate) => candidate.id === id);
+    if (!document) return;
+    const startingLocation = `${window.location.pathname}${window.location.search}`;
+    const replacement = await archiveDocument(id);
+    if (replacement === false) return;
+    const currentLocation = `${window.location.pathname}${window.location.search}`;
+    if (workspaceViewRef.current.type !== "document" || currentLocation !== startingLocation) return;
+    if (replacement) {
+      setWorkspaceView({ type: "document" });
+      selectDoc(replacement, "replace");
+      return;
+    }
+    openWorkspaceView({ type: "home" }, "replace");
+  }
+
   function openTemplates() {
-    setNewDocumentCollection(workspaceView.type === "collection" ? workspaceView.slug : null);
-    setTemplatesOpen(true);
-    setActiveTemplateId("");
-    window.history.pushState(null, "", "/write");
+    if (workspaceView.type !== "templates") {
+      setNewDocumentCollection(workspaceView.type === "collection" ? workspaceView.slug : null);
+    }
+    openWorkspaceView({ type: "templates" });
   }
 
   function selectDocument(doc: Parameters<typeof selectDoc>[0]) {
-    setTemplatesOpen(false);
     setActiveTemplateId("");
     setWorkspaceView({ type: "document" });
     selectDoc(doc, "push");
@@ -196,11 +212,14 @@ export default function Editor() {
     requestAnimationFrame(() => writingPaneRef.current?.focus());
   }
 
-  function openWorkspaceView(view: WorkspaceView) {
-    setTemplatesOpen(false);
+  function openWorkspaceView(view: WorkspaceView, history: "push" | "replace" = "push") {
+    if (view.type === "document") return;
     setActiveTemplateId("");
     setWorkspaceView(view);
-    if (view.type !== "document") window.history.pushState(null, "", "/write");
+    const nextPath = workspacePath(view);
+    if (`${window.location.pathname}${window.location.search}` !== nextPath) {
+      window.history[history === "push" ? "pushState" : "replaceState"](null, "", nextPath);
+    }
     if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarOpen(false);
   }
 
@@ -241,7 +260,8 @@ export default function Editor() {
     if (!window.confirm(`Delete “${collection.title}”? ${moveSummary}`)) return;
     if (!await collectionState.deleteCollection(slug)) return;
     setSearchScope("all");
-    openWorkspaceView({ type: "home" });
+    setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
+    openWorkspaceView({ type: "collections" }, "replace");
   }
 
   async function signOut() {
@@ -265,8 +285,52 @@ export default function Editor() {
   const nearDocumentLimit =
     entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
   const nearDocumentLimitNotice = `You're using ${formatDocumentCount(savedDocs)} of ${formatDocumentCount(entitlements.maxSavedDocs)} saved documents.`;
-  const collections = [...collectionState.collections, ...WORKSPACE_COLLECTIONS];
+  const collections = useMemo(
+    () => [...collectionState.collections, ...WORKSPACE_COLLECTIONS],
+    [collectionState.collections]
+  );
+
+  useEffect(() => {
+    const location = currentWorkspaceLocation();
+    if (location.shouldReplace) {
+      window.history.replaceState(null, "", location.canonicalPath);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (workspaceView.type !== "document") return;
+    const publicId = publicIdFromPath();
+    if (!publicId && !/^\/write\/[^/]+$/.test(window.location.pathname)) return;
+    const requestedDocument = docs.find((doc) => doc.publicId === publicId);
+    if (requestedDocument) {
+      if (requestedDocument.id !== activeId) selectDoc(requestedDocument, "none");
+      return;
+    }
+    if (!documentIndexComplete) return;
+    setBillingNotice("Document could not be found");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWorkspaceView({ type: "home" });
+    window.history.replaceState(null, "", "/write");
+  }, [activeId, docs, documentIndexComplete, selectDoc, setBillingNotice, workspaceView.type]);
+
+  useEffect(() => {
+    if (!collectionState.available || workspaceView.type !== "collection") return;
+    if (collections.some((collection) => collection.slug === workspaceView.slug)) return;
+    setBillingNotice("Collection could not be found");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWorkspaceView({ type: "collections" });
+    window.history.replaceState(null, "", workspacePath({ type: "collections" }));
+  }, [collectionState.available, collections, setBillingNotice, workspaceView]);
+
   const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
+  const templatesOpen = workspaceView.type === "templates";
+  const hasDocumentRoute = workspaceView.type === "document"
+    && typeof window !== "undefined"
+    && /^\/write\/[^/]+$/.test(window.location.pathname);
+  const requestedDocumentPublicId = workspaceView.type === "document" ? publicIdFromPath() : "";
+  const documentRouteResolved = workspaceView.type !== "document"
+    || !hasDocumentRoute
+    || active?.publicId === requestedDocumentPublicId;
   const workspaceTitle = templatesOpen
     ? "Templates"
     : workspaceView.type === "document"
@@ -277,7 +341,8 @@ export default function Editor() {
           ? "Home"
           : workspaceView.type.charAt(0).toUpperCase() + workspaceView.type.slice(1);
   const showDocument = !templatesOpen && workspaceView.type === "document";
-  const showTopBarTitle = docsReady && (templatesOpen || (showDocument && mode === "edit"));
+  const showResolvedDocument = showDocument && documentRouteResolved;
+  const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
   const canDeleteActive = Boolean(active && !isShared(active));
 
   return (
@@ -290,7 +355,7 @@ export default function Editor() {
         onOpenCollection={openCollection}
         onOpenSearch={() => openSearch()}
         onOpenTemplates={openTemplates}
-        onOpenView={openWorkspaceView}
+        onOpenView={(view) => openWorkspaceView(view)}
         onToggleDarkMode={toggleDarkMode}
         sidebarOpen={sidebarOpen}
         templateCount={templateState.templates.length}
@@ -327,7 +392,7 @@ export default function Editor() {
             : <span className="docTitle" aria-hidden="true" />}
 
           <div className="topCluster end">
-            {showDocument && active && (
+            {showResolvedDocument && active && (
               <>
                 <select
                   className="topBarCollectionSelect"
@@ -423,8 +488,15 @@ export default function Editor() {
             onShowLibrary={() => setActiveTemplateId("")}
             onUpdateTemplate={templateState.updateTemplate}
           />
-        ) : showDocument ? <section ref={writingPaneRef} tabIndex={-1} className={`writingPane ${active ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
-          {saveState === "loading" || activeLoading ? (
+        ) : showDocument ? <section ref={writingPaneRef} tabIndex={-1} className={`writingPane ${active && documentRouteResolved ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
+          {!documentRouteResolved ? (
+            documentIndexError ? (
+              <div className="emptyDocuments" role="alert">
+                <h2>Document could not be checked.</h2>
+                <p>Your document URL has been kept. Reload to try again.</p>
+              </div>
+            ) : <PendingStatus label="Loading document" />
+          ) : saveState === "loading" || activeLoading ? (
             <PendingStatus label="Loading saved docs" />
           ) : activeLoadError ? (
             <div className="emptyDocuments" role="alert">
@@ -461,6 +533,7 @@ export default function Editor() {
           <EditorWorkspace
             assignments={EMPTY_ASSIGNMENTS}
             assignmentDisabled={!collectionState.available}
+            collectionAvailable={collectionState.available}
             collections={collections}
             deletedCollections={NO_DELETED_COLLECTIONS}
             docs={docs}
@@ -472,7 +545,7 @@ export default function Editor() {
             onOpenCollection={openCollection}
             onOpenDocument={selectDocument}
             onOpenSearch={openSearch}
-            onOpenView={openWorkspaceView}
+            onOpenView={(view) => openWorkspaceView(view)}
             hasMoreDocs={hasMoreDocs}
             loadingMore={loadingMore}
             onLoadMoreDocs={() => void loadMoreDocs()}
@@ -483,7 +556,7 @@ export default function Editor() {
           />
         )}
 
-        {showDocument && docsReady && active?.bodyLoaded && (
+        {showResolvedDocument && docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
             mode={mode}
