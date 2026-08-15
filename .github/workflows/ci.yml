@@ -277,13 +277,16 @@ jobs:
               --format=json
           )"
           if ! jq -e '
-            .status.latestReadyRevisionName as $revision
-            | ([.status.traffic[]? | select(.revisionName == $revision and .percent == 100)] | length) == 1
+            (.status.traffic // []) as $traffic
+            | [$traffic[] | select((.percent // 0) > 0)] as $serving
+            | (($serving | length) == 1
+              and $serving[0].percent == 100
+              and (($serving[0].revisionName // "") | length) > 0)
           ' <<<"${service}" >/dev/null; then
-            echo "Production is not routing 100 percent to its latest ready revision." >&2
+            echo "Production is not routing 100 percent to one explicit revision." >&2
             exit 1
           fi
-          jq -r '"current revision=\(.status.latestReadyRevisionName) traffic=100"' <<<"${service}"
+          jq -r '.status.traffic[] | select(.percent == 100) | "current revision=\(.revisionName) traffic=100"' <<<"${service}"
 
           health="$(curl --fail-with-body --silent --show-error "${APP_BASE_URL}/api/health")"
           jq -e '.database == "ok" and .status == "ok"' <<<"${health}" >/dev/null

@@ -63,6 +63,10 @@ grep -Fq "uses: google-github-actions/auth@" <<<"${deploy_job}"
 grep -Fq "uses: google-github-actions/setup-gcloud@" <<<"${deploy_job}"
 grep -Fq "gcloud sql backups list" <<<"${deploy_job}"
 grep -Fq 'curl --fail-with-body --silent --show-error "${APP_BASE_URL}/api/health"' <<<"${deploy_job}"
+if grep -Fq "latestReadyRevisionName" <<<"${deploy_job}"; then
+  echo "the readiness check would deadlock deployment after a rollback" >&2
+  exit 1
+fi
 line_number() {
   local pattern="$1"
   local match
