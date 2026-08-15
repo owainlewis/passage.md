@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Editor from "../editor";
 import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
+import { workspaceLoginPath } from "../editor-workspace-location";
 import { EntitlementsProvider } from "../entitlements";
 
 export default function Write() {
@@ -25,7 +26,7 @@ function WriteGate() {
     if (!loading && !user && sessionStatus === "unknown") {
       void refreshAccount().catch(() => undefined);
     } else if (!loading && !user && sessionStatus === "anonymous") {
-      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+      window.location.replace(workspaceLoginPath(window.location.pathname, window.location.search));
     }
   }, [loading, refreshAccount, routeRevalidating, sessionStatus, user]);
 

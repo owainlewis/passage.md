@@ -109,5 +109,10 @@ export function seedDocs(): Doc[] {
 export function publicIdFromPath() {
   if (typeof window === "undefined") return "";
   const match = window.location.pathname.match(/^\/write\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : "";
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return "";
+  }
 }

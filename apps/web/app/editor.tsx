@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
@@ -9,6 +9,7 @@ import { EditorSidebar } from "./editor-sidebar";
 import { isShared, Mode, publicIdFromPath } from "./editor-model";
 import { EditorStatusBar } from "./editor-status-bar";
 import { EditorWorkspace, WorkspaceSearch } from "./editor-workspace";
+import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
 import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
 import { useEntitlements } from "./entitlements";
 import { PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
@@ -28,9 +29,8 @@ export default function Editor() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [authError, setAuthError] = useState("");
-  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState("");
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => publicIdFromPath() ? { type: "document" } : { type: "home" });
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => currentWorkspaceLocation().view);
   const [newDocumentCollection, setNewDocumentCollection] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -144,22 +144,29 @@ export default function Editor() {
 
   useEffect(() => {
     function onPopState() {
-      const publicId = publicIdFromPath();
-      if (!publicId) {
-        setTemplatesOpen(false);
-        setWorkspaceView({ type: "home" });
+      const location = currentWorkspaceLocation();
+      setActiveTemplateId("");
+      if (location.shouldReplace) {
+        window.history.replaceState(null, "", location.canonicalPath);
+      }
+      if (location.view.type !== "document") {
+        setWorkspaceView(location.view);
         return;
       }
+      const publicId = publicIdFromPath();
       const doc = docs.find((candidate) => candidate.publicId === publicId);
       if (doc) {
-        setTemplatesOpen(false);
         setWorkspaceView({ type: "document" });
         selectDoc(doc, "none");
+      } else if (saveState !== "loading") {
+        setBillingNotice("Document could not be found");
+        setWorkspaceView({ type: "home" });
+        window.history.replaceState(null, "", "/write");
       }
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [docs, selectDoc]);
+  }, [docs, saveState, selectDoc, setBillingNotice]);
 
   async function createDoc(body = "") {
     const created = await createDocument(body);
@@ -168,7 +175,6 @@ export default function Editor() {
       await collectionState.assignCollection(created.id, newDocumentCollection);
     }
     setNewDocumentCollection(null);
-    setTemplatesOpen(false);
     setActiveTemplateId("");
     setMode("edit");
     setWorkspaceView({ type: "document" });
@@ -176,14 +182,13 @@ export default function Editor() {
   }
 
   function openTemplates() {
-    setNewDocumentCollection(workspaceView.type === "collection" ? workspaceView.slug : null);
-    setTemplatesOpen(true);
-    setActiveTemplateId("");
-    window.history.pushState(null, "", "/write");
+    if (workspaceView.type !== "templates") {
+      setNewDocumentCollection(workspaceView.type === "collection" ? workspaceView.slug : null);
+    }
+    openWorkspaceView({ type: "templates" });
   }
 
   function selectDocument(doc: Parameters<typeof selectDoc>[0]) {
-    setTemplatesOpen(false);
     setActiveTemplateId("");
     setWorkspaceView({ type: "document" });
     selectDoc(doc, "push");
@@ -196,11 +201,14 @@ export default function Editor() {
     requestAnimationFrame(() => writingPaneRef.current?.focus());
   }
 
-  function openWorkspaceView(view: WorkspaceView) {
-    setTemplatesOpen(false);
+  function openWorkspaceView(view: WorkspaceView, history: "push" | "replace" = "push") {
+    if (view.type === "document") return;
     setActiveTemplateId("");
     setWorkspaceView(view);
-    if (view.type !== "document") window.history.pushState(null, "", "/write");
+    const nextPath = workspacePath(view);
+    if (`${window.location.pathname}${window.location.search}` !== nextPath) {
+      window.history[history === "push" ? "pushState" : "replaceState"](null, "", nextPath);
+    }
     if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarOpen(false);
   }
 
@@ -241,7 +249,8 @@ export default function Editor() {
     if (!window.confirm(`Delete “${collection.title}”? ${moveSummary}`)) return;
     if (!await collectionState.deleteCollection(slug)) return;
     setSearchScope("all");
-    openWorkspaceView({ type: "home" });
+    setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
+    openWorkspaceView({ type: "collections" }, "replace");
   }
 
   async function signOut() {
@@ -265,8 +274,40 @@ export default function Editor() {
   const nearDocumentLimit =
     entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
   const nearDocumentLimitNotice = `You're using ${formatDocumentCount(savedDocs)} of ${formatDocumentCount(entitlements.maxSavedDocs)} saved documents.`;
-  const collections = [...collectionState.collections, ...WORKSPACE_COLLECTIONS];
+  const collections = useMemo(
+    () => [...collectionState.collections, ...WORKSPACE_COLLECTIONS],
+    [collectionState.collections]
+  );
+
+  useEffect(() => {
+    const location = currentWorkspaceLocation();
+    if (location.shouldReplace) {
+      window.history.replaceState(null, "", location.canonicalPath);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (saveState === "loading" || workspaceView.type !== "document") return;
+    const publicId = publicIdFromPath();
+    if (!publicId && !/^\/write\/[^/]+$/.test(window.location.pathname)) return;
+    if (publicId && docs.some((doc) => doc.publicId === publicId)) return;
+    setBillingNotice("Document could not be found");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWorkspaceView({ type: "home" });
+    window.history.replaceState(null, "", "/write");
+  }, [docs, saveState, setBillingNotice, workspaceView.type]);
+
+  useEffect(() => {
+    if (!collectionState.available || workspaceView.type !== "collection") return;
+    if (collections.some((collection) => collection.slug === workspaceView.slug)) return;
+    setBillingNotice("Collection could not be found");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWorkspaceView({ type: "collections" });
+    window.history.replaceState(null, "", workspacePath({ type: "collections" }));
+  }, [collectionState.available, collections, setBillingNotice, workspaceView]);
+
   const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
+  const templatesOpen = workspaceView.type === "templates";
   const workspaceTitle = templatesOpen
     ? "Templates"
     : workspaceView.type === "document"
@@ -290,7 +331,7 @@ export default function Editor() {
         onOpenCollection={openCollection}
         onOpenSearch={() => openSearch()}
         onOpenTemplates={openTemplates}
-        onOpenView={openWorkspaceView}
+        onOpenView={(view) => openWorkspaceView(view)}
         onToggleDarkMode={toggleDarkMode}
         sidebarOpen={sidebarOpen}
         templateCount={templateState.templates.length}
@@ -472,7 +513,7 @@ export default function Editor() {
             onOpenCollection={openCollection}
             onOpenDocument={selectDocument}
             onOpenSearch={openSearch}
-            onOpenView={openWorkspaceView}
+            onOpenView={(view) => openWorkspaceView(view)}
             hasMoreDocs={hasMoreDocs}
             loadingMore={loadingMore}
             onLoadMoreDocs={() => void loadMoreDocs()}

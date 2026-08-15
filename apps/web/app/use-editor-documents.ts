@@ -208,7 +208,7 @@ export function useEditorDocuments({
   function updateEditorURL(doc: Doc, mode: "push" | "replace") {
     if (!doc.publicId) return;
     const nextPath = `/write/${encodeURIComponent(doc.publicId)}`;
-    if (window.location.pathname === nextPath) return;
+    if (`${window.location.pathname}${window.location.search}` === nextPath) return;
     window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextPath);
   }
 

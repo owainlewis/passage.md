@@ -1219,6 +1219,12 @@ button {
   font: 600 0.6875rem/1 var(--sans);
 }
 
+.workspaceCollectionSelect:focus-visible,
+.topBarCollectionSelect:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .workspaceCollectionSelect {
   max-width: 132px;
   min-height: 30px;
@@ -4476,9 +4482,16 @@ button {
     min-height: 76px;
   }
 
-  .workspaceDocumentSummary,
-  .workspaceCollectionSelect {
+  .workspaceDocumentSummary {
     display: none;
+  }
+
+  .workspaceCollectionSelect {
+    max-width: 108px;
+  }
+
+  .workspaceDocumentActions {
+    opacity: 1;
   }
 
   .workspaceDocumentText {
@@ -4515,7 +4528,9 @@ button {
   }
 
   .topBarCollectionSelect {
-    display: none;
+    min-width: 0;
+    max-width: 108px;
+    padding-right: 18px;
   }
 
 }

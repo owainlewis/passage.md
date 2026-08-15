@@ -63,7 +63,7 @@ export function EditorWorkspace({
   pendingCollectionSlugs,
   pendingDocIds
 }: EditorWorkspaceProps) {
-  if (view.type === "document") return null;
+  if (view.type === "document" || view.type === "templates") return null;
 
   if (saveState === "loading") {
     return <div className="workspaceHub workspaceHubLoading" role="status" aria-label="Loading saved docs" />;
@@ -520,12 +520,18 @@ function CollectionDialog({
 }) {
   const dialog = useRef<HTMLElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+  const trigger = useRef<HTMLElement | null>(null);
   const [title, setTitle] = useState(collection?.title ?? "");
   const [description, setDescription] = useState(collection?.description ?? "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     titleInput.current?.focus();
+    return () => {
+      const element = trigger.current;
+      if (element?.isConnected) element.focus();
+    };
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {

@@ -1101,6 +1101,136 @@ describe("Write (editor)", () => {
     expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
   });
 
+  it.each([
+    ["/write", "Workspace home"],
+    ["/write?view=starred", "Starred"],
+    ["/write?view=recent", "Recent"],
+    ["/write?view=collections", "Collections"],
+    ["/write?collection=research", "Research"]
+  ])("restores the canonical workspace URL %s on direct load", async (path, label) => {
+    window.history.replaceState(null, "", path);
+
+    render(<Write />);
+
+    expect(await screen.findByLabelText(label)).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe(path);
+  });
+
+  it("restores Templates on direct load", async () => {
+    window.history.replaceState(null, "", "/write?view=templates");
+
+    render(<Write />);
+
+    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
+  });
+
+  it("uses Back and Forward to restore Collections and an individual collection", async () => {
+    render(<Write />);
+    await screen.findByLabelText("Workspace home");
+
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
+    const collections = screen.getByLabelText("Collections");
+    fireEvent.click(Array.from(collections.querySelectorAll<HTMLButtonElement>(".workspaceCollectionCard"))
+      .find((button) => button.textContent?.includes("Research"))!);
+    expect(await screen.findByLabelText("Research")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research");
+
+    act(() => window.history.back());
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections"));
+    expect(screen.getByLabelText("Collections")).toBeInTheDocument();
+
+    act(() => window.history.forward());
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research"));
+    expect(screen.getByLabelText("Research")).toBeInTheDocument();
+  });
+
+  it("keeps Templates in workspace history", async () => {
+    render(<Write />);
+    await screen.findByLabelText("Workspace home");
+
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
+    fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+
+    act(() => window.history.back());
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates"));
+    expect(screen.getByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+  });
+
+  it("does not push duplicate history for the active workspace destination", async () => {
+    render(<Write />);
+    await screen.findByLabelText("Workspace home");
+    const pushState = vi.spyOn(window.history, "pushState");
+
+    for (const home of screen.getAllByRole("button", { name: "Home" })) fireEvent.click(home);
+    expect(pushState).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    expect(pushState).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Collections" }));
+    expect(pushState).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the collection that opened a document when Back is pressed", async () => {
+    stubSignedInFetch([{
+      id: "doc-research",
+      publicId: "research-note",
+      body: "# Research note",
+      collectionId: "collection-research",
+      collectionSlug: "research"
+    }]);
+    render(<Write />);
+    await screen.findByLabelText("Workspace home");
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByLabelText("Research").querySelector<HTMLButtonElement>(".workspaceDocumentOpen")!);
+    expect(await screen.findByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/write/research-note");
+
+    act(() => window.history.back());
+
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research"));
+    expect(screen.getByLabelText("Research")).toBeInTheDocument();
+  });
+
+  it("replaces unknown views with Home", async () => {
+    window.history.replaceState(null, "", "/write?view=unknown");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+
+    render(<Write />);
+
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/write");
+  });
+
+  it("replaces a missing collection with the collection index and a clear message", async () => {
+    window.history.replaceState(null, "", "/write?collection=missing");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+
+    render(<Write />);
+
+    expect(await screen.findByLabelText("Collections")).toBeInTheDocument();
+    expect(await screen.findByText("Collection could not be found")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/write?view=collections");
+  });
+
+  it("recovers a stale document URL without showing another document under it", async () => {
+    stubSignedInFetch([{ id: "doc-current", publicId: "current", body: "# Current note" }]);
+    window.history.replaceState(null, "", "/write/stale");
+
+    render(<Write />);
+
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(await screen.findByText("Document could not be found")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
+    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
+  });
+
   it("filters the document list by frontmatter tags", async () => {
     stubSignedInFetch([
       { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
@@ -1160,6 +1290,66 @@ describe("Write (editor)", () => {
 
     expect(screen.getByLabelText("Research")).toHaveTextContent("Private note");
     expect(screen.getByLabelText("Research")).toHaveTextContent("Research notes.");
+  });
+
+  it("keeps a pending document save when navigation returns to the workspace", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-draft", publicId: "draft", body: "# Draft" }]);
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Draft\n\nSaved after navigation." }
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
+
+    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/docs/doc-draft",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ body: "# Draft\n\nSaved after navigation." })
+      })
+    ));
+  });
+
+  it("moves a document to a collection and back through controls available at 390 pixels", async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({ matches: query === "(max-width: 720px)" }))
+    });
+    stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
+
+    await renderWrite();
+    const documentCollection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
+    fireEvent.change(documentCollection, { target: { value: "research" } });
+    await waitFor(() => expect(documentCollection).toHaveValue("research"));
+
+    openSidebarCollection("Research");
+    const rowCollection = await screen.findByRole("combobox", { name: "Collection for Mobile note" });
+    fireEvent.change(rowCollection, { target: { value: "documents" } });
+    await waitFor(() => expect(screen.getByLabelText("Research")).not.toHaveTextContent("Mobile note"));
+    openSidebarCollection("Documents");
+    expect(screen.getByLabelText("Documents")).toHaveTextContent("Mobile note");
+
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+  });
+
+  it("keeps the confirmed mobile collection when assignment fails", async () => {
+    const baseFetch = stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-mobile" && init?.method === "PATCH") {
+        return Promise.resolve(new Response(JSON.stringify({ error: "move failed" }), { status: 500 }));
+      }
+      return baseFetch(input, init);
+    }));
+    await renderWrite();
+    const collection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
+
+    fireEvent.change(collection, { target: { value: "research" } });
+
+    expect(await screen.findByText("move failed")).toBeInTheDocument();
+    expect(collection).toHaveValue("documents");
   });
 
   it("shows a clear empty state for a collection with no documents", async () => {
@@ -1319,11 +1509,14 @@ describe("Write (editor)", () => {
     await renderWrite();
     openWorkspaceHome();
     fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
+    const trigger = screen.getAllByRole("button", { name: "New collection" }).at(-1)!;
+    trigger.focus();
+    fireEvent.click(trigger);
     fireEvent.keyDown(screen.getByRole("dialog", { name: "New collection" }), { key: "Escape" });
 
     expect(screen.queryByRole("dialog", { name: "New collection" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("New collection");
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("opens collection creation from the sidebar while Collections is already open", async () => {
@@ -1349,8 +1542,8 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
     await screen.findByLabelText("Client Work");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await screen.findByLabelText("Workspace home");
-    fireEvent.click(screen.getByRole("button", { name: "New collection" }));
+    await screen.findByLabelText("Collections");
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
     fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
     fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
 
@@ -1383,7 +1576,9 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(confirmDelete).toHaveBeenCalledWith("Delete “Operating Context”? 1 document will move to Documents.");
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Collections")).toBeInTheDocument();
+    expect(screen.getByText("“Operating Context” was deleted. Its documents are now in Documents.")).toBeInTheDocument();
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
     expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Operating Context");
     openSidebarCollection("Documents");
     expect(screen.getByLabelText("Documents")).toHaveTextContent("About me");
@@ -1407,7 +1602,7 @@ describe("Write (editor)", () => {
     openWorkspaceHome();
     openSidebarCollection("Research");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await screen.findByLabelText("Workspace home");
+    await screen.findByLabelText("Collections");
     await act(async () => {
       resolveAssignment!(new Response(JSON.stringify({
         id: "doc-private",
@@ -1460,7 +1655,7 @@ describe("Write (editor)", () => {
     await screen.findByLabelText("Workspace home");
     openSidebarCollection("Research");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await screen.findByLabelText("Workspace home");
+    await screen.findByLabelText("Collections");
     await waitFor(() => expect(resolveLaterPage).toBeDefined());
     resolveLaterPage?.(
       new Response(
