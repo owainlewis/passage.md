@@ -106,10 +106,33 @@ button {
 /* ------------------------------------------------------------------ layout */
 
 .workspace {
+  --control-boundary: var(--hairline);
   display: flex;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+}
+
+/*
+ * The light workspace needs stronger utility colours than the reading surface.
+ * Keep decorative dividers quiet, while text and meaningful control boundaries
+ * meet their WCAG contrast thresholds on both workspace backgrounds.
+ */
+:root:not([data-theme="dark"]) .workspace {
+  --muted: #52544f;
+  --faint: #5a5c56;
+  --hairline: #b7b8b1;
+  --hairline-strong: #898b84;
+  --control-boundary: #898b84;
+  --hover: rgba(0, 0, 0, 0.075);
+  --hover-soft: rgba(0, 0, 0, 0.055);
+  --hover-strong: rgba(0, 0, 0, 0.11);
+}
+
+:root:not([data-theme="dark"]) .workspace
+  :is(button, a, select, input, textarea):not(.editor):not(.templateBodyInput):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .sidebar {
@@ -172,7 +195,7 @@ button {
   font-weight: 600;
   color: var(--faint);
   background: var(--bg);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 999px;
   min-width: 20px;
   height: 20px;
@@ -190,7 +213,7 @@ button {
 
 .documentFilter {
   min-height: 24px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 7px;
   background: var(--bg);
   color: var(--muted);
@@ -439,7 +462,7 @@ button {
 
 .filterInput {
   width: 100%;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   background: var(--bg);
   border-radius: 9px;
   padding: 8px 10px 8px 31px;
@@ -515,7 +538,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 999px;
   background: var(--bg);
   color: var(--faint);
@@ -579,7 +602,7 @@ button {
 
 .tagFilterInput {
   width: 100%;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   background: var(--bg);
   border-radius: 9px;
   padding: 8px 10px 8px 31px;
@@ -609,7 +632,7 @@ button {
   width: calc(100% - 1rem);
   margin: 0.5rem;
   padding: 0.55rem 0.75rem;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 0.45rem;
   background: transparent;
   color: var(--muted);
@@ -1183,7 +1206,7 @@ button {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 6px;
   background: var(--sidebar-bg);
   color: var(--muted);
@@ -1231,7 +1254,7 @@ button {
 
 .workspaceCollectionSelect,
 .topBarCollectionSelect {
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 7px;
   background: var(--surface);
   color: var(--muted);
@@ -1249,6 +1272,10 @@ button {
   min-height: 30px;
   padding: 0 24px 0 8px;
   border-color: transparent;
+}
+
+:root:not([data-theme="dark"]) .workspace .workspaceCollectionSelect {
+  border-color: var(--control-boundary);
 }
 
 .topBarCollectionSelect {
@@ -1482,6 +1509,11 @@ button {
   font-size: 1rem;
 }
 
+:root:not([data-theme="dark"]) .workspace .workspaceSearchInput input::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+
 .workspaceSearchScopes {
   display: flex;
   gap: 5px;
@@ -1586,7 +1618,7 @@ button {
 .workspaceSearchResults > .workspaceSearchMore {
   width: auto;
   min-height: 0;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
@@ -1621,7 +1653,7 @@ button {
 }
 
 .workspaceLoadMore button {
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   border-radius: 999px;
   background: var(--surface);
   color: var(--muted);
@@ -2656,7 +2688,7 @@ button {
 
 .statusPill {
   padding: 0 12px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   background: var(--surface);
   color: var(--muted);
   font-weight: 650;
@@ -2673,7 +2705,7 @@ button {
 }
 
 .dockButton {
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--control-boundary);
   background: var(--surface);
   color: var(--ink-soft);
   padding: 0 13px;
