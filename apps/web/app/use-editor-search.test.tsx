@@ -108,16 +108,15 @@ it("maps collection and Documents scopes to the authenticated search API", async
   );
 });
 
-it("refreshes an unchanged query after a pending save completes", async () => {
+it("waits for a pending save before running an unchanged query", async () => {
   const fetchMock = vi
     .fn()
-    .mockResolvedValueOnce(searchResponse([]))
     .mockResolvedValueOnce(searchResponse([{ id: "saved", title: "Saved", matchExcerpt: "fresh needle" }]));
   vi.stubGlobal("fetch", fetchMock);
   const { result, rerender } = renderHook(
-    (props: { refreshKey: string }) =>
-      useEditorSearch({ query: "needle", scope: {}, userId: "user-1", refreshKey: props.refreshKey }),
-    { initialProps: { refreshKey: "pending:doc-1" } }
+    (props: { paused: boolean }) =>
+      useEditorSearch({ query: "needle", scope: {}, userId: "user-1", paused: props.paused }),
+    { initialProps: { paused: true } }
   );
 
   await act(async () => {
@@ -125,13 +124,14 @@ it("refreshes an unchanged query after a pending save completes", async () => {
     await flushPromises();
   });
   expect(result.current.documents).toEqual([]);
+  expect(fetchMock).not.toHaveBeenCalled();
 
-  rerender({ refreshKey: "" });
+  rerender({ paused: false });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
     await flushPromises();
   });
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["saved"]);
 });
 

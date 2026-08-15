@@ -618,10 +618,12 @@ type WorkspaceSearchProps = {
   scope: string;
   trigger: HTMLElement | null;
   userId?: string;
-  pendingDocumentId?: string;
+  searchPaused?: boolean;
+  searchPauseError?: boolean;
   onClose: () => void;
   onOpenDocument: (doc: Doc) => void;
   onQueryChange: (query: string) => void;
+  onRetryPendingSave?: () => void;
   onScopeChange: (scope: string) => void;
 };
 
@@ -634,15 +636,18 @@ export function WorkspaceSearch({
   scope,
   trigger,
   userId,
-  pendingDocumentId,
+  searchPaused = false,
+  searchPauseError = false,
   onClose,
   onOpenDocument,
   onQueryChange,
+  onRetryPendingSave,
   onScopeChange
 }: WorkspaceSearchProps) {
   const dialog = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const restoreFocus = useRef(true);
+  const fullTextPaused = searchPaused && Boolean(query.trim());
   const scopedCollection = scope === "all" || scope === "documents"
     ? undefined
     : collections.find((collection) => collection.slug === scope);
@@ -654,20 +659,15 @@ export function WorkspaceSearch({
         ? { collectionId: scopedCollection.id }
         : {},
     userId: scopedCollection || scope === "all" || scope === "documents" ? userId : undefined,
-    refreshKey: pendingDocumentId ?? ""
+    paused: fullTextPaused
   });
   const localResults = searchWorkspaceDocs(docs, query, scope, assignments, deletedCollections).slice(0, 20);
   const recentResults = searchWorkspaceDocs(docs, "", scope, assignments, deletedCollections).slice(0, 20);
-  let results: Array<Doc | SearchDocument> = query ? localResults : recentResults;
-  if (search.active) {
-    const serverResults = pendingDocumentId
-      ? search.documents.filter((doc) => doc.id !== pendingDocumentId)
-      : search.documents;
-    const pendingResult = pendingDocumentId
-      ? localResults.find((doc) => doc.id === pendingDocumentId)
-      : undefined;
-    results = pendingResult ? [pendingResult, ...serverResults] : serverResults;
-  }
+  const results: Array<Doc | SearchDocument> = search.active
+    ? search.documents
+    : query
+      ? localResults
+      : recentResults;
 
   useEffect(() => {
     input.current?.focus();
@@ -711,7 +711,7 @@ export function WorkspaceSearch({
           ))}
         </div>
         <div className="workspaceSearchResults">
-          <p role="status">{search.loading ? "Searching…" : query ? `${results.length} results` : "Recently updated"}</p>
+          <p role="status">{fullTextPaused ? searchPauseError ? "Search paused" : "Saving before search…" : search.loading ? "Searching…" : query ? `${results.length} results` : "Recently updated"}</p>
           {results.map((doc) => (
             <button type="button" key={doc.id} onClick={() => { restoreFocus.current = false; onOpenDocument(doc); }}>
               <span className="workspaceDocumentIcon"><DocIcon /></span>
@@ -719,13 +719,19 @@ export function WorkspaceSearch({
               {doc.pinned && <StarIcon filled />}
             </button>
           ))}
-          {search.errorMessage ? (
+          {fullTextPaused && searchPauseError ? (
+            <div className="workspaceSearchEmpty" role="alert">
+              <strong>Save the current document to search</strong>
+              <span>The latest draft could not be saved.</span>
+              <button type="button" onClick={onRetryPendingSave}>Try again</button>
+            </div>
+          ) : search.errorMessage ? (
             <div className="workspaceSearchEmpty" role="alert">
               <strong>Search could not be completed</strong>
               <span>{search.errorMessage}</span>
               <button type="button" onClick={search.retry}>Try again</button>
             </div>
-          ) : !search.loading && results.length === 0 ? (
+          ) : !fullTextPaused && !search.loading && results.length === 0 ? (
             <div className="workspaceSearchEmpty"><strong>No matching documents</strong><span>Try another term or collection.</span></div>
           ) : null}
           {search.hasMore && (

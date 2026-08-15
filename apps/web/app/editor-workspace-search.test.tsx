@@ -109,16 +109,16 @@ it("keeps nonblank search local when there is no authenticated user", () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it("overlays a pending local edit and removes its stale server match", async () => {
+it("waits for a pending save before applying PostgreSQL query semantics", async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-    documents: [{ id: "pending", title: "Old title", matchExcerpt: "old needle" }]
+    documents: [{ id: "pending", title: "Current draft", matchExcerpt: "agent workflow without retired" }]
   }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   const baseProps = {
     assignments: {},
     collections,
     deletedCollections: [],
-    query: "needle",
+    query: '"agent workflow" -retired',
     scope: "all",
     trigger: null,
     userId: "user-1",
@@ -130,28 +130,63 @@ it("overlays a pending local edit and removes its stale server match", async () 
   const view = render(
     <WorkspaceSearch
       {...baseProps}
-      docs={[{ id: "pending", body: "# Current draft\n\nA fresh needle.", bodyLoaded: true }]}
-      pendingDocumentId="pending"
+      docs={[{ id: "pending", body: "# Current draft\n\nAn agent workflow draft.", bodyLoaded: true }]}
+      searchPaused
     />
   );
 
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(screen.getByRole("status")).toHaveTextContent("Saving before search…");
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  view.rerender(
+    <WorkspaceSearch
+      {...baseProps}
+      docs={[{ id: "pending", body: "# Current draft\n\nAn agent workflow draft.", bodyLoaded: true }]}
+    />
+  );
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
     await Promise.resolve();
     await Promise.resolve();
   });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/docs/search?q=%22agent+workflow%22+-retired&limit=50",
+    expect.objectContaining({ credentials: "include" })
+  );
   expect(screen.getByRole("button", { name: /Current draft/ })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /Old title/ })).not.toBeInTheDocument();
+});
 
-  view.rerender(
+it("shows and retries a failed save before searching", () => {
+  const retry = vi.fn();
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  render(
     <WorkspaceSearch
-      {...baseProps}
-      docs={[{ id: "pending", body: "# Current draft\n\nThe term was removed.", bodyLoaded: true }]}
-      pendingDocumentId="pending"
+      assignments={{}}
+      collections={collections}
+      deletedCollections={[]}
+      docs={[{ id: "pending", body: "# Pending", bodyLoaded: true }]}
+      query="pending"
+      scope="all"
+      trigger={null}
+      userId="user-1"
+      searchPaused
+      searchPauseError
+      onClose={vi.fn()}
+      onOpenDocument={vi.fn()}
+      onQueryChange={vi.fn()}
+      onRetryPendingSave={retry}
+      onScopeChange={vi.fn()}
     />
   );
-  expect(screen.queryByRole("button", { name: /Old title/ })).not.toBeInTheDocument();
-  expect(screen.getByText("No matching documents")).toBeInTheDocument();
+
+  expect(screen.getByRole("alert")).toHaveTextContent("latest draft could not be saved");
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 it("shows a retryable error and renders an untrusted snippet only as text", async () => {

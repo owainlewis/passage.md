@@ -593,10 +593,12 @@ export default function Editor() {
           scope={searchScope}
           trigger={searchTrigger}
           userId={userId}
-          pendingDocumentId={pendingSave?.id}
+          searchPaused={Boolean(userId && pendingSave)}
+          searchPauseError={Boolean(userId && pendingSave && saveState === "error")}
           onClose={() => setSearchOpen(false)}
           onOpenDocument={selectSearchDocument}
           onQueryChange={setSearchQuery}
+          onRetryPendingSave={() => setPendingSave((current) => current ? { ...current } : current)}
           onScopeChange={setSearchScope}
         />
       )}

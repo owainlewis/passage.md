@@ -37,12 +37,12 @@ export function useEditorSearch({
   query,
   scope,
   userId,
-  refreshKey = ""
+  paused = false
 }: {
   query: string;
   scope: SearchScope;
   userId?: string;
-  refreshKey?: string;
+  paused?: boolean;
 }) {
   const normalizedQuery = normalizeEditorSearch(query);
   const active = Boolean(userId && normalizedQuery);
@@ -60,7 +60,7 @@ export function useEditorSearch({
     currentKey.current = key;
     const version = ++requestVersion.current;
     requestController.current?.abort();
-    if (!active || !userId || invalid) return;
+    if (!active || !userId || invalid || paused) return;
 
     const controller = new AbortController();
     requestController.current = controller;
@@ -102,7 +102,7 @@ export function useEditorSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [active, collectionId, invalid, key, normalizedQuery, refreshKey, retryVersion, unfiled, userId]);
+  }, [active, collectionId, invalid, key, normalizedQuery, paused, retryVersion, unfiled, userId]);
 
   const loadMore = useCallback(() => {
     if (!active || invalid || !userId || state.key !== key || !state.nextCursor || state.loading) return;
@@ -136,14 +136,14 @@ export function useEditorSearch({
   const ownsState = state.ownerId === userId;
   return {
     active,
-    documents: ownsState && !invalid && state.key === key ? state.documents : [],
+    documents: !paused && ownsState && !invalid && state.key === key ? state.documents : [],
     errorMessage: invalid
       ? "Search is limited to 200 characters."
-      : active && state.key === key
+      : !paused && active && state.key === key
         ? state.error
         : "",
-    hasMore: active && !invalid && state.key === key && Boolean(state.nextCursor),
-    loading: active && !invalid && (state.key !== key || state.loading),
+    hasMore: active && !paused && !invalid && state.key === key && Boolean(state.nextCursor),
+    loading: active && !paused && !invalid && (state.key !== key || state.loading),
     loadMore,
     retry: () => setRetryVersion((version) => version + 1)
   };
