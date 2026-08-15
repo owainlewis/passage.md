@@ -688,6 +688,7 @@ function CollectionDialog({
       return;
     }
     setErrorMessage("");
+    event.currentTarget.closest<HTMLElement>('[role="dialog"]')?.focus();
     setSaving(true);
     const error = await onSave(nextTitle, description.trim());
     if (!error) {
@@ -753,6 +754,7 @@ function DeleteCollectionDialog({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage("");
+    event.currentTarget.closest<HTMLElement>('[role="dialog"]')?.focus();
     setDeleting(true);
     if (await onDelete()) {
       onClose();

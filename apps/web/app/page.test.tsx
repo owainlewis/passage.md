@@ -1560,6 +1560,7 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled());
     expect(screen.getByRole("textbox", { name: "Collection title" })).toBeDisabled();
+    expect(screen.getByRole("dialog", { name: "New collection" })).toHaveFocus();
     await act(async () => {
       resolveCollection!(new Response(JSON.stringify({
         id: "collection-pending",
@@ -1979,10 +1980,11 @@ describe("Write (editor)", () => {
   });
 
   it("shows collection deletion failures inside the modal", async () => {
+    let resolveDelete: ((response: Response) => void) | undefined;
     const baseFetch = stubSignedInFetch();
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/v1/collections/research" && init?.method === "DELETE") {
-        return Promise.resolve(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
+        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
       }
       return baseFetch(input, init);
     }));
@@ -1992,6 +1994,11 @@ describe("Write (editor)", () => {
     openSidebarCollection("Research");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
+    await waitFor(() => expect(resolveDelete).toBeDefined());
+    expect(screen.getByRole("dialog", { name: "Delete collection" })).toHaveFocus();
+    await act(async () => {
+      resolveDelete!(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Collection could not be deleted. Try again."
