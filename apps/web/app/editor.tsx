@@ -258,20 +258,14 @@ export default function Editor() {
   }
 
   async function deleteCollection(slug: string) {
-    if (slug === "documents") return;
+    if (slug === "documents") return false;
     const collection = collections.find((candidate) => candidate.slug === slug);
-    if (!collection) return;
-    const collectionDocs = docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === slug);
-    const count = collectionDocs.length;
-    const noun = count === 1 ? "document" : "documents";
-    const moveSummary = hasMoreDocs
-      ? "Its documents will move to Documents."
-      : `${count} ${noun} will move to Documents.`;
-    if (!window.confirm(`Delete “${collection.title}”? ${moveSummary}`)) return;
-    if (!await collectionState.deleteCollection(slug)) return;
+    if (!collection) return false;
+    if (!await collectionState.deleteCollection(slug)) return false;
     setSearchScope("all");
     setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
     openWorkspaceView({ type: "collections" }, "replace");
+    return true;
   }
 
   async function signOut() {
@@ -551,7 +545,7 @@ export default function Editor() {
             view={workspaceView}
             onAssignCollection={collectionState.assignCollection}
             onCreateCollection={createCollection}
-            onDeleteCollection={(slug) => void deleteCollection(slug)}
+            onDeleteCollection={deleteCollection}
             onOpenCollection={openCollection}
             onOpenDocument={selectDocument}
             onOpenSearch={openSearch}

@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SearchDocument } from "./editor-api";
 import { editorDocTitle } from "./editor-list";
 import { Doc, SaveState } from "./editor-model";
@@ -29,7 +30,7 @@ type EditorWorkspaceProps = {
   view: WorkspaceView;
   onAssignCollection: (id: string, slug: string) => Promise<boolean>;
   onCreateCollection: (title: string, description: string) => Promise<boolean>;
-  onDeleteCollection: (slug: string) => void;
+  onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenCollection: (slug: string) => void;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: (scope?: string) => void;
@@ -119,6 +120,7 @@ export function EditorWorkspace({
         deletedCollections={deletedCollections}
         pendingCollectionSlugs={pendingCollectionSlugs}
         pendingDocIds={pendingDocIds}
+        collectionCountComplete={!hasMoreDocs}
       />
     ) : (
       <div className="workspaceHub" aria-label="Collection unavailable">
@@ -307,7 +309,8 @@ function WorkspaceCollectionView({
   onToggleStar,
   onUpdateCollection,
   pendingCollectionSlugs,
-  pendingDocIds
+  pendingDocIds,
+  collectionCountComplete
 }: {
   assignments: Record<string, string>;
   assignmentDisabled: boolean;
@@ -316,15 +319,17 @@ function WorkspaceCollectionView({
   docs: Doc[];
   deletedCollections: string[];
   onAssignCollection: (id: string, slug: string) => Promise<boolean>;
-  onDeleteCollection: (slug: string) => void;
+  onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
   onToggleStar: (id: string) => Promise<boolean>;
   onUpdateCollection: (slug: string, title: string, description: string) => Promise<boolean>;
   pendingCollectionSlugs: Set<string>;
   pendingDocIds: Set<string>;
+  collectionCountComplete: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   return (
     <div className="workspaceHub" aria-label={collection.title}>
@@ -346,7 +351,7 @@ function WorkspaceCollectionView({
                 type="button"
                 className="workspaceCollectionDelete"
                 disabled={pendingCollectionSlugs.has(collection.slug)}
-                onClick={() => onDeleteCollection(collection.slug)}
+                onClick={() => setDeleting(true)}
               >
                 {pendingCollectionSlugs.has(collection.slug) ? "Deleting…" : "Delete"}
               </button>
@@ -373,6 +378,15 @@ function WorkspaceCollectionView({
           collection={collection}
           onClose={() => setEditing(false)}
           onSave={(title, description) => onUpdateCollection(collection.slug, title, description)}
+        />
+      )}
+      {deleting && (
+        <DeleteCollectionDialog
+          collection={collection}
+          documentCount={docs.length}
+          documentCountComplete={collectionCountComplete}
+          onClose={() => setDeleting(false)}
+          onDelete={() => onDeleteCollection(collection.slug)}
         />
       )}
     </div>
@@ -522,6 +536,118 @@ function WorkspaceDocumentRows({
   );
 }
 
+const MODAL_FOCUSABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])'
+].join(",");
+
+function focusableElements(dialog: HTMLElement) {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE))
+    .filter((element) => !element.hidden);
+}
+
+function CollectionModal({
+  ariaLabel,
+  children,
+  dismissDisabled = false,
+  initialFocus,
+  onClose
+}: {
+  ariaLabel: string;
+  children: React.ReactNode;
+  dismissDisabled?: boolean;
+  initialFocus: RefObject<HTMLElement | null>;
+  onClose: () => void;
+}) {
+  const backdrop = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLElement>(null);
+  const trigger = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const modalRoot = backdrop.current;
+    const body = document.body;
+    const background = Array.from(body.children).filter((element) => element !== modalRoot);
+    const previousInert = background.map((element) => [element, element.hasAttribute("inert")] as const);
+    const previousOverflow = body.style.overflow;
+
+    background.forEach((element) => element.setAttribute("inert", ""));
+    body.style.overflow = "hidden";
+    initialFocus.current?.focus();
+
+    function keepFocusInside(event: FocusEvent) {
+      if (dialog.current?.contains(event.target as Node)) return;
+      if (!dialog.current) return;
+      const focusable = focusableElements(dialog.current);
+      const preferred = initialFocus.current && focusable.includes(initialFocus.current)
+        ? initialFocus.current
+        : focusable[0] ?? dialog.current;
+      preferred.focus();
+    }
+
+    document.addEventListener("focusin", keepFocusInside);
+    return () => {
+      document.removeEventListener("focusin", keepFocusInside);
+      body.style.overflow = previousOverflow;
+      previousInert.forEach(([element, wasInert]) => {
+        if (!wasInert) element.removeAttribute("inert");
+      });
+      const element = trigger.current;
+      if (element?.isConnected) element.focus();
+    };
+  }, [initialFocus]);
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (!dismissDisabled) onClose();
+      return;
+    }
+    if (event.key !== "Tab" || !dialog.current) return;
+    const focusable = focusableElements(dialog.current);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.current.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return createPortal(
+    <div
+      ref={backdrop}
+      className="workspace workspaceCollectionDialogBackdrop"
+      role="presentation"
+      onClick={(event) => !dismissDisabled && event.target === event.currentTarget && onClose()}
+    >
+      <section
+        ref={dialog}
+        className="workspaceCollectionDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
+      >
+        {children}
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function CollectionDialog({
   collection,
   onClose,
@@ -531,21 +657,10 @@ function CollectionDialog({
   onClose: () => void;
   onSave: (title: string, description: string) => Promise<boolean>;
 }) {
-  const dialog = useRef<HTMLElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
-  const trigger = useRef<HTMLElement | null>(null);
   const [title, setTitle] = useState(collection?.title ?? "");
   const [description, setDescription] = useState(collection?.description ?? "");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    titleInput.current?.focus();
-    return () => {
-      const element = trigger.current;
-      if (element?.isConnected) element.focus();
-    };
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -563,49 +678,80 @@ function CollectionDialog({
     setSaving(false);
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      if (!saving) onClose();
+  return (
+    <CollectionModal
+      ariaLabel={collection ? "Edit collection" : "New collection"}
+      dismissDisabled={saving}
+      initialFocus={titleInput}
+      onClose={onClose}
+    >
+      <form onSubmit={submit}>
+        <header>
+          <h2>{collection ? "Edit collection" : "New collection"}</h2>
+          <p>Group related Markdown for you and your agents.</p>
+        </header>
+        <label>
+          <span>Title</span>
+          <input ref={titleInput} aria-label="Collection title" autoComplete="off" name="collection-title" maxLength={80} value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} />
+        </label>
+        <label>
+          <span>Description <small>Optional</small></span>
+          <textarea aria-label="Collection description" maxLength={180} rows={3} value={description} disabled={saving} onChange={(event) => setDescription(event.target.value)} />
+        </label>
+        <footer>
+          <button type="button" disabled={saving} onClick={onClose}>Cancel</button>
+          <button type="submit" disabled={saving || !title.trim()}>{saving ? "Saving…" : collection ? "Save" : "Create collection"}</button>
+        </footer>
+      </form>
+    </CollectionModal>
+  );
+}
+
+function DeleteCollectionDialog({
+  collection,
+  documentCount,
+  documentCountComplete,
+  onClose,
+  onDelete
+}: {
+  collection: WorkspaceCollection;
+  documentCount: number;
+  documentCountComplete: boolean;
+  onClose: () => void;
+  onDelete: () => Promise<boolean>;
+}) {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const [deleting, setDeleting] = useState(false);
+  const noun = documentCount === 1 ? "document" : "documents";
+  const moveSummary = documentCountComplete
+    ? `${documentCount} ${noun} will move to Documents.`
+    : "Its documents will move to Documents.";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDeleting(true);
+    if (await onDelete()) {
+      onClose();
       return;
     }
-    if (event.key !== "Tab" || !dialog.current) return;
-    const focusable = Array.from(dialog.current.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), textarea:not([disabled])"));
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    setDeleting(false);
   }
 
   return (
-    <div className="workspaceCollectionDialogBackdrop" role="presentation" onMouseDown={(event) => !saving && event.target === event.currentTarget && onClose()}>
-      <section ref={dialog} className="workspaceCollectionDialog" role="dialog" aria-modal="true" aria-label={collection ? "Edit collection" : "New collection"} onKeyDown={handleKeyDown}>
-        <form onSubmit={submit}>
-          <header>
-            <h2>{collection ? "Edit collection" : "New collection"}</h2>
-            <p>Group related Markdown for you and your agents.</p>
-          </header>
-          <label>
-            <span>Title</span>
-            <input ref={titleInput} aria-label="Collection title" autoComplete="off" name="collection-title" maxLength={80} value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} />
-          </label>
-          <label>
-            <span>Description <small>Optional</small></span>
-            <textarea aria-label="Collection description" maxLength={180} rows={3} value={description} disabled={saving} onChange={(event) => setDescription(event.target.value)} />
-          </label>
-          <footer>
-            <button type="button" disabled={saving} onClick={onClose}>Cancel</button>
-            <button type="submit" disabled={saving || !title.trim()}>{saving ? "Saving…" : collection ? "Save" : "Create collection"}</button>
-          </footer>
-        </form>
-      </section>
-    </div>
+    <CollectionModal ariaLabel="Delete collection" dismissDisabled={deleting} initialFocus={cancelButton} onClose={onClose}>
+      <form onSubmit={submit}>
+        <header>
+          <h2>Delete collection</h2>
+          <p>Delete “{collection.title}”? {moveSummary}</p>
+        </header>
+        <footer>
+          <button ref={cancelButton} type="button" disabled={deleting} onClick={onClose}>Cancel</button>
+          <button className="workspaceCollectionDialogDanger" type="submit" disabled={deleting}>
+            {deleting ? "Deleting…" : "Delete collection"}
+          </button>
+        </footer>
+      </form>
+    </CollectionModal>
   );
 }
 

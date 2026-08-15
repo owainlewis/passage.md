@@ -1337,18 +1337,22 @@ button {
   text-align: center;
 }
 
-.workspaceCollectionDialogBackdrop {
+.workspace.workspaceCollectionDialogBackdrop {
   position: fixed;
   inset: 0;
   z-index: 120;
   display: grid;
   place-items: center;
   padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: color-mix(in srgb, #000 30%, transparent);
 }
 
 .workspaceCollectionDialog {
   width: min(100%, 420px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
   background: var(--surface);
@@ -1432,6 +1436,12 @@ button {
   border-color: var(--accent-strong);
   background: var(--accent-strong);
   color: var(--accent-contrast);
+}
+
+.workspaceCollectionDialog footer button.workspaceCollectionDialogDanger {
+  border-color: #a04a3e;
+  background: #a04a3e;
+  color: #fff;
 }
 
 .workspaceCollectionDialog footer button:disabled {

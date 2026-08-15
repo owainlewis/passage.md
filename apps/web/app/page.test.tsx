@@ -1672,6 +1672,76 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
+  it("portals collection dialogs to the viewport and contains keyboard focus", async () => {
+    stubSignedInFetch();
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    const trigger = screen.getAllByRole("button", { name: "New collection" }).at(-1)!;
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "New collection" });
+    const backdrop = dialog.parentElement!;
+    const title = screen.getByRole("textbox", { name: "Collection title" });
+    expect(backdrop).toHaveClass("workspace", "workspaceCollectionDialogBackdrop");
+    expect(backdrop.parentElement).toBe(document.body);
+    expect(dialog.closest(".workspace")).toBe(backdrop);
+    expect(Array.from(document.body.children).filter((element) => element !== backdrop)
+      .every((element) => element.hasAttribute("inert"))).toBe(true);
+    expect(document.body).toHaveStyle({ overflow: "hidden" });
+    expect(title).toHaveFocus();
+
+    fireEvent.change(title, { target: { value: "Focus test" } });
+    const submit = screen.getByRole("button", { name: "Create collection" });
+    fireEvent.keyDown(title, { key: "Tab", shiftKey: true });
+    expect(submit).toHaveFocus();
+    fireEvent.keyDown(submit, { key: "Tab" });
+    expect(title).toHaveFocus();
+    trigger.focus();
+    expect(title).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(document.body).not.toHaveStyle({ overflow: "hidden" });
+    expect(Array.from(document.body.children).some((element) => element.hasAttribute("inert"))).toBe(false);
+  });
+
+  it("uses the shared modal contract for editing and deleting collections", async () => {
+    stubSignedInFetch();
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+
+    const editTrigger = screen.getByRole("button", { name: "Edit" });
+    editTrigger.focus();
+    fireEvent.click(editTrigger);
+    const editDialog = screen.getByRole("dialog", { name: "Edit collection" });
+    expect(editDialog.parentElement?.parentElement).toBe(document.body);
+    expect(screen.getByRole("textbox", { name: "Collection title" })).toHaveFocus();
+    fireEvent.click(editDialog.parentElement!);
+    await waitFor(() => expect(editTrigger).toHaveFocus());
+
+    const deleteTrigger = screen.getByRole("button", { name: "Delete" });
+    deleteTrigger.focus();
+    fireEvent.click(deleteTrigger);
+    const deleteDialog = screen.getByRole("dialog", { name: "Delete collection" });
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const confirm = screen.getByRole("button", { name: "Delete collection" });
+    expect(deleteDialog.parentElement?.parentElement).toBe(document.body);
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+    expect(confirm).toHaveFocus();
+    fireEvent.keyDown(confirm, { key: "Tab" });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(deleteDialog, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Delete collection" })).not.toBeInTheDocument();
+    await waitFor(() => expect(deleteTrigger).toHaveFocus());
+  });
+
   it("opens collection creation from the sidebar while Collections is already open", async () => {
     stubSignedInFetch();
 
@@ -1684,7 +1754,6 @@ describe("Write (editor)", () => {
   });
 
   it("can recreate a deleted custom collection name", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     stubSignedInFetch();
 
     await renderWrite();
@@ -1695,6 +1764,7 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
     await screen.findByLabelText("Client Work");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
     await screen.findByLabelText("Collections");
     fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
     fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
@@ -1719,8 +1789,7 @@ describe("Write (editor)", () => {
     expect(screen.getByLabelText("Research")).toHaveTextContent("Untitled");
   });
 
-  it("deletes a collection and moves its documents to Documents after server confirmation", async () => {
-    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("deletes a collection and moves its documents to Documents after dialog confirmation", async () => {
     stubSignedInFetch([{ id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" }]);
 
     await renderWrite();
@@ -1728,7 +1797,10 @@ describe("Write (editor)", () => {
     openSidebarCollection("Operating Context");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(confirmDelete).toHaveBeenCalledWith("Delete “Operating Context”? 1 document will move to Documents.");
+    expect(screen.getByRole("dialog", { name: "Delete collection" })).toHaveTextContent(
+      "Delete “Operating Context”? 1 document will move to Documents."
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
     expect(await screen.findByLabelText("Collections")).toBeInTheDocument();
     expect(screen.getByText("“Operating Context” was deleted. Its documents are now in Documents.")).toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
@@ -1747,14 +1819,13 @@ describe("Write (editor)", () => {
       }
       return baseFetch(input, init);
     }));
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     await renderWrite();
     fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "research" } });
     await waitFor(() => expect(resolveAssignment).toBeDefined());
     openWorkspaceHome();
     openSidebarCollection("Research");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
     await screen.findByLabelText("Collections");
     await act(async () => {
       resolveAssignment!(new Response(JSON.stringify({
@@ -1802,12 +1873,11 @@ describe("Write (editor)", () => {
       return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchMock);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     render(<Write />);
     await screen.findByLabelText("Workspace home");
     openSidebarCollection("Research");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
     await screen.findByLabelText("Collections");
     await waitFor(() => expect(resolveLaterPage).toBeDefined());
     resolveLaterPage?.(
@@ -1831,16 +1901,21 @@ describe("Write (editor)", () => {
   });
 
   it("keeps a collection when deletion is cancelled", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     stubSignedInFetch([{ id: "doc-context", body: "---\ntags: [operating-context]\n---\n\n# About me" }]);
 
     await renderWrite();
     openWorkspaceHome();
     openSidebarCollection("Operating Context");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const trigger = screen.getByRole("button", { name: "Delete" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "Delete collection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(screen.getByLabelText("Operating Context")).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Operating Context");
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("protects the Documents fallback collection from deletion", async () => {
