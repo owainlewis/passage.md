@@ -25,6 +25,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
   const [pendingDocIds, setPendingDocIds] = useState<Set<string>>(() => new Set());
   const [pendingCollectionSlugs, setPendingCollectionSlugs] = useState<Set<string>>(() => new Set());
   const [creatingCollection, setCreatingCollection] = useState(false);
+  const [available, setAvailable] = useState(false);
   const collectionVersions = useRef(new Map<string, number>());
 
   useEffect(() => {
@@ -32,6 +33,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCollections([]);
       setLoading(false);
+      setAvailable(false);
       return;
     }
     let cancelled = false;
@@ -40,18 +42,21 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     setPendingDocIds(new Set());
     setPendingCollectionSlugs(new Set());
     setCreatingCollection(false);
+    setAvailable(false);
     collectionVersions.current = new Map();
     void apiCollections()
       .then((loaded) => {
         if (!cancelled) {
           setCollections(loaded.map(toWorkspaceCollection));
           setLoading(false);
+          setAvailable(true);
         }
       })
       .catch((error) => {
         if (!cancelled) {
           setNotice(messageOf(error, "Collections could not be loaded"));
           setLoading(false);
+          setAvailable(false);
         }
       });
     return () => {
@@ -60,7 +65,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
   }, [setNotice, userId]);
 
   const assignCollection = useCallback(async (documentID: string, slug: string) => {
-    if (pendingDocIds.has(documentID)) return false;
+    if (!available || pendingDocIds.has(documentID)) return false;
     const collectionID = slug === "documents" ? null : collections.find((collection) => collection.slug === slug)?.id;
     if (slug !== "documents" && !collectionID) {
       setNotice("Collection could not be found");
@@ -84,7 +89,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     } finally {
       setPendingDocIds((current) => withoutValue(current, documentID));
     }
-  }, [collections, pendingDocIds, setDocs, setNotice]);
+  }, [available, collections, pendingDocIds, setDocs, setNotice]);
 
   const toggleStar = useCallback(async (documentID: string) => {
     if (pendingDocIds.has(documentID)) return false;
@@ -158,6 +163,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
 
   return {
     assignCollection,
+    available,
     collections,
     createCollection,
     creatingCollection,
@@ -185,8 +191,15 @@ function mergeConfirmedMetadata(current: Doc, saved: Doc): Doc {
     collectionId: saved.collectionId,
     collectionSlug: saved.collectionSlug,
     starred: saved.starred,
-    pinned: saved.starred
+    pinned: saved.starred,
+    updatedAt: newestTimestamp(current.updatedAt, saved.updatedAt)
   };
+}
+
+function newestTimestamp(current?: string, saved?: string) {
+  if (!saved) return current;
+  if (!current) return saved;
+  return Date.parse(saved) > Date.parse(current) ? saved : current;
 }
 
 function withValue(current: Set<string>, value: string) {

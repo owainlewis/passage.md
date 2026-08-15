@@ -18,6 +18,7 @@ import { DocIcon, SearchIcon, StarIcon } from "./icons";
 
 type EditorWorkspaceProps = {
   assignments: Record<string, string>;
+  assignmentDisabled: boolean;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
@@ -41,6 +42,7 @@ type EditorWorkspaceProps = {
 
 export function EditorWorkspace({
   assignments,
+  assignmentDisabled,
   collections,
   docs,
   deletedCollections,
@@ -100,6 +102,7 @@ export function EditorWorkspace({
     content = (
       <WorkspaceCollectionView
         assignments={assignments}
+        assignmentDisabled={assignmentDisabled}
         collection={collection}
         docs={docsInCollection(docs, collection.slug, assignments, deletedCollections)}
         onAssignCollection={onAssignCollection}
@@ -119,6 +122,7 @@ export function EditorWorkspace({
     content = (
       <WorkspaceList
         assignments={assignments}
+        assignmentDisabled={assignmentDisabled}
         collections={collections}
         docs={list}
         deletedCollections={deletedCollections}
@@ -278,6 +282,7 @@ function CollectionGrid({
 
 function WorkspaceCollectionView({
   assignments,
+  assignmentDisabled,
   collection,
   collections,
   docs,
@@ -292,6 +297,7 @@ function WorkspaceCollectionView({
   pendingDocIds
 }: {
   assignments: Record<string, string>;
+  assignmentDisabled: boolean;
   collection: WorkspaceCollection;
   collections: WorkspaceCollection[];
   docs: Doc[];
@@ -336,6 +342,7 @@ function WorkspaceCollectionView({
         </div>
         <WorkspaceDocumentRows
           assignments={assignments}
+          assignmentDisabled={assignmentDisabled}
           docs={docs}
           deletedCollections={deletedCollections}
           empty="No documents here yet. Use + in the top bar to add the first one."
@@ -361,6 +368,7 @@ function WorkspaceCollectionView({
 
 function WorkspaceList({
   assignments,
+  assignmentDisabled,
   collections,
   docs,
   deletedCollections,
@@ -373,6 +381,7 @@ function WorkspaceList({
   pendingDocIds
 }: {
   assignments: Record<string, string>;
+  assignmentDisabled: boolean;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
@@ -392,6 +401,7 @@ function WorkspaceList({
       </header>
       <WorkspaceDocumentRows
         assignments={assignments}
+        assignmentDisabled={assignmentDisabled}
         docs={docs}
         deletedCollections={deletedCollections}
         empty={empty}
@@ -427,6 +437,7 @@ function WorkspaceSectionHeading({
 
 function WorkspaceDocumentRows({
   assignments,
+  assignmentDisabled = false,
   collections = WORKSPACE_COLLECTIONS,
   docs,
   deletedCollections = [],
@@ -439,6 +450,7 @@ function WorkspaceDocumentRows({
   pendingDocIds = new Set()
 }: {
   assignments: Record<string, string>;
+  assignmentDisabled?: boolean;
   collections?: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections?: string[];
@@ -470,7 +482,7 @@ function WorkspaceDocumentRows({
                   className="workspaceCollectionSelect"
                   aria-label={`Collection for ${editorDocTitle(doc)}`}
                   value={collectionForDoc(doc, assignments, deletedCollections)}
-                  disabled={pendingDocIds.has(doc.id)}
+                  disabled={assignmentDisabled || pendingDocIds.has(doc.id)}
                   onChange={(event) => void onAssignCollection(doc.id, event.target.value)}
                 >
                   {collections.map((collection) => <option value={collection.slug} key={collection.slug}>{collection.title}</option>)}

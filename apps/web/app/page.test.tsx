@@ -1230,6 +1230,37 @@ describe("Write (editor)", () => {
     expect(await screen.findByLabelText("Pending collection")).toBeInTheDocument();
   });
 
+  it("keeps assignment disabled until collections load and after failure", async () => {
+    let rejectCollections: ((reason?: unknown) => void) | undefined;
+    const baseFetch = stubSignedInFetch([{
+      id: "doc-assigned",
+      publicId: "assigned",
+      body: "# Assigned note",
+      collectionId: "collection-research",
+      collectionSlug: "research"
+    }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections" && (init?.method ?? "GET") === "GET") {
+        return new Promise<Response>((_, reject) => { rejectCollections = reject; });
+      }
+      return baseFetch(input, init);
+    }));
+    window.history.replaceState(null, "", "/write/assigned");
+
+    render(<Write />);
+    const collection = await screen.findByRole("combobox", { name: "Collection for Assigned note" });
+    expect(collection).toBeDisabled();
+    await act(async () => rejectCollections!(new Error("collection outage")));
+
+    expect(await screen.findByText("collection outage")).toBeInTheDocument();
+    expect(collection).toBeDisabled();
+    fireEvent.change(collection, { target: { value: "documents" } });
+    expect(baseFetch).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-assigned",
+      expect.objectContaining({ method: "PATCH" })
+    );
+  });
+
   it("creates a collection and makes it available across the workspace", async () => {
     stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
@@ -1610,6 +1641,39 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Starred/ })[0]);
     expect(screen.getByLabelText("Starred")).toHaveTextContent("Pinned note");
     expect(screen.queryByRole("button", { name: /Latest note/ })).not.toBeInTheDocument();
+  });
+
+  it("moves a metadata-updated document to its confirmed recent position", async () => {
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-old", body: "# Older note", updatedAt: "2026-08-15T08:00:00Z" },
+      { id: "doc-new", body: "# Newer note", updatedAt: "2026-08-15T09:00:00Z" }
+    ]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-old" && init?.method === "PATCH") {
+        return Promise.resolve(new Response(JSON.stringify({
+          id: "doc-old",
+          publicId: "public-1",
+          body: "# Older note",
+          collectionId: null,
+          collectionSlug: null,
+          starred: true,
+          updatedAt: "2026-08-15T10:00:00Z"
+        }), { status: 200 }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    await openDocumentFromSearch(/Older note/);
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await screen.findByRole("button", { name: "Unstar document" });
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
+
+    const recent = await screen.findByLabelText("Recent");
+    const rows = recent.querySelectorAll(".workspaceDocumentOpen");
+    expect(rows[0]).toHaveTextContent("Older note");
+    expect(rows[1]).toHaveTextContent("Newer note");
   });
 
   it("marks a document as shared without leaving the editor", async () => {

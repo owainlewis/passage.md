@@ -333,7 +333,7 @@ export default function Editor() {
                   className="topBarCollectionSelect"
                   aria-label={`Collection for ${title}`}
                   value={activeCollection}
-                  disabled={collectionState.pendingDocIds.has(active.id)}
+                  disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
                   onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
                 >
                   {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
@@ -460,6 +460,7 @@ export default function Editor() {
         </section> : (
           <EditorWorkspace
             assignments={EMPTY_ASSIGNMENTS}
+            assignmentDisabled={!collectionState.available}
             collections={collections}
             deletedCollections={NO_DELETED_COLLECTIONS}
             docs={docs}
