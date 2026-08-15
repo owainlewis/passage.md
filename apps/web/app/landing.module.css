@@ -77,10 +77,18 @@
   color: var(--accent);
 }
 
+.heroKicker {
+  margin: 0 0 20px;
+  color: var(--accent);
+  font: 600 0.7rem/1 var(--mono);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
 .heroTitle {
-  max-width: 20ch;
+  max-width: 19ch;
   margin: 0 auto;
-  color: color-mix(in srgb, var(--accent) 58%, var(--accent-strong));
+  color: var(--ink-display);
   font-family: var(--serif);
   font-size: clamp(2.5rem, 4vw, 3.6rem);
   font-weight: 500;
@@ -370,6 +378,7 @@
 
 .featureTitle {
   margin: 0;
+  color: var(--ink-display);
   font-family: var(--serif);
   font-size: 1.3rem;
   font-weight: 500;
@@ -419,6 +428,7 @@
   align-items: center;
   justify-content: space-between;
   margin: 0;
+  color: var(--ink-display);
   font: 700 0.72rem/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -434,6 +444,7 @@
 
 .planPrice {
   margin: 28px 0;
+  color: var(--ink-display);
   font-family: var(--serif);
   font-size: clamp(2.4rem, 4vw, 3.2rem);
   letter-spacing: -0.03em;
