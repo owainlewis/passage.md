@@ -78,7 +78,7 @@ export function EditorSidebar({
                 key={collection.slug}
                 onClick={() => onOpenCollection(collection.slug)}
               >
-                <span>{collection.title}</span>
+                <span title={collection.title}>{collection.title}</span>
                 <small>{count}</small>
               </button>
             );
