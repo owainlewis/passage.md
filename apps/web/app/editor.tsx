@@ -129,7 +129,7 @@ export default function Editor() {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        if (document.querySelector(".workspaceCollectionDialog")) return;
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         if (!searchOpen) {
           setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
         }
@@ -249,13 +249,18 @@ export default function Editor() {
 
   async function createCollection(title: string, description: string) {
     const collection = await collectionState.createCollection(title, description);
-    if (!collection) return false;
+    if (!collection) {
+      setBillingNotice("");
+      return false;
+    }
     openCollection(collection.slug);
     return true;
   }
 
-  function updateCollection(slug: string, title: string, description: string) {
-    return collectionState.updateCollection(slug, title, description);
+  async function updateCollection(slug: string, title: string, description: string) {
+    const saved = await collectionState.updateCollection(slug, title, description);
+    if (!saved) setBillingNotice("");
+    return saved;
   }
 
   async function deleteCollection(slug: string) {
@@ -269,6 +274,9 @@ export default function Editor() {
     setSearchScope("all");
     setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
     openWorkspaceView({ type: "collections" }, "replace");
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-collection-dialog-focus-fallback]")?.focus();
+    });
     return true;
   }
 

@@ -255,7 +255,7 @@ function WorkspaceCollections({
       <header className="workspacePageHeader">
         <div className="workspacePageHeaderLine">
           <h1>Collections</h1>
-          <button type="button" onClick={() => setCreating(true)}>New collection</button>
+          <button data-collection-dialog-focus-fallback type="button" onClick={() => setCreating(true)}>New collection</button>
         </div>
         <p>Related documents, kept together.</p>
       </header>
@@ -598,7 +598,13 @@ function CollectionModal({
         if (!wasInert) element.removeAttribute("inert");
       });
       const element = trigger.current;
-      if (element?.isConnected) element.focus();
+      window.requestAnimationFrame(() => {
+        if (element?.isConnected) {
+          element.focus();
+        } else {
+          document.querySelector<HTMLElement>("[data-collection-dialog-focus-fallback]")?.focus();
+        }
+      });
     };
   }, [initialFocus]);
 
@@ -672,6 +678,7 @@ function CollectionDialog({
   const [title, setTitle] = useState(collection?.title ?? "");
   const [description, setDescription] = useState(collection?.description ?? "");
   const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -680,6 +687,7 @@ function CollectionDialog({
       titleInput.current?.focus();
       return;
     }
+    setErrorMessage("");
     setSaving(true);
     const saved = await onSave(nextTitle, description.trim());
     if (saved) {
@@ -687,6 +695,8 @@ function CollectionDialog({
       return;
     }
     setSaving(false);
+    setErrorMessage("Collection could not be saved. Try again.");
+    window.requestAnimationFrame(() => titleInput.current?.focus());
   }
 
   return (
@@ -709,6 +719,7 @@ function CollectionDialog({
           <span>Description <small>Optional</small></span>
           <textarea aria-label="Collection description" maxLength={180} rows={3} value={description} disabled={saving} onChange={(event) => setDescription(event.target.value)} />
         </label>
+        {errorMessage && <p className="workspaceCollectionDialogError" role="alert">{errorMessage}</p>}
         <footer>
           <button type="button" disabled={saving} onClick={onClose}>Cancel</button>
           <button type="submit" disabled={saving || !title.trim()}>{saving ? "Saving…" : collection ? "Save" : "Create collection"}</button>
@@ -749,6 +760,7 @@ function DeleteCollectionDialog({
     }
     setDeleting(false);
     setErrorMessage("Collection could not be deleted. Try again.");
+    window.requestAnimationFrame(() => cancelButton.current?.focus());
   }
 
   return (

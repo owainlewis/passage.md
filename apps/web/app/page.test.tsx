@@ -1656,6 +1656,31 @@ describe("Write (editor)", () => {
     expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Discovery");
   });
 
+  it("keeps failed collection saves inside the dialog and restores input focus", async () => {
+    const baseFetch = stubSignedInFetch();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections/research" && init?.method === "PATCH") {
+        return Promise.resolve(new Response(JSON.stringify({ error: "save failed" }), { status: 500 }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const title = screen.getByRole("textbox", { name: "Collection title" });
+    fireEvent.change(title, { target: { value: "Discovery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Collection could not be saved. Try again."
+    );
+    await waitFor(() => expect(title).toHaveFocus());
+    expect(screen.queryByText("save failed")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Edit collection" })).toBeInTheDocument();
+  });
+
   it("closes collection creation with Escape without adding it", async () => {
     stubSignedInFetch();
 
@@ -1815,6 +1840,7 @@ describe("Write (editor)", () => {
     expect(screen.getByText("“Operating Context” was deleted. Its documents are now in Documents.")).toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
     expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Operating Context");
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "New collection" }).at(-1)).toHaveFocus());
     openSidebarCollection("Documents");
     expect(screen.getByLabelText("Documents")).toHaveTextContent("About me");
   });
@@ -1949,6 +1975,7 @@ describe("Write (editor)", () => {
     expect(screen.queryByText("delete failed")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Delete collection" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete collection" })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus());
   });
 
   it("protects the Documents fallback collection from deletion", async () => {
