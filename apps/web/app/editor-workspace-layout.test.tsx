@@ -91,6 +91,22 @@ it("keeps collection modal surfaces fixed to the full viewport", () => {
     .toContain("background: #a04a3e;");
 });
 
+it("keeps narrow editor chrome compact and unobstructed", () => {
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.statusDock\s*\{[^}]*grid-template-columns: auto minmax\(0, 1fr\);/
+  );
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.dockGroupMeta\s*\{[^}]*min-width: 0;[^}]*flex-wrap: wrap;/
+  );
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspace\.withSidebar \.workspaceMobileNav\s*\{[^}]*display: none;/
+  );
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 360px\)\s*\{[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
+  );
+  expect(declarationsFor(".statusDock")).toContain("border: 1px solid var(--hairline);");
+});
+
 it("wraps long collection copy while preserving a large count", () => {
   const longTitle = "Collection".repeat(20);
   const longDescription = "description".repeat(24);

@@ -550,7 +550,7 @@ function focusableElements(dialog: HTMLElement) {
     .filter((element) => !element.hidden);
 }
 
-function CollectionModal({
+export function WorkspaceModal({
   ariaLabel,
   children,
   dismissDisabled = false,
@@ -701,7 +701,7 @@ function CollectionDialog({
   }
 
   return (
-    <CollectionModal
+    <WorkspaceModal
       ariaLabel={collection ? "Edit collection" : "New collection"}
       dismissDisabled={saving}
       initialFocus={titleInput}
@@ -726,7 +726,7 @@ function CollectionDialog({
           <button type="submit" disabled={saving || !title.trim()}>{saving ? "Saving…" : collection ? "Save" : "Create collection"}</button>
         </footer>
       </form>
-    </CollectionModal>
+    </WorkspaceModal>
   );
 }
 
@@ -766,7 +766,7 @@ function DeleteCollectionDialog({
   }
 
   return (
-    <CollectionModal ariaLabel="Delete collection" dismissDisabled={deleting} initialFocus={cancelButton} onClose={onClose}>
+    <WorkspaceModal ariaLabel="Delete collection" dismissDisabled={deleting} initialFocus={cancelButton} onClose={onClose}>
       <form onSubmit={submit}>
         <header>
           <h2>Delete collection</h2>
@@ -780,7 +780,7 @@ function DeleteCollectionDialog({
           </button>
         </footer>
       </form>
-    </CollectionModal>
+    </WorkspaceModal>
   );
 }
 

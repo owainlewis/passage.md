@@ -63,10 +63,10 @@ export function useEditorSharing({
   }
 
   async function shareDoc() {
-    if (!active) return;
+    if (!active) return false;
     if (!canShare) {
       setBillingNotice("Sharing and raw .md URLs are Pro features.");
-      return;
+      return false;
     }
     setBillingNotice("");
     window.clearTimeout(copyTimer.current);
@@ -108,9 +108,11 @@ export function useEditorSharing({
       setDocumentFilter(ALL_DOCUMENTS);
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
+      return true;
     } catch {
       setShareState("error");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
+      return false;
     }
   }
 
@@ -123,7 +125,7 @@ export function useEditorSharing({
   }
 
   async function unshareDoc() {
-    if (!active || !activeShared) return;
+    if (!active || !activeShared) return false;
     window.clearTimeout(copyTimer.current);
     try {
       await apiUnshareDoc(active.id);
@@ -134,9 +136,11 @@ export function useEditorSharing({
       setDocumentFilter(ALL_DOCUMENTS);
       setShareState("unshared");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
+      return true;
     } catch {
       setShareState("error");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
+      return false;
     }
   }
 

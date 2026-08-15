@@ -41,12 +41,30 @@ export function SearchIcon() {
   );
 }
 
+export function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <path d="m4.5 10.5 7.5-6 7.5 6v8.3a.7.7 0 0 1-.7.7H5.2a.7.7 0 0 1-.7-.7v-8.3Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9.5 19.5v-5.8h5v5.8" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function RecentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 7.5v4.8l3.2 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="13"
-      height="13"
+      width="17"
+      height="17"
       fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       strokeWidth="1.5"

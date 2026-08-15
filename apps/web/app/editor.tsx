@@ -8,7 +8,7 @@ import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { EditorSidebar } from "./editor-sidebar";
 import { isShared, Mode, publicIdFromPath } from "./editor-model";
 import { EditorStatusBar } from "./editor-status-bar";
-import { EditorWorkspace, WorkspaceSearch } from "./editor-workspace";
+import { EditorWorkspace, WorkspaceModal, WorkspaceSearch } from "./editor-workspace";
 import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
 import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
 import { useEntitlements } from "./entitlements";
@@ -28,6 +28,8 @@ export default function Editor() {
   const [mode, setMode] = useState<Mode>("preview");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [authError, setAuthError] = useState("");
   const [activeTemplateId, setActiveTemplateId] = useState("");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => currentWorkspaceLocation().view);
@@ -446,7 +448,7 @@ export default function Editor() {
                     type="button"
                     className="topBarDelete"
                     disabled={collectionState.pendingDocIds.has(active.id)}
-                    onClick={() => void deleteDoc(active.id)}
+                    onClick={() => setDeleteDialogOpen(true)}
                   >
                     Delete
                   </button>
@@ -591,10 +593,15 @@ export default function Editor() {
             mode={mode}
             onExport={exportDoc}
             onModeChange={setMode}
-            onShare={shareDoc}
-            onUnshare={unshareDoc}
-            publicDocPath={publicDocPath}
+            onOpenShare={() => {
+              if (!activeShared && !entitlements.can("shareLinks")) {
+                void shareDoc();
+                return;
+              }
+              setShareDialogOpen(true);
+            }}
             saveState={saveState}
+            shareDialogOpen={shareDialogOpen}
             shareButtonLabel={shareButtonLabel}
             shareState={shareState}
             showSaveState={showSaveState}
@@ -621,6 +628,118 @@ export default function Editor() {
           onScopeChange={setSearchScope}
         />
       )}
+      {shareDialogOpen && active && (
+        <DocumentShareDialog
+          activeShared={activeShared}
+          publicDocPath={publicDocPath}
+          title={titleOf(active.body)}
+          onClose={() => setShareDialogOpen(false)}
+          onCopy={() => shareDoc()}
+          onPublish={() => shareDoc()}
+          onUnshare={() => unshareDoc()}
+        />
+      )}
+      {deleteDialogOpen && active && !activeShared && (
+        <DeleteDocumentDialog
+          title={titleOf(active.body)}
+          onClose={() => setDeleteDialogOpen(false)}
+          onDelete={() => deleteDoc(active.id)}
+        />
+      )}
     </div>
+  );
+}
+
+function DocumentShareDialog({
+  activeShared,
+  publicDocPath,
+  title,
+  onClose,
+  onCopy,
+  onPublish,
+  onUnshare
+}: {
+  activeShared: boolean;
+  publicDocPath: string;
+  title: string;
+  onClose: () => void;
+  onCopy: () => Promise<boolean>;
+  onPublish: () => Promise<boolean>;
+  onUnshare: () => Promise<boolean>;
+}) {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  return (
+    <WorkspaceModal ariaLabel="Share document" initialFocus={cancelButton} onClose={onClose}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onClose();
+          void (activeShared ? onCopy() : onPublish());
+        }}
+      >
+        <header>
+          <h2>{activeShared ? "Sharing is on" : "Share document"}</h2>
+          <p>
+            {activeShared
+              ? `“${title}” is public to anyone with the link.`
+              : `Make “${title}” public to anyone with the link.`}
+          </p>
+        </header>
+        {activeShared && publicDocPath && (
+          <Link className="workspaceDialogPublicLink" href={publicDocPath} target="_blank" rel="noreferrer">
+            View public document
+          </Link>
+        )}
+        <footer>
+          <button ref={cancelButton} type="button" onClick={onClose}>Close</button>
+          {activeShared && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                void onUnshare();
+              }}
+            >
+              Make private
+            </button>
+          )}
+          <button type="submit">{activeShared ? "Copy link" : "Publish and copy link"}</button>
+        </footer>
+      </form>
+    </WorkspaceModal>
+  );
+}
+
+function DeleteDocumentDialog({
+  title,
+  onClose,
+  onDelete
+}: {
+  title: string;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+}) {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  return (
+    <WorkspaceModal ariaLabel="Delete document" initialFocus={cancelButton} onClose={onClose}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onClose();
+          void onDelete();
+        }}
+      >
+        <header>
+          <h2>Delete document</h2>
+          <p>Delete “{title}”? You will no longer be able to access it from Passage.</p>
+        </header>
+        <footer>
+          <button ref={cancelButton} type="button" onClick={onClose}>Cancel</button>
+          <button className="workspaceCollectionDialogDanger" type="submit">Delete document</button>
+        </footer>
+      </form>
+    </WorkspaceModal>
   );
 }
