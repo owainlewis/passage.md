@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
@@ -78,11 +78,18 @@ export default function Editor() {
     focusEditor: () => textareaRef.current?.focus()
   });
 
+  const collectionNotice = useRef("");
+  const setCollectionNotice = useCallback<Dispatch<SetStateAction<string>>>((notice) => {
+    const message = typeof notice === "function" ? notice(collectionNotice.current) : notice;
+    collectionNotice.current = message;
+    setBillingNotice(message);
+  }, [setBillingNotice]);
+
   const collectionState = useEditorCollections({
     userId,
     docs,
     setDocs,
-    setNotice: setBillingNotice
+    setNotice: setCollectionNotice
   });
 
   const activeShared = active ? isShared(active) : false;
@@ -250,20 +257,23 @@ export default function Editor() {
   async function createCollection(title: string, description: string) {
     const collection = await collectionState.createCollection(title, description);
     if (!collection) {
-      setBillingNotice("");
-      return false;
+      const error = collectionNotice.current || "Collection could not be created";
+      setCollectionNotice("");
+      return error;
     }
     openCollection(collection.slug);
     requestAnimationFrame(() => {
       document.querySelector<HTMLElement>("[data-collection-dialog-focus-destination]")?.focus();
     });
-    return true;
+    return null;
   }
 
   async function updateCollection(slug: string, title: string, description: string) {
     const saved = await collectionState.updateCollection(slug, title, description);
-    if (!saved) setBillingNotice("");
-    return saved;
+    if (saved) return null;
+    const error = collectionNotice.current || "Collection could not be saved";
+    setCollectionNotice("");
+    return error;
   }
 
   async function deleteCollection(slug: string) {

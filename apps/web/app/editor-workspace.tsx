@@ -29,13 +29,13 @@ type EditorWorkspaceProps = {
   saveState: SaveState;
   view: WorkspaceView;
   onAssignCollection: (id: string, slug: string) => Promise<boolean>;
-  onCreateCollection: (title: string, description: string) => Promise<boolean>;
+  onCreateCollection: (title: string, description: string) => Promise<string | null>;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenCollection: (slug: string) => void;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: (scope?: string) => void;
   onOpenView: (view: WorkspaceView) => void;
-  onUpdateCollection: (slug: string, title: string, description: string) => Promise<boolean>;
+  onUpdateCollection: (slug: string, title: string, description: string) => Promise<string | null>;
   hasMoreDocs: boolean;
   loadingMore: boolean;
   onLoadMoreDocs: () => void;
@@ -245,7 +245,7 @@ function WorkspaceCollections({
   docs: Doc[];
   deletedCollections: string[];
   initialCreating: boolean;
-  onCreateCollection: (title: string, description: string) => Promise<boolean>;
+  onCreateCollection: (title: string, description: string) => Promise<string | null>;
   onOpenCollection: (slug: string) => void;
 }) {
   const [creating, setCreating] = useState(initialCreating);
@@ -323,7 +323,7 @@ function WorkspaceCollectionView({
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
   onToggleStar: (id: string) => Promise<boolean>;
-  onUpdateCollection: (slug: string, title: string, description: string) => Promise<boolean>;
+  onUpdateCollection: (slug: string, title: string, description: string) => Promise<string | null>;
   pendingCollectionSlugs: Set<string>;
   pendingDocIds: Set<string>;
   collectionCountComplete: boolean;
@@ -672,7 +672,7 @@ function CollectionDialog({
 }: {
   collection?: WorkspaceCollection;
   onClose: () => void;
-  onSave: (title: string, description: string) => Promise<boolean>;
+  onSave: (title: string, description: string) => Promise<string | null>;
 }) {
   const titleInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(collection?.title ?? "");
@@ -689,13 +689,13 @@ function CollectionDialog({
     }
     setErrorMessage("");
     setSaving(true);
-    const saved = await onSave(nextTitle, description.trim());
-    if (saved) {
+    const error = await onSave(nextTitle, description.trim());
+    if (!error) {
       onClose();
       return;
     }
     setSaving(false);
-    setErrorMessage("Collection could not be saved. Try again.");
+    setErrorMessage(error);
     window.requestAnimationFrame(() => titleInput.current?.focus());
   }
 

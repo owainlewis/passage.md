@@ -1675,11 +1675,34 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Collection could not be saved. Try again."
+      "save failed"
     );
     await waitFor(() => expect(title).toHaveFocus());
-    expect(screen.queryByText("save failed")).not.toBeInTheDocument();
+    expect(screen.getAllByText("save failed")).toHaveLength(1);
     expect(screen.getByRole("dialog", { name: "Edit collection" })).toBeInTheDocument();
+  });
+
+  it("shows actionable collection creation failures inside the dialog", async () => {
+    const baseFetch = stubSignedInFetch();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify({ error: "collection limit reached" }), { status: 409 }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
+    const title = screen.getByRole("textbox", { name: "Collection title" });
+    fireEvent.change(title, { target: { value: "One too many" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("collection limit reached");
+    await waitFor(() => expect(title).toHaveFocus());
+    expect(screen.getAllByText("collection limit reached")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "New collection" })).toBeInTheDocument();
   });
 
   it("closes collection creation with Escape without adding it", async () => {
