@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build && npm run build:public-assets",
-    "build:public-assets": "esbuild public-assets/mermaid.ts --bundle --format=esm --minify --outfile=out/assets/public-mermaid.mjs",
+    "build:public-assets": "esbuild public-assets/mermaid.ts --bundle --format=esm --minify --outfile=out/assets/public-mermaid.mjs && esbuild public-assets/theme.ts --bundle --format=iife --minify --outfile=out/assets/public-theme.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -121,10 +121,10 @@ passage list --json`}</code>
             links stay read-only and explicit.
           </p>
           <pre>
-            <code>{`# Share returns htmlPath and markdownPath
-/d/<public-id>.md
+            <code>{`# passage share prints HTML and raw Markdown URLs
+https://passage.md/d/<public-id>.md
 
-# Unshare revokes both URLs`}</code>
+# passage unshare <doc-id> revokes both URLs`}</code>
           </pre>
         </section>
       </main>

@@ -26,7 +26,7 @@ const mono = IBM_Plex_Mono({
 
 const siteUrl = "https://passage.md";
 const title = "passage.md";
-const description = "Markdown writing for agents and humans.";
+const description = "Shared Markdown context for agents and humans.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

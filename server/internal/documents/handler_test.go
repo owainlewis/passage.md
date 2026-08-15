@@ -502,8 +502,23 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	if !strings.Contains(html.Body.String(), "<h1>Shared</h1>") {
 		t.Fatalf("html body = %s", html.Body.String())
 	}
-	if !regexp.MustCompile(`font-size:\s*1rem\s*;`).MatchString(html.Body.String()) {
-		t.Fatalf("html does not use the compact document font size: %s", html.Body.String())
+	if !regexp.MustCompile(`(?s)h1\s*\{[^}]*font-family:\s*var\(--serif\)[^}]*font-size:\s*clamp\(2\.75rem,\s*6vw,\s*4rem\)`).MatchString(html.Body.String()) {
+		t.Fatalf("html does not use the editorial document title: %s", html.Body.String())
+	}
+	if !regexp.MustCompile(`(?s)h1\s*\+\s*p\s*\{[^}]*font-size:\s*clamp\(1\.1rem,\s*0\.35vw\s*\+\s*1rem,\s*1\.2rem\)`).MatchString(html.Body.String()) {
+		t.Fatalf("html does not use the document standfirst: %s", html.Body.String())
+	}
+	if !strings.Contains(html.Body.String(), `class="themeToggle"`) ||
+		!strings.Contains(html.Body.String(), `aria-label="Use dark theme"`) ||
+		!strings.Contains(html.Body.String(), `<script src="/assets/public-theme.js"></script>`) {
+		t.Fatalf("html does not include the accessible local theme control: %s", html.Body.String())
+	}
+	if !strings.Contains(html.Body.String(), `:root[data-theme="light"] { color-scheme: light; }`) ||
+		!strings.Contains(html.Body.String(), `@media (prefers-reduced-motion: reduce)`) ||
+		!regexp.MustCompile(`(?s)@media print\s*\{.*:root\[data-theme="dark"\]\s*\{[^}]*color-scheme:\s*light`).MatchString(html.Body.String()) ||
+		!strings.Contains(html.Body.String(), `@media print and (prefers-color-scheme: dark)`) ||
+		!strings.Contains(html.Body.String(), `filter: invert(1) hue-rotate(180deg);`) {
+		t.Fatalf("html does not preserve explicit light mode, reduced motion, and a light print palette: %s", html.Body.String())
 	}
 	if strings.Contains(html.Body.String(), "<header>") || strings.Contains(html.Body.String(), "Shared document") || strings.Contains(html.Body.String(), "passage.md") {
 		t.Fatalf("html contains share page chrome: %s", html.Body.String())
@@ -581,6 +596,9 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 	}
 	if !strings.Contains(body, `<script type="module" src="/assets/public-mermaid.mjs"></script>`) {
 		t.Fatalf("html does not load the local Mermaid module: %s", body)
+	}
+	if !strings.Contains(body, `<script src="/assets/public-theme.js"></script>`) {
+		t.Fatalf("html does not load the local theme script: %s", body)
 	}
 	if strings.Contains(body, "cdn.jsdelivr.net") || strings.Contains(body, `src="https://`) {
 		t.Fatalf("html loads third-party executable code: %s", body)

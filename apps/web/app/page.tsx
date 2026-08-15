@@ -9,19 +9,24 @@ import styles from "./landing.module.css";
 
 const workflow = [
   {
-    title: "Write privately",
-    body: "Start in a calm browser workspace. Saved documents are private by default and stored as plain Markdown.",
-    example: "passage.md/write"
+    title: "Store stable context",
+    body: "Keep goals, product notes, preferences, and research in private collections. Star the documents you return to most.",
+    example: "Collections / Operating Context"
+  },
+  {
+    title: "Find and write with it",
+    body: "Search the full text of your Markdown, then draft notes and plans beside the source material they depend on.",
+    example: "Full-text search / every Markdown body"
+  },
+  {
+    title: "Use it from agents",
+    body: "Let agents read and update the same private Markdown through the authenticated API or CLI without copying files into another tool.",
+    example: "passage cat <doc-id>"
   },
   {
     title: "Share deliberately",
-    body: "Publish a read-only page or raw Markdown URL when another person or agent needs access. Revoke it at any time.",
-    example: "passage.md/d/<public-id>.md"
-  },
-  {
-    title: "Use it from an agent",
-    body: "List and read the same documents through the CLI or API without copying files into another tool.",
-    example: "passage cat <doc-id>"
+    body: "Publish a read-only page or raw Markdown URL only when another person or agent needs it. Revoke access at any time.",
+    example: "passage share <doc-id>"
   }
 ];
 
@@ -98,10 +103,11 @@ function LandingContent() {
       <main className={styles.main}>
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <h1 className={styles.heroTitle}>Markdown writing for agents and humans</h1>
+            <p className={styles.heroKicker}>Context for agents and humans</p>
+            <h1 className={styles.heroTitle}>One Markdown workspace for you and your agents.</h1>
             <p className={styles.heroSub}>
-              Write in a calm browser workspace, share documents online, and give your agents clean Markdown they can read
-              without copying files around.
+              Give your goals, product notes, preferences, and drafts one stable home instead of scattering them across
+              local files and chats. You and your agents can use the same private Markdown.
             </p>
             <div className={styles.heroActions}>
               <Link className={styles.primaryButton} href={primaryHref}>
@@ -116,7 +122,7 @@ function LandingContent() {
 
           <div className={styles.heroPreview} aria-hidden="true">
             <div className={styles.previewCaption}>
-              <span>One document, everywhere</span>
+              <span>One source of context</span>
               <span>01 / 03</span>
             </div>
             <div className={styles.heroDoc}>
@@ -126,8 +132,8 @@ function LandingContent() {
                   <i />
                   <i />
                 </span>
-                <span className={styles.docUrl}>passage.md/d/trail-notes</span>
-                <span className={styles.docStatus}>Shared</span>
+                <span className={styles.docUrl}>Operating Context / goals.md</span>
+                <span className={styles.docStatus}>Private</span>
               </div>
               <div className={styles.docCanvas}>
                 <div className={styles.lineNumbers}>
@@ -136,19 +142,19 @@ function LandingContent() {
                   ))}
                 </div>
                 <div className={`markdown ${styles.heroDocBody}`}>
-                  <h1>Trail notes</h1>
-                  <p>A slow loop from Llyn Idwal, written up on the train home and shared with the group before Saturday.</p>
+                  <h1>Operating context</h1>
+                  <p>Stable context for every agent I work with.</p>
                   <ul>
-                    <li>Start from the Ogwen car park before eight</li>
-                    <li>Take the east shore path while the light is low</li>
-                    <li>Turn back at the scramble if the rock is wet</li>
+                    <li>Goal: ship the Passage workspace</li>
+                    <li>Product: shared Markdown for people and agents</li>
+                    <li>Preference: concise, direct writing</li>
                   </ul>
                   <blockquote>
-                    <p>The mountain keeps its own time.</p>
+                    <p>Update this document when the plan changes.</p>
                   </blockquote>
                 </div>
               </div>
-              <div className={styles.terminalStrip}>$ passage cat &lt;doc-id&gt;</div>
+              <div className={styles.terminalStrip}>$ passage list</div>
             </div>
           </div>
         </section>
@@ -156,10 +162,10 @@ function LandingContent() {
         <section className={styles.features} id="workflow">
           <div className={styles.featuresHeader}>
             <div>
-              <p className={styles.kicker}>The product loop</p>
-              <h2 className={styles.sectionHeading}>One document. Three useful surfaces.</h2>
+              <p className={styles.kicker}>How Passage works</p>
+              <h2 className={styles.sectionHeading}>Keep context and writing together.</h2>
             </div>
-            <p>Write for yourself, share only when you choose, then use the same Markdown from an agent or terminal.</p>
+            <p>Collections and indexed search organise the browser workspace. Agents use the authenticated API or CLI for private document bodies.</p>
           </div>
           <div className={styles.featureList}>
             {workflow.map((feature, index) => (
@@ -177,25 +183,23 @@ function LandingContent() {
 
         <section className={styles.story} id="story">
           <div className={styles.sectionAside}>
-            <p className={styles.kicker}>Why Passage exists</p>
+            <p className={styles.kicker}>Why hosted Markdown</p>
           </div>
           <div className={styles.storyBody}>
-            <p className={styles.storyLead}>I tried every online document tool, and none of them fit.</p>
+            <p className={styles.storyLead}>Your agents are only as useful as the context they can reach.</p>
             <p>
-              I wanted one place to write Markdown in the browser, on my laptop or my phone, with nothing to install. And
-              I wanted my agents to reach the same documents I was working on, without copying files around, syncing a
-              folder, or creating a repo just to share a paragraph.
+              Goals sit in one folder. Product notes sit in another. Preferences live in a prompt you cannot find. Each new
+              agent starts cold, so you explain the same project again and paste the same files into another chat.
             </p>
             <p>
-              Google Docs is too rich. Notion is too heavy. Gists are useful, but they feel like developer plumbing, not
-              a place to think. Local Markdown files are tidy for a day and messy for a year once agents, phones, and
-              shared links enter the workflow.
+              Passage gives that context one stable home. Use collections for the parts of your world, star the documents
+              you rely on, and find any phrase again with indexed full-text search.
             </p>
             <p>
-              So I stripped it back. Beautiful Markdown in the browser. Private by default. Share it when you mean to.
-              Let your agents read the raw Markdown when they need context.
+              Write ordinary notes and drafts beside that context. Your agents can use the same private Markdown through
+              the authenticated API or CLI. Share a clean page or raw Markdown link only when you choose.
             </p>
-            <p className={styles.storyClose}>Passage is not a local writing app. It is a small online home for Markdown.</p>
+            <p className={styles.storyClose}>Markdown is a good format. A folder on one machine is a poor shared memory.</p>
           </div>
         </section>
 
@@ -205,7 +209,7 @@ function LandingContent() {
               <p className={styles.kicker}>Pricing</p>
               <h2 className={styles.sectionHeading}>Simple pricing</h2>
             </div>
-            <p>Start for free. Upgrade when you need sharing, thousands of saved documents, or access from agents.</p>
+            <p>Start for free. Upgrade when you need a larger context library, sharing, or private access from agents.</p>
           </div>
           <div className={styles.pricingGrid}>
             <div className={styles.plan}>
@@ -257,7 +261,7 @@ function LandingContent() {
       <footer className={styles.footer}>
         <div className={styles.footerBrand}>
           <Brand />
-          <span className={styles.footerTag}>Markdown writing for agents and humans.</span>
+          <span className={styles.footerTag}>Shared Markdown context for agents and humans.</span>
           <span className={styles.footerTag}>
             Operated by <MerchantLink />.
           </span>
