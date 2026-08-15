@@ -98,7 +98,7 @@ describe("light workspace contrast", () => {
       ".workspaceDocumentText small",
       ".workspaceDocumentSummary",
       ".workspaceStarButton",
-      ".workspaceSearchInput input::placeholder",
+      ':root:not([data-theme="dark"]) .workspace .workspaceSearchInput input::placeholder',
       ".workspaceSearchResults > p",
       ".workspaceSearchResults small",
       ".workspaceSearchFooter"
@@ -122,6 +122,14 @@ describe("light workspace contrast", () => {
     });
     expect(customProperties(declarationsFor(".workspace"))["--control-boundary"]).toBe("var(--hairline)");
     expect(dark["--control-boundary"]).toBeUndefined();
+    expect(stylesheet).not.toMatch(/(?:^|\})\s*\.workspaceSearchInput input::placeholder\s*\{/);
+  });
+
+  it("strengthens row collection boundaries only in the light workspace", () => {
+    expect(declarationsFor(".workspaceCollectionSelect")).toContain("border-color: transparent");
+    expect(
+      declarationsFor(':root:not([data-theme="dark"]) .workspace .workspaceCollectionSelect')
+    ).toContain("border-color: var(--control-boundary)");
   });
 
   it("keeps hover, active, selected, disabled, and error states distinct", () => {

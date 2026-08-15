@@ -1274,6 +1274,10 @@ button {
   border-color: transparent;
 }
 
+:root:not([data-theme="dark"]) .workspace .workspaceCollectionSelect {
+  border-color: var(--control-boundary);
+}
+
 .topBarCollectionSelect {
   max-width: 145px;
   min-height: 30px;
@@ -1505,7 +1509,7 @@ button {
   font-size: 1rem;
 }
 
-.workspaceSearchInput input::placeholder {
+:root:not([data-theme="dark"]) .workspace .workspaceSearchInput input::placeholder {
   color: var(--faint);
   opacity: 1;
 }
