@@ -70,7 +70,7 @@ export function EditorStatusBar({
             className="dockButton shareToggle"
             aria-expanded={shareDialogOpen}
             aria-haspopup="dialog"
-            aria-pressed={activeShared}
+            data-shared={activeShared}
             onClick={onOpenShare}
             title={shareState === "toolong" ? "This document is too long to share as a link" : undefined}
           >

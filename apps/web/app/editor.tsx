@@ -28,8 +28,8 @@ export default function Editor() {
   const [mode, setMode] = useState<Mode>("preview");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
+  const [shareDialogDocId, setShareDialogDocId] = useState("");
   const [authError, setAuthError] = useState("");
   const [activeTemplateId, setActiveTemplateId] = useState("");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => currentWorkspaceLocation().view);
@@ -95,6 +95,7 @@ export default function Editor() {
   });
 
   const activeShared = active ? isShared(active) : false;
+  const shareDialogOpen = Boolean(active && shareDialogDocId === active.id);
   const {
     exportDoc,
     publicDocPath,
@@ -158,6 +159,8 @@ export default function Editor() {
 
   useEffect(() => {
     function onPopState() {
+      setDeleteDialogDocId("");
+      setShareDialogDocId("");
       const location = currentWorkspaceLocation();
       setActiveTemplateId("");
       if (location.shouldReplace) {
@@ -448,7 +451,7 @@ export default function Editor() {
                     type="button"
                     className="topBarDelete"
                     disabled={collectionState.pendingDocIds.has(active.id)}
-                    onClick={() => setDeleteDialogOpen(true)}
+                    onClick={() => setDeleteDialogDocId(active.id)}
                   >
                     Delete
                   </button>
@@ -598,7 +601,7 @@ export default function Editor() {
                 void shareDoc();
                 return;
               }
-              setShareDialogOpen(true);
+              setShareDialogDocId(active?.id ?? "");
             }}
             saveState={saveState}
             shareDialogOpen={shareDialogOpen}
@@ -633,17 +636,17 @@ export default function Editor() {
           activeShared={activeShared}
           publicDocPath={publicDocPath}
           title={titleOf(active.body)}
-          onClose={() => setShareDialogOpen(false)}
+          onClose={() => setShareDialogDocId("")}
           onCopy={() => shareDoc()}
           onPublish={() => shareDoc()}
           onUnshare={() => unshareDoc()}
         />
       )}
-      {deleteDialogOpen && active && !activeShared && (
+      {deleteDialogDocId === active?.id && active && !activeShared && (
         <DeleteDocumentDialog
           title={titleOf(active.body)}
-          onClose={() => setDeleteDialogOpen(false)}
-          onDelete={() => deleteDoc(active.id)}
+          onClose={() => setDeleteDialogDocId("")}
+          onDelete={() => deleteDoc(deleteDialogDocId)}
         />
       )}
     </div>

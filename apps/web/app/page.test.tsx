@@ -183,6 +183,9 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       docs = docs.map((existing) => (existing.id === id ? updated : existing));
       return new Response(JSON.stringify(updated), { status: 200 });
     }
+    if (url.startsWith("/api/v1/docs/") && url.endsWith("/share") && method === "DELETE") {
+      return new Response(null, { status: 204 });
+    }
     if (url.startsWith("/api/v1/docs/") && method === "DELETE") {
       const id = url.split("/")[4];
       docs = docs.filter((doc) => doc.id !== id);
@@ -2065,6 +2068,50 @@ describe("Write (editor)", () => {
     expect(screen.getAllByRole("heading", { name: "Private note", level: 1 }).length).toBeGreaterThan(0);
   });
 
+  it("closes document confirmations when history changes the active document", async () => {
+    const fetchMock = stubSignedInFetch([
+      { id: "doc-first", publicId: "first", body: "# First note" },
+      { id: "doc-second", publicId: "second", body: "# Second note", shareToken: "second", sharedAt: "2026-08-15T12:00:00Z" }
+    ]);
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("dialog", { name: "Delete document" })).toBeInTheDocument();
+
+    act(() => {
+      window.history.pushState(null, "", "/write/second");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect((await screen.findAllByRole("heading", { name: "Second note", level: 1 })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog", { name: "Delete document" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).startsWith("/api/v1/docs/") && init?.method === "DELETE")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+    expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
+    act(() => {
+      window.history.pushState(null, "", "/write/first");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect((await screen.findAllByRole("heading", { name: "First note", level: 1 })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog", { name: "Share document" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-second/share",
+      expect.objectContaining({ method: "DELETE" })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    act(() => {
+      window.history.pushState(null, "", "/write/second");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect((await screen.findAllByRole("heading", { name: "Second note", level: 1 })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog", { name: "Share document" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/v1/docs/doc-first/share",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
   it("deletes the final document and returns to Home", async () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
 
@@ -2260,14 +2307,14 @@ describe("Write (editor)", () => {
     await renderWrite();
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Share" })).not.toHaveAttribute("aria-pressed");
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-welcome/share",
       expect.objectContaining({ method: "POST" })
     );
     fireEvent.click(screen.getByRole("button", { name: "Publish and copy link" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+    await screen.findByRole("button", { name: "Shared" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -2288,7 +2335,7 @@ describe("Write (editor)", () => {
     fireEvent.change(collection, { target: { value: "research" } });
     publishActiveDocument();
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+    await screen.findByRole("button", { name: "Shared" });
     expect(collection).toHaveValue("research");
   });
 
@@ -2304,7 +2351,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Make private" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false"));
+    await screen.findByRole("button", { name: "Share" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -2326,7 +2373,7 @@ describe("Write (editor)", () => {
     fireEvent.change(collection, { target: { value: "passage" } });
     makeActiveDocumentPrivate();
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false"));
+    await screen.findByRole("button", { name: "Share" });
     expect(collection).toHaveValue("passage");
   });
 
@@ -2392,7 +2439,7 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true"));
+    await screen.findByRole("button", { name: "Shared" });
     expect(screen.queryByText("Public link")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Shared" }));
     expect(screen.getByRole("link", { name: "View public document" })).toHaveAttribute("href", "/d/public-2");
@@ -3347,7 +3394,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByRole("button", { name: "Shared" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: "Shared" })).not.toHaveAttribute("aria-pressed");
   });
 
   it("unshares a signed-in document", async () => {
@@ -3376,11 +3423,11 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     const shared = await screen.findByRole("button", { name: "Shared" });
-    expect(shared).toHaveAttribute("aria-pressed", "true");
+    expect(shared).not.toHaveAttribute("aria-pressed");
     fireEvent.click(shared);
     fireEvent.click(screen.getByRole("button", { name: "Make private" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false"));
+    await screen.findByRole("button", { name: "Share" });
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
       method: "DELETE",
       credentials: "include"
