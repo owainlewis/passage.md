@@ -436,8 +436,7 @@ func (s *Store) GetPublic(ctx context.Context, token string) (Document, error) {
 	if !validPublicID(token) && !validShareToken(token) {
 		return Document{}, ErrNotFound
 	}
-	var doc Document
-	err := s.db.QueryRow(ctx, `
+	doc, err := scanDocument(s.db.QueryRow(ctx, `
 		SELECT id::text, public_id, title, body,
 		       NULL::text, NULL::text, false,
 		       share_token, shared_at, created_at, updated_at, archived_at
@@ -445,7 +444,7 @@ func (s *Store) GetPublic(ctx context.Context, token string) (Document, error) {
 		WHERE (public_id = $1 OR share_token = $1)
 		  AND shared_at IS NOT NULL
 		  AND archived_at IS NULL
-	`, token).Scan(&doc.ID, &doc.PublicID, &doc.Title, &doc.Body, &doc.ShareToken, &doc.SharedAt, &doc.CreatedAt, &doc.UpdatedAt, &doc.ArchivedAt)
+	`, token))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}

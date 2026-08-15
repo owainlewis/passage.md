@@ -355,17 +355,21 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	if _, err := migrations.Apply(ctx, db); err != nil {
 		t.Fatal(err)
 	}
+	stamp := time.Now().UnixNano()
+	userOneEmail := fmt.Sprintf("token-one-%d@example.com", stamp)
+	userTwoEmail := fmt.Sprintf("token-two-%d@example.com", stamp)
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = ANY($1)`, []string{userOneEmail, userTwoEmail})
 
 	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}}, db, Options{Billing: config.BillingConfig{
 		FreeMaxSavedDocs: 5,
 		ProMaxSavedDocs:  1000,
-		OwnerEmails:      []string{"token-one@example.com", "token-two@example.com"},
+		OwnerEmails:      []string{userOneEmail, userTwoEmail},
 	}})
 	server := httptest.NewServer(app.Routes())
 	defer server.Close()
 
-	userOneCookies := createIntegrationUserAndLogin(t, db, server.URL, "token-one@example.com")
-	userTwoCookies := createIntegrationUserAndLogin(t, db, server.URL, "token-two@example.com")
+	userOneCookies := createIntegrationUserAndLogin(t, db, server.URL, userOneEmail)
+	userTwoCookies := createIntegrationUserAndLogin(t, db, server.URL, userTwoEmail)
 
 	tokenBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/api-tokens", `{"name":"Integration"}`, userOneCookies, "")
 	var tokenResponse struct {
@@ -386,6 +390,7 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 	collectionBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/collections", `{"title":"Bearer collection"}`, nil, tokenResponse.Token)
 	var bearerCollection struct {
+		ID   string `json:"id"`
 		Slug string `json:"slug"`
 	}
 	if err := json.Unmarshal([]byte(collectionBody), &bearerCollection); err != nil {
@@ -398,7 +403,8 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 
 	docBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Bearer integration"}`, nil, tokenResponse.Token)
 	var docResponse struct {
-		ID string `json:"id"`
+		ID       string `json:"id"`
+		PublicID string `json:"publicId"`
 	}
 	if err := json.Unmarshal([]byte(docBody), &docResponse); err != nil {
 		t.Fatal(err)
@@ -408,7 +414,16 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 	doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs", "", nil, tokenResponse.Token)
 	doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/"+docResponse.ID, "", nil, tokenResponse.Token)
+	doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+docResponse.ID, `{"collectionId":"`+bearerCollection.ID+`","starred":true}`, nil, tokenResponse.Token)
 	doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+docResponse.ID, `{"body":"# Updated bearer integration"}`, nil, tokenResponse.Token)
+	doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs/"+docResponse.ID+"/share", "", nil, tokenResponse.Token)
+	publicHTML := doIntegrationRequest(t, http.MethodGet, server.URL+"/d/"+docResponse.PublicID, "", nil, "")
+	if !strings.Contains(publicHTML, "Updated bearer integration") || strings.Contains(publicHTML, "bearer-collection") || strings.Contains(publicHTML, "starred") {
+		t.Fatalf("public HTML changed or leaked private metadata: %s", publicHTML)
+	}
+	if raw := doIntegrationRequest(t, http.MethodGet, server.URL+"/d/"+docResponse.PublicID+".md", "", nil, ""); raw != "# Updated bearer integration" {
+		t.Fatalf("raw Markdown = %q", raw)
+	}
 
 	otherDocBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Other owner"}`, userTwoCookies, "")
 	var otherDocResponse struct {
@@ -429,7 +444,7 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 		Billing: config.BillingConfig{
 			FreeMaxSavedDocs: 5,
 			ProMaxSavedDocs:  1000,
-			OwnerEmails:      []string{"token-one@example.com"},
+			OwnerEmails:      []string{userOneEmail},
 		},
 	})
 	fencedServer := httptest.NewServer(fencedApp.Routes())
