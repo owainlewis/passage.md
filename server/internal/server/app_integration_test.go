@@ -584,6 +584,145 @@ func TestCollectionAndDocumentMetadataRoutesWithPostgres(t *testing.T) {
 	}
 }
 
+func TestDocumentSearchAPIWithPostgres(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	stamp := time.Now().UnixNano()
+	ownerEmail := fmt.Sprintf("search-api-%d@example.com", stamp)
+	otherEmail := fmt.Sprintf("search-api-other-%d@example.com", stamp)
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = ANY($1)`, []string{ownerEmail, otherEmail})
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{Billing: config.BillingConfig{
+		FreeMaxSavedDocs: 100,
+		ProMaxSavedDocs:  100,
+	}})
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+	ownerCookies := createIntegrationUserAndLogin(t, db, server.URL, ownerEmail)
+	createIntegrationUserAndLogin(t, db, server.URL, otherEmail)
+
+	var ownerID, otherID, collectionID, otherCollectionID string
+	if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, ownerEmail).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, otherEmail).Scan(&otherID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT id::text FROM collections WHERE owner_user_id = $1 AND slug = 'research'`, ownerID).Scan(&collectionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT id::text FROM collections WHERE owner_user_id = $1 AND slug = 'research'`, otherID).Scan(&otherCollectionID); err != nil {
+		t.Fatal(err)
+	}
+
+	updatedAt := time.Now().UTC().Truncate(time.Microsecond)
+	type fixture struct {
+		id           string
+		ownerID      string
+		title        string
+		body         string
+		collectionID *string
+		archived     bool
+		updated      time.Time
+	}
+	fixtures := []fixture{
+		{ownerID: ownerID, title: "Agent workflow", body: "# Title result\n\nNo body terms.", updated: updatedAt},
+		{ownerID: ownerID, title: "Deep result", body: "# Deep result\n\n" + strings.Repeat("padding ", 700) + "agent workflow after four kilobytes", collectionID: &collectionID, updated: updatedAt},
+		{ownerID: ownerID, title: "Second research result", body: "# Research\n\nagent workflow", collectionID: &collectionID, updated: updatedAt.Add(-time.Minute)},
+		{ownerID: ownerID, title: "Archived result", body: "# Archived\n\nagent workflow", archived: true, updated: updatedAt},
+		{ownerID: otherID, title: "Other owner result", body: "# Other\n\nagent workflow", collectionID: &otherCollectionID, updated: updatedAt},
+	}
+	for index := range fixtures {
+		item := &fixtures[index]
+		var archivedAt *time.Time
+		if item.archived {
+			archivedAt = &item.updated
+		}
+		if err := db.QueryRow(ctx, `
+			INSERT INTO documents (owner_user_id, public_id, title, body, collection_id, archived_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING id::text
+		`, item.ownerID, fmt.Sprintf("api-search-%d-%d", stamp, index), item.title, item.body, item.collectionID, archivedAt, item.updated).Scan(&item.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type searchPage struct {
+		Documents []struct {
+			ID             string  `json:"id"`
+			Body           *string `json:"body"`
+			MatchExcerpt   string  `json:"matchExcerpt"`
+			CollectionID   *string `json:"collectionId"`
+			CollectionSlug *string `json:"collectionSlug"`
+		} `json:"documents"`
+		NextCursor string `json:"nextCursor"`
+	}
+	var first searchPage
+	firstBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow&limit=2", "", ownerCookies, "")
+	if err := json.Unmarshal([]byte(firstBody), &first); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Documents) != 2 || first.NextCursor == "" || first.Documents[0].ID != fixtures[0].id {
+		t.Fatalf("first search page = %#v", first)
+	}
+	if first.Documents[0].Body != nil || first.Documents[1].Body != nil {
+		t.Fatalf("search response exposed bodies: %s", firstBody)
+	}
+	if !strings.Contains(strings.ToLower(first.Documents[1].MatchExcerpt), "agent workflow") {
+		t.Fatalf("deep match excerpt = %q", first.Documents[1].MatchExcerpt)
+	}
+	var second searchPage
+	secondBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow&limit=2&cursor="+url.QueryEscape(first.NextCursor), "", ownerCookies, "")
+	if err := json.Unmarshal([]byte(secondBody), &second); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].ID == first.Documents[0].ID || second.Documents[0].ID == first.Documents[1].ID {
+		t.Fatalf("second search page = %#v", second)
+	}
+
+	var collectionPage searchPage
+	collectionBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow&collectionId="+collectionID, "", ownerCookies, "")
+	if err := json.Unmarshal([]byte(collectionBody), &collectionPage); err != nil {
+		t.Fatal(err)
+	}
+	if len(collectionPage.Documents) != 2 {
+		t.Fatalf("collection search = %s", collectionBody)
+	}
+	for _, document := range collectionPage.Documents {
+		if document.CollectionID == nil || *document.CollectionID != collectionID {
+			t.Fatalf("collection result = %#v", document)
+		}
+	}
+	var unfiledPage searchPage
+	unfiledBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow&unfiled=true", "", ownerCookies, "")
+	if err := json.Unmarshal([]byte(unfiledBody), &unfiledPage); err != nil {
+		t.Fatal(err)
+	}
+	if len(unfiledPage.Documents) != 1 || unfiledPage.Documents[0].ID != fixtures[0].id || unfiledPage.Documents[0].CollectionID != nil {
+		t.Fatalf("unfiled search = %s", unfiledBody)
+	}
+
+	crossOwnerBody, crossOwnerStatus := doIntegrationRequestRaw(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent&collectionId="+otherCollectionID, "", ownerCookies, "")
+	missingBody, missingStatus := doIntegrationRequestRaw(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent&collectionId=99999999-9999-9999-9999-999999999999", "", ownerCookies, "")
+	if crossOwnerStatus != http.StatusBadRequest || missingStatus != http.StatusBadRequest || crossOwnerBody != missingBody {
+		t.Fatalf("cross-owner/missing collection responses = %d %q / %d %q", crossOwnerStatus, crossOwnerBody, missingStatus, missingBody)
+	}
+	if got := doIntegrationStatus(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=%21%21%21", "", ownerCookies, ""); got != http.StatusBadRequest {
+		t.Fatalf("empty parsed query status = %d", got)
+	}
+}
+
 func TestConcurrentDocumentCreatesHonorEffectiveLimits(t *testing.T) {
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
 	if databaseURL == "" {

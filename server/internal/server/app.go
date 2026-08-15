@@ -127,6 +127,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/api-tokens", a.createAPIToken)
 	mux.HandleFunc("DELETE /api/v1/api-tokens/{id}", a.revokeAPIToken)
 	mux.HandleFunc("GET /api/v1/docs", a.listDocs)
+	mux.HandleFunc("GET /api/v1/docs/search", a.searchDocs)
 	mux.HandleFunc("POST /api/v1/docs", a.createDoc)
 	mux.HandleFunc("GET /api/v1/docs/{id}", a.getDoc)
 	mux.HandleFunc("PATCH /api/v1/docs/{id}", a.updateDoc)

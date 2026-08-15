@@ -167,6 +167,35 @@ func TestDocumentMutationLimitIsPerAuthenticatedUser(t *testing.T) {
 	}
 }
 
+func TestDocumentSearchLimitIsPerAuthenticatedUserAndIndependentFromMutations(t *testing.T) {
+	authStore := newRouteAuthStore()
+	docStore := newRouteDocumentStore()
+	app := &App{
+		static: fstest.MapFS{"index.html": {Data: []byte("ok")}},
+		auth:   auth.NewService(authStore, "test-secret", false),
+		docs:   documents.NewHandler(docStore),
+		rateLimiters: newAppRateLimiters(config.AbuseRateLimitConfig{
+			DocumentMutation: config.RateLimitConfig{Requests: 1, Window: time.Minute},
+			DocumentSearch:   config.RateLimitConfig{Requests: 1, Window: time.Minute},
+		}),
+		clientIP: httpx.NewClientIPResolver(nil, 0),
+	}
+	handler := app.Routes()
+
+	if status := documentSearchStatus(t, handler, "psg_owner_one"); status != http.StatusOK {
+		t.Fatalf("first user status = %d", status)
+	}
+	if status := documentSearchStatus(t, handler, "psg_owner_one"); status != http.StatusTooManyRequests {
+		t.Fatalf("blocked user status = %d", status)
+	}
+	if status := documentSearchStatus(t, handler, "psg_owner_two"); status != http.StatusOK {
+		t.Fatalf("independent user status = %d", status)
+	}
+	if status := documentCreateStatus(t, handler, "psg_owner_one"); status != http.StatusCreated {
+		t.Fatalf("independent mutation status = %d", status)
+	}
+}
+
 func TestAPITokenLimitAppliesToRepresentativeRoute(t *testing.T) {
 	authStore := newRouteAuthStore()
 	authStore.sessions[routeTokenHash("session-one")] = auth.User{ID: "user-1", Email: "one@example.com"}
@@ -231,6 +260,15 @@ func documentCreateStatus(t *testing.T, handler http.Handler, token string) int 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/docs", strings.NewReader(`{"body":"# Limited"}`))
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recorder, request)
+	return recorder.Code
+}
+
+func documentSearchStatus(t *testing.T, handler http.Handler, token string) int {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=limited", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(recorder, request)
 	return recorder.Code
 }

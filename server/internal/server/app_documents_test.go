@@ -62,6 +62,14 @@ func TestDocumentRoutesAcceptBearerTokensAndEnforceOwnership(t *testing.T) {
 		t.Fatalf("list status = %d, body = %s", list.Code, list.Body.String())
 	}
 
+	search := httptest.NewRecorder()
+	searchReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/search?q=token", nil)
+	searchReq.Header.Set("Authorization", "Bearer psg_owner_one")
+	app.Routes().ServeHTTP(search, searchReq)
+	if search.Code != http.StatusOK || docStore.ownerID != "user-1" {
+		t.Fatalf("search status/owner = %d/%q, body = %s", search.Code, docStore.ownerID, search.Body.String())
+	}
+
 	get := httptest.NewRecorder()
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/docs/11111111-1111-1111-1111-111111111111", nil)
 	getReq.Header.Set("Authorization", "Bearer psg_owner_one")

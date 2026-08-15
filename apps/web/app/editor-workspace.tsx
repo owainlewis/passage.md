@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { SearchDocument } from "./editor-api";
 import { editorDocTitle } from "./editor-list";
 import { Doc, SaveState } from "./editor-model";
 import {
@@ -15,6 +16,7 @@ import {
   workspaceDocSummary
 } from "./editor-workspace-model";
 import { DocIcon, SearchIcon, StarIcon } from "./icons";
+import { useEditorSearch } from "./use-editor-search";
 
 type EditorWorkspaceProps = {
   assignments: Record<string, string>;
@@ -615,9 +617,13 @@ type WorkspaceSearchProps = {
   query: string;
   scope: string;
   trigger: HTMLElement | null;
+  userId?: string;
+  searchPaused?: boolean;
+  searchPauseError?: boolean;
   onClose: () => void;
   onOpenDocument: (doc: Doc) => void;
   onQueryChange: (query: string) => void;
+  onRetryPendingSave?: () => void;
   onScopeChange: (scope: string) => void;
 };
 
@@ -629,15 +635,39 @@ export function WorkspaceSearch({
   query,
   scope,
   trigger,
+  userId,
+  searchPaused = false,
+  searchPauseError = false,
   onClose,
   onOpenDocument,
   onQueryChange,
+  onRetryPendingSave,
   onScopeChange
 }: WorkspaceSearchProps) {
   const dialog = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const restoreFocus = useRef(true);
-  const results = useMemo(() => searchWorkspaceDocs(docs, query, scope, assignments, deletedCollections).slice(0, 20), [assignments, deletedCollections, docs, query, scope]);
+  const fullTextPaused = searchPaused && Boolean(query.trim());
+  const scopedCollection = scope === "all" || scope === "documents"
+    ? undefined
+    : collections.find((collection) => collection.slug === scope);
+  const search = useEditorSearch({
+    query,
+    scope: scope === "documents"
+      ? { unfiled: true }
+      : scopedCollection?.id
+        ? { collectionId: scopedCollection.id }
+        : {},
+    userId: scopedCollection || scope === "all" || scope === "documents" ? userId : undefined,
+    paused: fullTextPaused
+  });
+  const localResults = searchWorkspaceDocs(docs, query, scope, assignments, deletedCollections).slice(0, 20);
+  const recentResults = searchWorkspaceDocs(docs, "", scope, assignments, deletedCollections).slice(0, 20);
+  const results: Array<Doc | SearchDocument> = search.active
+    ? search.documents
+    : query
+      ? localResults
+      : recentResults;
 
   useEffect(() => {
     input.current?.focus();
@@ -681,15 +711,34 @@ export function WorkspaceSearch({
           ))}
         </div>
         <div className="workspaceSearchResults">
-          <p>{query ? `${results.length} results` : "Recently updated"}</p>
+          <p role="status">{fullTextPaused ? searchPauseError ? "Search paused" : "Saving before search…" : search.loading ? "Searching…" : query ? `${results.length} results` : "Recently updated"}</p>
           {results.map((doc) => (
             <button type="button" key={doc.id} onClick={() => { restoreFocus.current = false; onOpenDocument(doc); }}>
               <span className="workspaceDocumentIcon"><DocIcon /></span>
-              <span><strong>{editorDocTitle(doc)}</strong><small>{collectionLabel(collectionForDoc(doc, assignments, deletedCollections), collections)}</small><em>{workspaceDocSummary(doc)}</em></span>
+              <span><strong>{editorDocTitle(doc)}</strong><small>{collectionLabel(collectionForDoc(doc, assignments, deletedCollections), collections)}</small><em>{"matchExcerpt" in doc ? doc.matchExcerpt : workspaceDocSummary(doc)}</em></span>
               {doc.pinned && <StarIcon filled />}
             </button>
           ))}
-          {results.length === 0 && <div className="workspaceSearchEmpty"><strong>No matching documents</strong><span>Try another term or collection.</span></div>}
+          {fullTextPaused && searchPauseError ? (
+            <div className="workspaceSearchEmpty" role="alert">
+              <strong>Save the current document to search</strong>
+              <span>The latest draft could not be saved.</span>
+              <button type="button" onClick={onRetryPendingSave}>Try again</button>
+            </div>
+          ) : search.errorMessage ? (
+            <div className="workspaceSearchEmpty" role="alert">
+              <strong>Search could not be completed</strong>
+              <span>{search.errorMessage}</span>
+              <button type="button" onClick={search.retry}>Try again</button>
+            </div>
+          ) : !fullTextPaused && !search.loading && results.length === 0 ? (
+            <div className="workspaceSearchEmpty"><strong>No matching documents</strong><span>Try another term or collection.</span></div>
+          ) : null}
+          {search.hasMore && (
+            <button type="button" className="workspaceSearchMore" disabled={search.loading} onClick={search.loadMore}>
+              {search.loading ? "Loading…" : "Load more results"}
+            </button>
+          )}
         </div>
         <footer className="workspaceSearchFooter"><span>Esc to close</span><span>Searches titles, text, and tags</span></footer>
       </section>

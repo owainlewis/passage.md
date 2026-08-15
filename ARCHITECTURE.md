@@ -99,7 +99,7 @@ It does not decide document access or plan entitlement.
 
 ### Documents and public sharing
 
-`server/internal/documents` owns document validation, persistence, owner-scoped queries, pagination, archiving, share state, public Markdown, and public HTML rendering.
+`server/internal/documents` owns document validation, persistence, owner-scoped queries, PostgreSQL full-text search, pagination, archiving, share state, public Markdown, and public HTML rendering.
 
 It depends on authenticated user identity supplied by the server composition layer and on PostgreSQL.
 
@@ -190,6 +190,15 @@ Invalid credentials return an authentication error and do not create a session.
 
 Document creation locks the user row before counting active documents, so concurrent creates cannot bypass the account limit.
 
+### Search documents
+
+1. A browser, CLI, or agent sends a bounded query to `GET /api/v1/docs/search`.
+2. The server validates the query, optional collection or unfiled scope, page size, and opaque cursor.
+3. PostgreSQL parses the parameterized input with `websearch_to_tsquery` using the `simple` configuration.
+4. A stored weighted `tsvector` and partial GIN index search the complete title and body while owner and archive predicates enforce privacy.
+5. Results use relevance, update time, and document ID for deterministic keyset pagination.
+6. The response contains metadata and an untrusted plain-text match excerpt, never the complete body.
+
 ### Share and unshare a document
 
 1. A session-authenticated owner requests a share.
@@ -257,6 +266,7 @@ Important current limits are:
 
 - 512 KiB per document body;
 - 50 documents in the default metadata page and 100 maximum;
+- 200 characters per search query and 100 search results per page;
 - 5 active saved documents for Free by default;
 - 2,000 active saved documents for Pro by default;
 - 10 templates per user;

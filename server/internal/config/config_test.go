@@ -204,6 +204,9 @@ func TestFromEnvLoadsRateLimitAndProductionProxyDefaults(t *testing.T) {
 	if cfg.RateLimits.DocumentMutation.Requests != 120 || cfg.RateLimits.DocumentMutation.Window != time.Minute {
 		t.Fatalf("document mutation rate limit = %#v", cfg.RateLimits.DocumentMutation)
 	}
+	if cfg.RateLimits.DocumentSearch.Requests != 120 || cfg.RateLimits.DocumentSearch.Window != time.Minute {
+		t.Fatalf("document search rate limit = %#v", cfg.RateLimits.DocumentSearch)
+	}
 	if cfg.Proxy.ForwardedHops != 2 || len(cfg.Proxy.TrustedCIDRs) == 0 {
 		t.Fatalf("proxy config = %#v", cfg.Proxy)
 	}

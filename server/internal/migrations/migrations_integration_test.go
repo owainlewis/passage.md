@@ -44,7 +44,7 @@ func TestCollectionsMigrationPreservesPopulatedDataAndIsIdempotent(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "023_collections" {
+	if strings.Join(applied, ",") != "023_collections,024_document_full_text_search" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	assertFourDefaultCollections(t, db, ownerID)
@@ -87,6 +87,97 @@ func TestCollectionsMigrationPreservesPopulatedDataAndIsIdempotent(t *testing.T)
 	assertFourDefaultCollections(t, db, newOwnerID)
 }
 
+func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T) {
+	t.Run("fresh", func(t *testing.T) {
+		db := isolatedMigrationDatabase(t)
+		if _, err := Apply(context.Background(), db); err != nil {
+			t.Fatal(err)
+		}
+		assertDocumentSearchSchema(t, db)
+	})
+
+	t.Run("populated", func(t *testing.T) {
+		db := isolatedMigrationDatabase(t)
+		ctx := context.Background()
+		applyBeforeMigration(t, db, "024_document_full_text_search.sql")
+		var ownerID string
+		if err := db.QueryRow(ctx, `
+			INSERT INTO users (email, password_hash)
+			VALUES ('before-search@example.com', 'hash')
+			RETURNING id::text
+		`).Scan(&ownerID); err != nil {
+			t.Fatal(err)
+		}
+		const body = "# Existing document\n\nA searchable migration marker."
+		var documentID string
+		if err := db.QueryRow(ctx, `
+			INSERT INTO documents (owner_user_id, public_id, title, body)
+			VALUES ($1, 'migrationsearchfixture', 'Existing document', $2)
+			RETURNING id::text
+		`, ownerID, body).Scan(&documentID); err != nil {
+			t.Fatal(err)
+		}
+
+		applied, err := Apply(ctx, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(applied, ",") != "024_document_full_text_search" {
+			t.Fatalf("applied migrations = %q", applied)
+		}
+		assertDocumentSearchSchema(t, db)
+		var gotBody string
+		var matches bool
+		if err := db.QueryRow(ctx, `
+			SELECT body, search_vector @@ websearch_to_tsquery('simple'::regconfig, 'migration marker')
+			FROM documents WHERE id = $1
+		`, documentID).Scan(&gotBody, &matches); err != nil {
+			t.Fatal(err)
+		}
+		if gotBody != body || !matches {
+			t.Fatalf("populated document body/match = %q/%v", gotBody, matches)
+		}
+		if applied, err = Apply(ctx, db); err != nil || len(applied) != 0 {
+			t.Fatalf("repeated migration applied %q: %v", applied, err)
+		}
+	})
+}
+
+func assertDocumentSearchSchema(t *testing.T, db *database.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	var generated string
+	if err := db.QueryRow(ctx, `
+		SELECT attgenerated
+		FROM pg_attribute
+		WHERE attrelid = 'documents'::regclass AND attname = 'search_vector'
+	`).Scan(&generated); err != nil {
+		t.Fatal(err)
+	}
+	if generated != "s" {
+		t.Fatalf("search_vector generated kind = %q", generated)
+	}
+	var definition string
+	if err := db.QueryRow(ctx, `
+		SELECT indexdef FROM pg_indexes
+		WHERE schemaname = current_schema() AND indexname = 'documents_active_search_idx'
+	`).Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, "USING gin (search_vector)") || !strings.Contains(definition, "archived_at IS NULL") {
+		t.Fatalf("search index definition = %q", definition)
+	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO abuse_rate_limits (
+			scope, key_hash, window_started_at, expires_at, requests
+		) VALUES (
+			'document_search', repeat('a', 64), now(), now() + interval '1 minute', 1
+		)
+	`); err != nil {
+		t.Fatalf("document_search rate limit scope is not allowed: %v", err)
+	}
+}
+
 func isolatedMigrationDatabase(t *testing.T) *database.Pool {
 	t.Helper()
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
@@ -126,6 +217,10 @@ func isolatedMigrationDatabase(t *testing.T) *database.Pool {
 }
 
 func applyBeforeCollections(t *testing.T, db *database.Pool) {
+	applyBeforeMigration(t, db, "023_collections.sql")
+}
+
+func applyBeforeMigration(t *testing.T, db *database.Pool, stopBefore string) {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := db.Exec(ctx, `
@@ -142,7 +237,7 @@ func applyBeforeCollections(t *testing.T, db *database.Pool) {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sql" || entry.Name() >= "023_collections.sql" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sql" || entry.Name() >= stopBefore {
 			continue
 		}
 		body, err := files.ReadFile(entry.Name())

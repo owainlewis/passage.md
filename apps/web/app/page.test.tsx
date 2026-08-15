@@ -78,6 +78,26 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
         { status: 200 }
       );
     }
+    if (url.startsWith("/api/v1/docs/search?") && method === "GET") {
+      const requestURL = new URL(url, "http://passage.test");
+      const query = requestURL.searchParams.get("q")?.toLowerCase() ?? "";
+      const collectionId = requestURL.searchParams.get("collectionId");
+      const unfiled = requestURL.searchParams.get("unfiled") === "true";
+      const matches = docs.filter((doc) => {
+        if (collectionId && doc.collectionId !== collectionId) return false;
+        if (unfiled && doc.collectionId) return false;
+        return doc.body.toLowerCase().includes(query);
+      }).map((doc) => {
+        const title = doc.body.match(/^#\s+(.+)$/m)?.[1] ?? "Untitled";
+        return {
+          ...doc,
+          body: undefined,
+          title,
+          matchExcerpt: doc.body.replace(/^---[\s\S]*?---\s*/, "").replace(/^#\s+.+$/m, "").trim()
+        };
+      });
+      return new Response(JSON.stringify({ documents: matches }), { status: 200 });
+    }
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
     }
@@ -1036,6 +1056,7 @@ describe("Write (editor)", () => {
   });
 
   it("filters the document list by title and body text", async () => {
+    const fetchMock = stubSignedInFetch();
     await renderWrite();
 
     await createBlankDocument();
@@ -1043,12 +1064,16 @@ describe("Write (editor)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Launch note\n\nRoadmap coverage." }
     });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/api\/v1\/docs\/doc-\d+$/),
+      expect.objectContaining({ method: "PATCH" })
+    ));
     openWorkspaceSearch();
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
       target: { value: "roadmap" }
     });
 
-    const launchNote = screen.getByRole("button", { name: /Launch note/ });
+    const launchNote = await screen.findByRole("button", { name: /Launch note/ });
     expect(launchNote).toBeInTheDocument();
     expect(launchNote).toHaveTextContent("Roadmap coverage");
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
@@ -1362,7 +1387,7 @@ describe("Write (editor)", () => {
       target: { value: "scripts" }
     });
 
-    expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Video script/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
   });
 

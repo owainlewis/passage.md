@@ -377,7 +377,7 @@ They include metadata and a bounded excerpt, but never the complete Markdown bod
 }
 ```
 
-`excerpt` contains at most the first 4,096 characters and exists only to support bounded list search and previews.
+`excerpt` contains at most the first 4,096 characters and exists only to support bounded navigation and previews.
 
 `tags` contains valid Passage tags parsed from frontmatter in that excerpt.
 
@@ -390,6 +390,83 @@ Invalid limits and cursors return `400`.
 Opening a metadata result requires `GET /api/v1/docs/{id}` to load the complete body.
 
 All list forms enforce the authenticated owner, so cursors never grant access to another account's documents.
+
+## Search Documents
+
+```http
+GET /api/v1/docs/search?q=agent+workflow
+GET /api/v1/docs/search?q=agent+workflow&collectionId=22222222-2222-2222-2222-222222222222&limit=50&cursor=<opaque-cursor>
+GET /api/v1/docs/search?q=agent+workflow&unfiled=true
+```
+
+Returns ranked metadata for active documents owned by the authenticated user.
+
+Search covers the server-derived title and complete current Markdown body, including frontmatter stored in the body.
+
+It does not search archived documents, templates, anonymous content, public documents owned by another account, or historical document versions.
+
+Parameters:
+
+- `q` is required. After surrounding whitespace is removed and internal whitespace is collapsed, it must contain 1 through 200 Unicode characters and at least one term recognized by PostgreSQL.
+- `collectionId` is optional. It restricts results to one collection owned by the authenticated user.
+- `unfiled=true` is optional. It restricts results to documents in the built-in `Documents` view, where `collectionId` is `null`.
+- `collectionId` and `unfiled` are mutually exclusive.
+- `limit` is optional and defaults to `50`. Valid values are `1` through `100`.
+- `cursor` is optional and opaque.
+
+Queries use PostgreSQL web-style parsing with the `simple` text-search configuration.
+
+Ordinary terms, quoted phrases, and exclusions such as `agent -retired` are supported.
+
+The `simple` configuration does not apply language stemming, so names, code terms, and product identifiers remain searchable as written.
+
+Title matches rank above body-only matches.
+
+Equal ranks are ordered by `updatedAt` descending and then document ID descending.
+
+Response:
+
+```json
+{
+  "documents": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "publicId": "abcdefghijklmnopqrstuv",
+      "title": "Agent workflow",
+      "matchExcerpt": "Notes from the agent workflow review.",
+      "tags": ["agents", "notes"],
+      "collectionId": "22222222-2222-2222-2222-222222222222",
+      "collectionSlug": "research",
+      "starred": true,
+      "createdAt": "2026-06-28T12:00:00Z",
+      "updatedAt": "2026-06-28T12:00:00Z"
+    }
+  ],
+  "nextCursor": "opaque-value"
+}
+```
+
+`matchExcerpt` is untrusted plain text containing at most 240 characters around a match.
+
+Clients must render it as text, never as HTML.
+
+Search responses never contain the complete `body` and set `Cache-Control: private, no-store`.
+
+Search is limited per authenticated user and returns `429` with `Retry-After` when the limit is exceeded.
+
+`nextCursor` is omitted on the final page.
+
+The cursor is bound to the normalized query and scope that created it.
+
+Clients must send the cursor back unchanged with the same `q`, `collectionId`, or `unfiled` values.
+
+Invalid limits, cursors, conflicting scopes, overlong queries, queries with no searchable terms, malformed collection IDs, and missing or cross-owner collection IDs return `400`.
+
+All search queries are owner-scoped and exclude archived documents.
+
+Browser sessions may search on Free or Pro accounts.
+
+Bearer-token callers retain the existing Pro requirement for document API access.
 
 ## Create Document
 
@@ -656,6 +733,8 @@ Legacy share token URLs are still accepted while older shares exist.
 - `204`: document archived or unshared.
 - `400`: invalid JSON.
 - `401`: authentication required.
+- `402`: a bearer-token document request requires Pro.
+- `429`: an abuse limit was exceeded.
 - `403`: cross-origin mutation blocked.
 - `404`: document or public share not found.
 - `415`: create or update request was not JSON.
@@ -664,11 +743,7 @@ Legacy share token URLs are still accepted while older shares exist.
 
 ## MVP Deferrals
 
-Pagination is deferred.
-
 API token UI is defined in a separate issue.
-
-Search is deferred.
 
 Version history is deferred.
 

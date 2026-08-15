@@ -3,6 +3,7 @@ package documents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -128,6 +129,147 @@ func TestHandlerRejectsInvalidDocumentPagination(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s status = %d, body = %s", target, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	collectionID := "22222222-2222-2222-2222-222222222222"
+	store := &fakeStore{search: []SearchResult{
+		{ID: "11111111-1111-1111-1111-111111111113", Title: "Three", MatchExcerpt: "third match", Rank: 0.9, UpdatedAt: now},
+		{ID: "11111111-1111-1111-1111-111111111112", Title: "Two", MatchExcerpt: "second match", Rank: 0.8, UpdatedAt: now.Add(-time.Minute)},
+		{ID: "11111111-1111-1111-1111-111111111111", Title: "One", MatchExcerpt: "first match", Rank: 0.7, UpdatedAt: now.Add(-2 * time.Minute)},
+	}}
+	handler := NewHandler(store)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=%20agent%20%20work%20&collectionId="+collectionID+"&limit=2", nil)
+
+	handler.Search(rec, req, auth.User{ID: "user-1"})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if store.ownerID != "user-1" || store.searchQuery != "agent work" || store.searchScope.CollectionID == nil || *store.searchScope.CollectionID != collectionID || store.searchLimit != 3 {
+		t.Fatalf("search inputs = owner %q query %q scope %+v limit %d", store.ownerID, store.searchQuery, store.searchScope, store.searchLimit)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+	var response searchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Documents) != 2 || response.NextCursor == "" {
+		t.Fatalf("documents/cursor = %d/%q", len(response.Documents), response.NextCursor)
+	}
+	if strings.Contains(rec.Body.String(), `"body"`) || strings.Contains(rec.Body.String(), `"rank"`) {
+		t.Fatalf("search response exposed internal fields: %s", rec.Body.String())
+	}
+	fingerprint := searchFingerprint("agent work", SearchScope{CollectionID: &collectionID})
+	cursor, err := decodeSearchCursor(response.NextCursor, fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor.ID != response.Documents[1].ID || cursor.Rank != store.search[1].Rank || !cursor.UpdatedAt.Equal(response.Documents[1].UpdatedAt) {
+		t.Fatalf("cursor = %+v, want final returned result", cursor)
+	}
+
+	next := httptest.NewRecorder()
+	nextReq := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=agent+work&collectionId="+collectionID+"&limit=2&cursor="+response.NextCursor, nil)
+	handler.Search(next, nextReq, auth.User{ID: "user-1"})
+	if next.Code != http.StatusOK || store.searchCursor == nil || store.searchCursor.ID != response.Documents[1].ID {
+		t.Fatalf("next status/cursor = %d/%+v", next.Code, store.searchCursor)
+	}
+
+	mismatch := httptest.NewRecorder()
+	mismatchReq := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=agent+work&unfiled=true&cursor="+response.NextCursor, nil)
+	handler.Search(mismatch, mismatchReq, auth.User{ID: "user-1"})
+	if mismatch.Code != http.StatusBadRequest {
+		t.Fatalf("mismatched cursor status = %d, body = %s", mismatch.Code, mismatch.Body.String())
+	}
+}
+
+func TestHandlerRejectsInvalidSearchInputsWithoutCallingStore(t *testing.T) {
+	invalidUTF8 := string([]byte{0xff})
+	collectionID := "22222222-2222-2222-2222-222222222222"
+	tests := []struct {
+		name   string
+		target string
+	}{
+		{name: "missing query", target: "http://passage.test/api/v1/docs/search"},
+		{name: "blank query", target: "http://passage.test/api/v1/docs/search?q=+++"},
+		{name: "long query", target: "http://passage.test/api/v1/docs/search?q=" + strings.Repeat("a", 201)},
+		{name: "invalid unicode", target: "http://passage.test/api/v1/docs/search?q=" + invalidUTF8},
+		{name: "zero byte", target: "http://passage.test/api/v1/docs/search?q=%00"},
+		{name: "invalid collection", target: "http://passage.test/api/v1/docs/search?q=agent&collectionId=not-a-uuid"},
+		{name: "invalid unfiled", target: "http://passage.test/api/v1/docs/search?q=agent&unfiled=false"},
+		{name: "conflicting scope", target: "http://passage.test/api/v1/docs/search?q=agent&collectionId=" + collectionID + "&unfiled=true"},
+		{name: "zero limit", target: "http://passage.test/api/v1/docs/search?q=agent&limit=0"},
+		{name: "large limit", target: "http://passage.test/api/v1/docs/search?q=agent&limit=101"},
+		{name: "invalid limit", target: "http://passage.test/api/v1/docs/search?q=agent&limit=many"},
+		{name: "invalid cursor", target: "http://passage.test/api/v1/docs/search?q=agent&cursor=invalid"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{}
+			handler := NewHandler(store)
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, test.target, nil)
+			handler.Search(rec, req, auth.User{ID: "user-1"})
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			if store.ownerID != "" {
+				t.Fatalf("store called for owner %q", store.ownerID)
+			}
+		})
+	}
+}
+
+func TestHandlerReportsParsedQueryAndCollectionErrors(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "empty parsed query", err: ErrEmptySearchQuery, want: "searchable term"},
+		{name: "missing collection", err: ErrCollectionNotFound, want: "collection not found"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{searchErr: test.err}
+			handler := NewHandler(store)
+			rec := httptest.NewRecorder()
+			handler.Search(rec, httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=%21%21%21", nil), auth.User{ID: "user-1"})
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), test.want) {
+				t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestNormalizeSearchQueryUsesUnicodeCharacterLimit(t *testing.T) {
+	value := strings.Repeat("é", maxSearchQueryLength)
+	if normalized, err := normalizeSearchQuery(" \t" + value + "\n"); err != nil || normalized != value {
+		t.Fatalf("maximum query = %q/%v", normalized, err)
+	}
+	if _, err := normalizeSearchQuery(value + "é"); err == nil {
+		t.Fatal("overlong Unicode query was accepted")
+	}
+}
+
+func TestHandlerReportsSearchFailureWithoutDroppingPrivateCachePolicy(t *testing.T) {
+	store := &fakeStore{searchErr: errors.New("database unavailable")}
+	handler := NewHandler(store)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=agent", nil)
+
+	handler.Search(rec, req, auth.User{ID: "user-1"})
+
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "search unavailable") {
+		t.Fatalf("status/body = %d/%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("Cache-Control = %q", got)
 	}
 }
 
@@ -465,6 +607,21 @@ type fakeStore struct {
 	page         []DocumentMetadata
 	pageLimit    int
 	pageCursor   *ListCursor
+	search       []SearchResult
+	searchErr    error
+	searchQuery  string
+	searchScope  SearchScope
+	searchLimit  int
+	searchCursor *SearchCursor
+}
+
+func (s *fakeStore) Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error) {
+	s.ownerID = ownerID
+	s.searchQuery = query
+	s.searchScope = scope
+	s.searchLimit = limit
+	s.searchCursor = cursor
+	return s.search, s.searchErr
 }
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {

@@ -114,8 +114,8 @@ Normal `main` deployments preserve the current billing state without adding Stri
 
 ### Abuse rate limits
 
-The Go server applies fixed-window limits before handling auth mutations, authenticated document mutations, API-token requests, shared HTML, and raw Markdown.
-Defaults are 20 auth mutations, 120 document mutations, 30 API-token requests, 120 shared HTML requests, and 240 raw Markdown requests per minute.
+The Go server applies fixed-window limits before handling auth mutations, authenticated document mutations, authenticated document searches, API-token requests, shared HTML, and raw Markdown.
+Defaults are 20 auth mutations, 120 document mutations, 120 document searches, 30 API-token requests, 120 shared HTML requests, and 240 raw Markdown requests per minute.
 Authenticated limits are keyed by user ID.
 Public and auth limits are keyed by client IP.
 Each class can be changed with the matching `PASSAGE_RATE_LIMIT_<CLASS>_REQUESTS` and `PASSAGE_RATE_LIMIT_<CLASS>_WINDOW` environment values shown in `.env.example`.

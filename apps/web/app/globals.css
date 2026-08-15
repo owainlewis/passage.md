@@ -1563,6 +1563,26 @@ button {
   font-size: 0.75rem;
 }
 
+.workspaceSearchEmpty button,
+.workspaceSearchResults > .workspaceSearchMore {
+  width: auto;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 11px;
+  font-size: 0.7rem;
+}
+
+.workspaceSearchEmpty button {
+  margin-top: 4px;
+}
+
+.workspaceSearchResults > .workspaceSearchMore {
+  margin: 8px auto 4px;
+}
+
 .workspaceSearchFooter {
   min-height: 38px;
   display: flex;

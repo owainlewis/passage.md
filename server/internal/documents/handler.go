@@ -2,13 +2,17 @@ package documents
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/owainlewis/passage.md/server/internal/auth"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
@@ -23,6 +27,7 @@ const (
 	maxDocumentRequestBytes = MaxDocumentBodyBytes + 4096
 	defaultDocumentPageSize = 50
 	maxDocumentPageSize     = 100
+	maxSearchQueryLength    = 200
 )
 
 func NewHandler(store documentStore) *Handler {
@@ -32,6 +37,7 @@ func NewHandler(store documentStore) *Handler {
 type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
 	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
+	Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error)
 	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error)
@@ -39,6 +45,18 @@ type documentStore interface {
 	Share(ctx context.Context, ownerID string, id string) (Document, error)
 	Unshare(ctx context.Context, ownerID string, id string) error
 	GetPublic(ctx context.Context, token string) (Document, error)
+}
+
+type searchResponse struct {
+	Documents  []SearchResult `json:"documents"`
+	NextCursor string         `json:"nextCursor,omitempty"`
+}
+
+type encodedSearchCursor struct {
+	Rank        float64 `json:"rank"`
+	UpdatedAt   string  `json:"updatedAt"`
+	ID          string  `json:"id"`
+	Fingerprint string  `json:"fingerprint"`
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -55,6 +73,135 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request, user auth.User) {
 		docs = []Document{}
 	}
 	writeJSON(w, http.StatusOK, map[string][]Document{"documents": docs})
+}
+
+func (h *Handler) Search(w http.ResponseWriter, r *http.Request, user auth.User) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	query, err := normalizeSearchQuery(r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	collectionID := r.URL.Query().Get("collectionId")
+	collectionSet := r.URL.Query().Has("collectionId")
+	unfiledValue := r.URL.Query().Get("unfiled")
+	unfiledSet := r.URL.Query().Has("unfiled")
+	if collectionSet && unfiledSet {
+		writeError(w, http.StatusBadRequest, "collectionId and unfiled are mutually exclusive")
+		return
+	}
+	if collectionSet && !validUUID(collectionID) {
+		writeError(w, http.StatusBadRequest, "collection not found")
+		return
+	}
+	if unfiledSet && unfiledValue != "true" {
+		writeError(w, http.StatusBadRequest, "unfiled must be true when provided")
+		return
+	}
+	scope := SearchScope{Unfiled: unfiledSet}
+	if collectionSet {
+		scope.CollectionID = &collectionID
+	}
+
+	limit := defaultDocumentPageSize
+	if value := r.URL.Query().Get("limit"); value != "" {
+		parsed, parseErr := strconv.Atoi(value)
+		if parseErr != nil || parsed < 1 || parsed > maxDocumentPageSize {
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	fingerprint := searchFingerprint(query, scope)
+	cursor, err := decodeSearchCursor(r.URL.Query().Get("cursor"), fingerprint)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid search cursor")
+		return
+	}
+	results, err := h.store.Search(r.Context(), user.ID, query, scope, limit+1, cursor)
+	if errors.Is(err, ErrEmptySearchQuery) {
+		writeError(w, http.StatusBadRequest, "q must contain a searchable term")
+		return
+	}
+	if errors.Is(err, ErrCollectionNotFound) {
+		writeError(w, http.StatusBadRequest, "collection not found")
+		return
+	}
+	if err != nil {
+		httpx.WriteInternalError(w, r, "search documents", err, "search unavailable")
+		return
+	}
+	response := searchResponse{Documents: results}
+	if len(results) > limit {
+		response.Documents = results[:limit]
+		last := response.Documents[len(response.Documents)-1]
+		response.NextCursor = encodeSearchCursor(SearchCursor{
+			Rank:      last.Rank,
+			UpdatedAt: last.UpdatedAt,
+			ID:        last.ID,
+		}, fingerprint)
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func normalizeSearchQuery(value string) (string, error) {
+	if !utf8.ValidString(value) {
+		return "", errors.New("q must contain valid Unicode")
+	}
+	normalized := strings.Join(strings.Fields(value), " ")
+	if strings.ContainsRune(normalized, '\x00') {
+		return "", errors.New("q must not contain a zero byte")
+	}
+	length := utf8.RuneCountInString(normalized)
+	if length < 1 || length > maxSearchQueryLength {
+		return "", errors.New("q must contain between 1 and 200 characters")
+	}
+	return normalized, nil
+}
+
+func searchFingerprint(query string, scope SearchScope) string {
+	collectionID := ""
+	if scope.CollectionID != nil {
+		collectionID = *scope.CollectionID
+	}
+	digest := sha256.Sum256([]byte(query + "\x00" + collectionID + "\x00" + strconv.FormatBool(scope.Unfiled)))
+	return hex.EncodeToString(digest[:])
+}
+
+func encodeSearchCursor(cursor SearchCursor, fingerprint string) string {
+	payload, _ := json.Marshal(encodedSearchCursor{
+		Rank:        float64(cursor.Rank),
+		UpdatedAt:   cursor.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ID:          cursor.ID,
+		Fingerprint: fingerprint,
+	})
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeSearchCursor(value string, fingerprint string) (*SearchCursor, error) {
+	if value == "" {
+		return nil, nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	var encoded encodedSearchCursor
+	if err := json.Unmarshal(payload, &encoded); err != nil ||
+		!validUUID(encoded.ID) ||
+		encoded.Fingerprint != fingerprint ||
+		encoded.Rank < 0 ||
+		encoded.Rank > math.MaxFloat32 ||
+		math.IsNaN(encoded.Rank) ||
+		math.IsInf(encoded.Rank, 0) {
+		return nil, errors.New("invalid cursor")
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, encoded.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &SearchCursor{Rank: float32(encoded.Rank), UpdatedAt: updatedAt, ID: encoded.ID}, nil
 }
 
 type documentPageResponse struct {
