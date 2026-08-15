@@ -134,7 +134,6 @@ jobs:
     needs: [web, server]
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -142,24 +141,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Authenticate to Google Cloud
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: google-github-actions/auth@v3
-        with:
-          project_id: ${{ env.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
-
-      - name: Set up gcloud
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configure Artifact Registry auth
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
-
       - name: Test production deployment gate
         run: scripts/deploy-production.test.sh
+
+      - name: Test CI production deployment gate
+        run: bash scripts/ci-production-deployment-gate.test.sh
 
       - name: Test production community operation gate
         run: scripts/run-production-community-op.test.sh
@@ -170,23 +156,60 @@ jobs:
       - name: Test monitoring configuration
         run: ops/monitoring/validate.test.sh
 
-      - name: Build and maybe push image
+      - name: Build production image
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+          push: false
+          tags: |
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
+
+  deploy:
+    name: Production deployment
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [web, server, container]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Artifact Registry auth
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
           tags: |
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:main
 
       - name: Migrate and deploy to Cloud Run
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           COMMIT_SHA: ${{ github.sha }}
           PUBLIC_SIGNUP_ENABLED: ${{ env.PUBLIC_SIGNUP_ENABLED }}
           PRO_MAX_SAVED_DOCS: ${{ env.PRO_MAX_SAVED_DOCS }}
-          STRIPE_BILLING_MODE: ${{ inputs.stripe_billing_mode || 'update-price' }}
+          STRIPE_BILLING_MODE: ${{ inputs.stripe_billing_mode }}
           STRIPE_MONTHLY_PRICE_ID: ${{ env.STRIPE_MONTHLY_PRICE_ID }}
           STRIPE_SECRET_KEY_SECRET: ${{ vars.STRIPE_SECRET_KEY_SECRET }}
           STRIPE_SECRET_KEY_VERSION: ${{ vars.STRIPE_SECRET_KEY_VERSION }}

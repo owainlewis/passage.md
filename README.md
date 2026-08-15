@@ -110,7 +110,8 @@ Set `STRIPE_BILLING_ENABLED=true` only after `STRIPE_SECRET_KEY`, `STRIPE_MONTHL
 Production Stripe account identifiers are not committed to the repository.
 The deployment workflow reads the monthly price ID, Secret Manager names, and fixed secret versions from the matching GitHub repository variables only when an explicitly approved `enable` dispatch runs.
 An explicit `disable` dispatch removes the Stripe price and secret bindings from the new Cloud Run revision.
-Normal `main` deployments preserve the current billing state without adding Stripe configuration.
+Pull requests and pushes to `main` run CI and build the production image without publishing or deploying it.
+Production deployment requires an explicit `CI` workflow dispatch from `main` and defaults to preserving the current billing state.
 
 ### Abuse rate limits
 

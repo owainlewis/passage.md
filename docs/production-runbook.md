@@ -111,6 +111,67 @@ This runbook covers the initial single-region Passage deployment in `passage-md-
 
 The production Cloud SQL instance is `passage-md-postgres` in `us-central1`.
 
+## Manual production deployment
+
+Pull requests and pushes to `main` run web, server, and production-container proof only.
+
+They cannot authenticate to Google Cloud, publish an image, run migrations, or deploy.
+
+Production changes only through an explicit `CI` workflow dispatch from `main`.
+
+Before dispatching:
+
+1. Confirm the release pull request is merged and every required check and review passed.
+2. Resolve the exact `origin/main` commit and confirm no unrelated commit followed it.
+3. Verify current health, no open incident, the latest successful automated backup, and the documented restore path using metadata only.
+4. Confirm every pending migration is additive and compatible with the currently serving application revision.
+5. Record the current revision, release commit, target image tag, application rollback revision, and schema rollback plan.
+
+Use `preserve` unless the reviewed release explicitly changes billing:
+
+```sh
+passage_release_sha="$(gh api repos/owainlewis/passage.md/commits/main --jq '.sha')"
+
+gh workflow run CI \
+  --repo owainlewis/passage.md \
+  --ref main \
+  -f stripe_billing_mode=preserve
+```
+
+Resolve the dispatched run and fail closed unless it is a manual dispatch for the exact release commit:
+
+```sh
+passage_release_run="$(
+  gh run list \
+    --repo owainlewis/passage.md \
+    --workflow CI \
+    --event workflow_dispatch \
+    --limit 1 \
+    --json databaseId \
+    --jq '.[0].databaseId'
+)"
+
+passage_release_identity="$(
+  gh run view "${passage_release_run}" \
+    --repo owainlewis/passage.md \
+    --json event,headBranch,headSha \
+    --jq '[.event, .headBranch, .headSha] | join(" ")'
+)"
+
+if [[ "${passage_release_identity}" != "workflow_dispatch main ${passage_release_sha}" ]]; then
+  echo "The deployment run does not match the approved main commit." >&2
+  exit 1
+fi
+
+gh run watch "${passage_release_run}" \
+  --repo owainlewis/passage.md \
+  --exit-status
+```
+
+After the workflow succeeds, record the immutable image digest, migration execution, deployed revision, 100 percent traffic assignment, health response, aggregate error and connection metrics, and migration versions.
+
+If any precondition or verification fails, do not dispatch another deployment until the cause is understood.
+
 Never restore a backup over the production instance.
 
 Always restore to a separate temporary instance, verify it, and plan an explicit application cutover.
