@@ -3,7 +3,7 @@
 import { Dispatch, SetStateAction, useRef, useState } from "react";
 import { apiShareDoc, apiUnshareDoc, apiUpdateDoc } from "./editor-api";
 import { titleOf } from "./doc-utils";
-import { ALL_DOCUMENTS, Doc, DocumentFilter, SaveState, ShareState } from "./editor-model";
+import { ALL_DOCUMENTS, Doc, DocumentFilter, newestTimestamp, SaveState, ShareState } from "./editor-model";
 import { PendingSave } from "./use-editor-documents";
 
 type EditorSharingOptions = {
@@ -82,7 +82,8 @@ export function useEditorSharing({
                   collectionId: doc.collectionId,
                   collectionSlug: doc.collectionSlug,
                   starred: doc.starred,
-                  pinned: doc.pinned
+                  pinned: doc.pinned,
+                  updatedAt: newestTimestamp(doc.updatedAt, saved.updatedAt)
                 }
               : doc
           )

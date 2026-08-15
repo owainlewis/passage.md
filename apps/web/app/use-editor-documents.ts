@@ -8,6 +8,7 @@ import {
   Doc,
   DocumentFilter,
   isShared,
+  newestTimestamp,
   publicIdFromPath,
   SaveState,
   seedDocs
@@ -128,16 +129,20 @@ export function useEditorDocuments({
           || candidate.collectionSlug !== doc.collectionSlug
           || candidate.starred !== doc.starred
           || candidate.pinned !== doc.pinned;
+        const merged = {
+          ...candidate,
+          ...loaded,
+          updatedAt: newestTimestamp(candidate.updatedAt, loaded.updatedAt)
+        };
         return metadataChanged
           ? {
-            ...candidate,
-            ...loaded,
+            ...merged,
             collectionId: candidate.collectionId,
             collectionSlug: candidate.collectionSlug,
             starred: candidate.starred,
             pinned: candidate.pinned
           }
-          : { ...candidate, ...loaded };
+          : merged;
       }));
     } catch {
       if (activeRequest.current === request) {
@@ -165,7 +170,8 @@ export function useEditorDocuments({
                     collectionId: doc.collectionId,
                     collectionSlug: doc.collectionSlug,
                     starred: doc.starred,
-                    pinned: doc.pinned
+                    pinned: doc.pinned,
+                    updatedAt: newestTimestamp(doc.updatedAt, saved.updatedAt)
                   }
                 : doc
             )
@@ -291,7 +297,8 @@ export function useEditorDocuments({
                     collectionId: current.collectionId,
                     collectionSlug: current.collectionSlug,
                     starred: current.starred,
-                    pinned: current.pinned
+                    pinned: current.pinned,
+                    updatedAt: newestTimestamp(current.updatedAt, saved.updatedAt)
                   }
                 : current
             )

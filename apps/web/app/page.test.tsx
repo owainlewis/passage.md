@@ -1464,7 +1464,7 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(resolveLaterPage).toBeDefined());
     resolveLaterPage?.(
       new Response(
-        JSON.stringify({ documents: [{ id: "doc-later", publicId: "later", body: "# Later research", collectionId: null, collectionSlug: null, starred: false }] }),
+        JSON.stringify({ documents: [{ id: "doc-later", publicId: "later", body: "# Later research", collectionId: "collection-research", collectionSlug: "research", starred: false }] }),
         { status: 200 }
       )
     );
@@ -2234,6 +2234,16 @@ describe("Write (editor)", () => {
             publicId: "public-race",
             title: "Race metadata",
             excerpt: "Race metadata\n\nPreview",
+            updatedAt: "2026-08-15T08:00:00Z",
+            collectionId: null,
+            collectionSlug: null,
+            starred: false
+          }, {
+            id: "doc-newer",
+            publicId: "public-newer",
+            title: "Newer metadata",
+            excerpt: "Newer metadata",
+            updatedAt: "2026-08-15T09:30:00Z",
             collectionId: null,
             collectionSlug: null,
             starred: false
@@ -2256,7 +2266,8 @@ describe("Write (editor)", () => {
           body: "# Race metadata\n\nFull body",
           collectionId: confirmedCollectionId,
           collectionSlug: confirmedCollectionSlug,
-          starred: confirmedStarred
+          starred: confirmedStarred,
+          updatedAt: "2026-08-15T10:00:00Z"
         }), { status: 200 });
       }
       if (url === "/api/v1/collections") {
@@ -2292,13 +2303,76 @@ describe("Write (editor)", () => {
         body: "# Race metadata\n\nFull body",
         collectionId: null,
         collectionSlug: null,
-        starred: false
+        starred: false,
+        updatedAt: "2026-08-15T09:00:00Z"
       }), { status: 200 }));
     });
 
     expect((await screen.findAllByText("Full body")).length).toBeGreaterThan(0);
     expect(screen.getByRole("combobox", { name: "Collection for Race metadata" })).toHaveValue("research");
     expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
+    const rows = screen.getByLabelText("Recent").querySelectorAll(".workspaceDocumentOpen");
+    expect(rows[0]).toHaveTextContent("Race metadata");
+    expect(rows[1]).toHaveTextContent("Newer metadata");
+  });
+
+  it("preserves newer metadata when an older body save finishes", async () => {
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-old", body: "# Older note\n\nDraft.", updatedAt: "2026-08-15T08:00:00Z" },
+      { id: "doc-new", body: "# Newer note", updatedAt: "2026-08-15T09:30:00Z" }
+    ]);
+    let resolveBodySave: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-old" && init?.method === "PATCH") {
+        const update = JSON.parse(String(init.body ?? "{}"));
+        if (Object.prototype.hasOwnProperty.call(update, "body")) {
+          return new Promise<Response>((resolve) => { resolveBodySave = resolve; });
+        }
+        if (Object.prototype.hasOwnProperty.call(update, "starred")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            id: "doc-old",
+            publicId: "public-1",
+            body: "# Older note\n\nEdited.",
+            collectionId: null,
+            collectionSlug: null,
+            starred: true,
+            updatedAt: "2026-08-15T10:00:00Z"
+          }), { status: 200 }));
+        }
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    await openDocumentFromSearch(/Older note/);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Older note\n\nEdited." }
+    });
+    await waitFor(() => expect(resolveBodySave).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
+    await screen.findByRole("button", { name: "Unstar document" });
+
+    await act(async () => {
+      resolveBodySave!(new Response(JSON.stringify({
+        id: "doc-old",
+        publicId: "public-1",
+        body: "# Older note\n\nEdited.",
+        collectionId: null,
+        collectionSlug: null,
+        starred: false,
+        updatedAt: "2026-08-15T09:00:00Z"
+      }), { status: 200 }));
+    });
+
+    expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
+    openWorkspaceHome();
+    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
+    const rows = screen.getByLabelText("Recent").querySelectorAll(".workspaceDocumentOpen");
+    expect(rows[0]).toHaveTextContent("Older note");
+    expect(rows[1]).toHaveTextContent("Newer note");
   });
 
   it("lets users retry after a background document page fails", async () => {

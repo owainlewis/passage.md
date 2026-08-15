@@ -9,7 +9,7 @@ import {
   apiUpdateDocMetadata,
   Collection
 } from "./editor-api";
-import { Doc } from "./editor-model";
+import { Doc, newestTimestamp } from "./editor-model";
 import { WorkspaceCollection } from "./editor-workspace-model";
 
 type EditorCollectionsOptions = {
@@ -26,6 +26,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
   const [pendingCollectionSlugs, setPendingCollectionSlugs] = useState<Set<string>>(() => new Set());
   const [creatingCollection, setCreatingCollection] = useState(false);
   const [available, setAvailable] = useState(false);
+  const [deletedCollectionIDs, setDeletedCollectionIDs] = useState<Set<string>>(() => new Set());
   const collectionVersions = useRef(new Map<string, number>());
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
       setCollections([]);
       setLoading(false);
       setAvailable(false);
+      setDeletedCollectionIDs(new Set());
       return;
     }
     let cancelled = false;
@@ -43,6 +45,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     setPendingCollectionSlugs(new Set());
     setCreatingCollection(false);
     setAvailable(false);
+    setDeletedCollectionIDs(new Set());
     collectionVersions.current = new Map();
     void apiCollections()
       .then((loaded) => {
@@ -63,6 +66,19 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
       cancelled = true;
     };
   }, [setNotice, userId]);
+
+  useEffect(() => {
+    if (deletedCollectionIDs.size === 0) return;
+    setDocs((current) => {
+      let changed = false;
+      const next = current.map((doc) => {
+        if (!doc.collectionId || !deletedCollectionIDs.has(doc.collectionId)) return doc;
+        changed = true;
+        return { ...doc, collectionId: null, collectionSlug: null };
+      });
+      return changed ? next : current;
+    });
+  }, [deletedCollectionIDs, docs, setDocs]);
 
   const assignCollection = useCallback(async (documentID: string, slug: string) => {
     if (!available || pendingDocIds.has(documentID)) return false;
@@ -143,11 +159,13 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
 
   const deleteCollection = useCallback(async (slug: string) => {
     if (pendingCollectionSlugs.has(slug)) return false;
+    const collectionID = collections.find((collection) => collection.slug === slug)?.id;
     setNotice("");
     setPendingCollectionSlugs((current) => withValue(current, slug));
     try {
       await apiDeleteCollection(slug);
       collectionVersions.current.set(slug, (collectionVersions.current.get(slug) ?? 0) + 1);
+      if (collectionID) setDeletedCollectionIDs((current) => withValue(current, collectionID));
       setCollections((current) => current.filter((collection) => collection.slug !== slug));
       setDocs((current) => current.map((doc) => doc.collectionSlug === slug
         ? { ...doc, collectionId: null, collectionSlug: null }
@@ -159,7 +177,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     } finally {
       setPendingCollectionSlugs((current) => withoutValue(current, slug));
     }
-  }, [pendingCollectionSlugs, setDocs, setNotice]);
+  }, [collections, pendingCollectionSlugs, setDocs, setNotice]);
 
   return {
     assignCollection,
@@ -194,12 +212,6 @@ function mergeConfirmedMetadata(current: Doc, saved: Doc): Doc {
     pinned: saved.starred,
     updatedAt: newestTimestamp(current.updatedAt, saved.updatedAt)
   };
-}
-
-function newestTimestamp(current?: string, saved?: string) {
-  if (!saved) return current;
-  if (!current) return saved;
-  return Date.parse(saved) > Date.parse(current) ? saved : current;
 }
 
 function withValue(current: Set<string>, value: string) {
