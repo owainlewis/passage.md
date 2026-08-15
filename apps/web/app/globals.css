@@ -1379,6 +1379,7 @@ button {
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .workspaceCollectionDialog label {
@@ -1442,6 +1443,15 @@ button {
   border-color: #a04a3e;
   background: #a04a3e;
   color: #fff;
+}
+
+.workspaceCollectionDialogError {
+  margin: -4px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid #a04a3e;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 .workspaceCollectionDialog footer button:disabled {

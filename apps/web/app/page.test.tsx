@@ -1693,6 +1693,11 @@ describe("Write (editor)", () => {
     expect(document.body).toHaveStyle({ overflow: "hidden" });
     expect(title).toHaveFocus();
 
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "New collection" })).toBeInTheDocument();
+    expect(title).toHaveFocus();
+
     fireEvent.change(title, { target: { value: "Focus test" } });
     const submit = screen.getByRole("button", { name: "Create collection" });
     fireEvent.keyDown(title, { key: "Tab", shiftKey: true });
@@ -1719,9 +1724,14 @@ describe("Write (editor)", () => {
     editTrigger.focus();
     fireEvent.click(editTrigger);
     const editDialog = screen.getByRole("dialog", { name: "Edit collection" });
+    const editBackdrop = editDialog.parentElement!;
     expect(editDialog.parentElement?.parentElement).toBe(document.body);
     expect(screen.getByRole("textbox", { name: "Collection title" })).toHaveFocus();
-    fireEvent.click(editDialog.parentElement!);
+    fireEvent.pointerDown(editDialog);
+    fireEvent.click(editBackdrop);
+    expect(editDialog).toBeInTheDocument();
+    fireEvent.pointerDown(editBackdrop);
+    fireEvent.click(editBackdrop);
     await waitFor(() => expect(editTrigger).toHaveFocus());
 
     const deleteTrigger = screen.getByRole("button", { name: "Delete" });
@@ -1916,6 +1926,29 @@ describe("Write (editor)", () => {
     expect(screen.getByLabelText("Operating Context")).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Operating Context");
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("shows collection deletion failures inside the modal", async () => {
+    const baseFetch = stubSignedInFetch();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections/research" && init?.method === "DELETE") {
+        return Promise.resolve(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Collection could not be deleted. Try again."
+    );
+    expect(screen.queryByText("delete failed")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Delete collection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete collection" })).toBeEnabled();
   });
 
   it("protects the Documents fallback collection from deletion", async () => {

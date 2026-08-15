@@ -86,6 +86,7 @@ it("keeps collection modal surfaces fixed to the full viewport", () => {
   expect(declarationsFor(".workspace.workspaceCollectionDialogBackdrop")).toContain("overscroll-behavior: contain;");
   expect(declarationsFor(".workspaceCollectionDialog")).toContain("max-height: calc(100dvh - 48px);");
   expect(declarationsFor(".workspaceCollectionDialog")).toContain("overflow-y: auto;");
+  expect(declarationsFor(".workspaceCollectionDialog header p")).toContain("overflow-wrap: anywhere;");
   expect(declarationsFor(".workspaceCollectionDialog footer button.workspaceCollectionDialogDanger"))
     .toContain("background: #a04a3e;");
 });

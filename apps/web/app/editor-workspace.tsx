@@ -564,6 +564,7 @@ function CollectionModal({
   onClose: () => void;
 }) {
   const backdrop = useRef<HTMLDivElement>(null);
+  const backdropPressStarted = useRef(false);
   const dialog = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLElement | null>(null);
 
@@ -630,7 +631,17 @@ function CollectionModal({
       ref={backdrop}
       className="workspace workspaceCollectionDialogBackdrop"
       role="presentation"
-      onClick={(event) => !dismissDisabled && event.target === event.currentTarget && onClose()}
+      onPointerDown={(event) => {
+        backdropPressStarted.current = event.target === event.currentTarget;
+      }}
+      onPointerCancel={() => {
+        backdropPressStarted.current = false;
+      }}
+      onClick={(event) => {
+        const shouldDismiss = backdropPressStarted.current && event.target === event.currentTarget;
+        backdropPressStarted.current = false;
+        if (!dismissDisabled && shouldDismiss) onClose();
+      }}
     >
       <section
         ref={dialog}
@@ -722,6 +733,7 @@ function DeleteCollectionDialog({
 }) {
   const cancelButton = useRef<HTMLButtonElement>(null);
   const [deleting, setDeleting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const noun = documentCount === 1 ? "document" : "documents";
   const moveSummary = documentCountComplete
     ? `${documentCount} ${noun} will move to Documents.`
@@ -729,12 +741,14 @@ function DeleteCollectionDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setErrorMessage("");
     setDeleting(true);
     if (await onDelete()) {
       onClose();
       return;
     }
     setDeleting(false);
+    setErrorMessage("Collection could not be deleted. Try again.");
   }
 
   return (
@@ -744,6 +758,7 @@ function DeleteCollectionDialog({
           <h2>Delete collection</h2>
           <p>Delete “{collection.title}”? {moveSummary}</p>
         </header>
+        {errorMessage && <p className="workspaceCollectionDialogError" role="alert">{errorMessage}</p>}
         <footer>
           <button ref={cancelButton} type="button" disabled={deleting} onClick={onClose}>Cancel</button>
           <button className="workspaceCollectionDialogDanger" type="submit" disabled={deleting}>

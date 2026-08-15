@@ -129,6 +129,7 @@ export default function Editor() {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        if (document.querySelector(".workspaceCollectionDialog")) return;
         if (!searchOpen) {
           setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
         }
@@ -261,7 +262,10 @@ export default function Editor() {
     if (slug === "documents") return false;
     const collection = collections.find((candidate) => candidate.slug === slug);
     if (!collection) return false;
-    if (!await collectionState.deleteCollection(slug)) return false;
+    if (!await collectionState.deleteCollection(slug)) {
+      setBillingNotice("");
+      return false;
+    }
     setSearchScope("all");
     setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
     openWorkspaceView({ type: "collections" }, "replace");
