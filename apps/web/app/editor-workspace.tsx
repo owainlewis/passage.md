@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { SearchDocument } from "./editor-api";
 import { editorDocTitle } from "./editor-list";
 import { Doc, SaveState } from "./editor-model";
 import {
@@ -15,6 +16,7 @@ import {
   workspaceDocSummary
 } from "./editor-workspace-model";
 import { DocIcon, SearchIcon, StarIcon } from "./icons";
+import { useEditorSearch } from "./use-editor-search";
 
 type EditorWorkspaceProps = {
   assignments: Record<string, string>;
@@ -615,6 +617,7 @@ type WorkspaceSearchProps = {
   query: string;
   scope: string;
   trigger: HTMLElement | null;
+  userId?: string;
   onClose: () => void;
   onOpenDocument: (doc: Doc) => void;
   onQueryChange: (query: string) => void;
@@ -629,6 +632,7 @@ export function WorkspaceSearch({
   query,
   scope,
   trigger,
+  userId,
   onClose,
   onOpenDocument,
   onQueryChange,
@@ -637,7 +641,20 @@ export function WorkspaceSearch({
   const dialog = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const restoreFocus = useRef(true);
-  const results = useMemo(() => searchWorkspaceDocs(docs, query, scope, assignments, deletedCollections).slice(0, 20), [assignments, deletedCollections, docs, query, scope]);
+  const scopedCollection = scope === "all" || scope === "documents"
+    ? undefined
+    : collections.find((collection) => collection.slug === scope);
+  const search = useEditorSearch({
+    query,
+    scope: scope === "documents"
+      ? { unfiled: true }
+      : scopedCollection?.id
+        ? { collectionId: scopedCollection.id }
+        : {},
+    userId: scopedCollection || scope === "all" || scope === "documents" ? userId : undefined
+  });
+  const recentResults = searchWorkspaceDocs(docs, "", scope, assignments, deletedCollections).slice(0, 20);
+  const results: Array<Doc | SearchDocument> = search.active ? search.documents : recentResults;
 
   useEffect(() => {
     input.current?.focus();
@@ -681,15 +698,28 @@ export function WorkspaceSearch({
           ))}
         </div>
         <div className="workspaceSearchResults">
-          <p>{query ? `${results.length} results` : "Recently updated"}</p>
+          <p role="status">{search.loading ? "Searching…" : query ? `${results.length} results` : "Recently updated"}</p>
           {results.map((doc) => (
             <button type="button" key={doc.id} onClick={() => { restoreFocus.current = false; onOpenDocument(doc); }}>
               <span className="workspaceDocumentIcon"><DocIcon /></span>
-              <span><strong>{editorDocTitle(doc)}</strong><small>{collectionLabel(collectionForDoc(doc, assignments, deletedCollections), collections)}</small><em>{workspaceDocSummary(doc)}</em></span>
+              <span><strong>{editorDocTitle(doc)}</strong><small>{collectionLabel(collectionForDoc(doc, assignments, deletedCollections), collections)}</small><em>{"matchExcerpt" in doc ? doc.matchExcerpt : workspaceDocSummary(doc)}</em></span>
               {doc.pinned && <StarIcon filled />}
             </button>
           ))}
-          {results.length === 0 && <div className="workspaceSearchEmpty"><strong>No matching documents</strong><span>Try another term or collection.</span></div>}
+          {search.errorMessage ? (
+            <div className="workspaceSearchEmpty" role="alert">
+              <strong>Search could not be completed</strong>
+              <span>{search.errorMessage}</span>
+              <button type="button" onClick={search.retry}>Try again</button>
+            </div>
+          ) : !search.loading && results.length === 0 ? (
+            <div className="workspaceSearchEmpty"><strong>No matching documents</strong><span>Try another term or collection.</span></div>
+          ) : null}
+          {search.hasMore && (
+            <button type="button" className="workspaceSearchMore" disabled={search.loading} onClick={search.loadMore}>
+              {search.loading ? "Loading…" : "Load more results"}
+            </button>
+          )}
         </div>
         <footer className="workspaceSearchFooter"><span>Esc to close</span><span>Searches titles, text, and tags</span></footer>
       </section>

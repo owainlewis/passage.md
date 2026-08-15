@@ -5,6 +5,20 @@ export type DocumentPage = {
   nextCursor: string;
 };
 
+export type SearchDocument = Doc & {
+  matchExcerpt: string;
+};
+
+export type SearchDocumentPage = {
+  documents: SearchDocument[];
+  nextCursor: string;
+};
+
+export type SearchScope = {
+  collectionId?: string;
+  unfiled?: boolean;
+};
+
 export type Collection = {
   id: string;
   slug: string;
@@ -33,6 +47,36 @@ export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
   }
   const documents = Array.isArray(body.documents)
     ? body.documents.map((doc: Doc) => normalizeDoc(doc, typeof doc.body === "string"))
+    : [];
+  return {
+    documents,
+    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : ""
+  };
+}
+
+export async function apiSearchDocs(
+  value: string,
+  scope: SearchScope,
+  cursor = "",
+  signal?: AbortSignal
+): Promise<SearchDocumentPage> {
+  const query = new URLSearchParams({ q: value, limit: "50" });
+  if (scope.collectionId) query.set("collectionId", scope.collectionId);
+  if (scope.unfiled) query.set("unfiled", "true");
+  if (cursor) query.set("cursor", cursor);
+  const res = await fetch(`/api/v1/docs/search?${query}`, {
+    credentials: "include",
+    signal
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof body.error === "string" ? body.error : "Search unavailable");
+  }
+  const documents = Array.isArray(body.documents)
+    ? body.documents.map((doc: SearchDocument) => ({
+        ...normalizeDoc(doc, false),
+        matchExcerpt: typeof doc.matchExcerpt === "string" ? doc.matchExcerpt : ""
+      }))
     : [];
   return {
     documents,

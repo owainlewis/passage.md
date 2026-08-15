@@ -55,6 +55,13 @@ func (a *App) listDocs(w http.ResponseWriter, r *http.Request) {
 	a.requireUserForDocs(a.docs.List)(w, r)
 }
 
+func (a *App) searchDocs(w http.ResponseWriter, r *http.Request) {
+	if !a.requireDocumentService(w) {
+		return
+	}
+	a.requireUserForDocs(a.docs.Search)(w, r)
+}
+
 func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return

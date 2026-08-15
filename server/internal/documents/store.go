@@ -15,6 +15,7 @@ import (
 
 var ErrNotFound = errors.New("document not found")
 var ErrCollectionNotFound = errors.New("collection not found")
+var ErrEmptySearchQuery = errors.New("search query has no searchable terms")
 var ErrShared = errors.New("shared document cannot be archived")
 var ErrLimitReached = errors.New("saved document limit reached")
 var errPublicIDCollision = errors.New("public id collision")
@@ -49,6 +50,33 @@ type DocumentMetadata struct {
 	SharedAt       *time.Time `json:"sharedAt,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
+}
+
+type SearchResult struct {
+	ID             string     `json:"id"`
+	PublicID       string     `json:"publicId"`
+	Title          string     `json:"title"`
+	MatchExcerpt   string     `json:"matchExcerpt"`
+	Tags           []string   `json:"tags"`
+	CollectionID   *string    `json:"collectionId"`
+	CollectionSlug *string    `json:"collectionSlug"`
+	Starred        bool       `json:"starred"`
+	ShareToken     *string    `json:"shareToken,omitempty"`
+	SharedAt       *time.Time `json:"sharedAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	Rank           float32    `json:"-"`
+}
+
+type SearchScope struct {
+	CollectionID *string
+	Unfiled      bool
+}
+
+type SearchCursor struct {
+	Rank      float32
+	UpdatedAt time.Time
+	ID        string
 }
 
 type DocumentUpdate struct {
@@ -144,6 +172,141 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 		docs = append(docs, doc)
 	}
 	return docs, rows.Err()
+}
+
+func (s *Store) Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error) {
+	var queryNodes int
+	if err := s.db.QueryRow(ctx, `
+		SELECT numnode(websearch_to_tsquery('simple'::regconfig, $1))
+	`, query).Scan(&queryNodes); err != nil {
+		return nil, err
+	}
+	if queryNodes == 0 {
+		return nil, ErrEmptySearchQuery
+	}
+	if scope.CollectionID != nil {
+		var exists bool
+		if err := s.db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM collections
+				WHERE owner_user_id = $1 AND id = $2
+			)
+		`, ownerID, *scope.CollectionID).Scan(&exists); err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, ErrCollectionNotFound
+		}
+	}
+
+	var cursorRank *float32
+	var cursorUpdatedAt *time.Time
+	var cursorID *string
+	if cursor != nil {
+		cursorRank = &cursor.Rank
+		cursorUpdatedAt = &cursor.UpdatedAt
+		cursorID = &cursor.ID
+	}
+	rows, err := s.db.Query(ctx, `
+		WITH search_query AS (
+			SELECT websearch_to_tsquery('simple'::regconfig, $2) AS value
+		), ranked AS (
+			SELECT
+				d.id,
+				d.public_id,
+				d.title,
+				d.body,
+				left(d.body, 4096) AS body_start,
+				d.collection_id,
+				c.slug AS collection_slug,
+				d.starred,
+				d.share_token,
+				d.shared_at,
+				d.created_at,
+				d.updated_at,
+				ts_rank_cd(d.search_vector, search_query.value) AS rank
+			FROM documents d
+			LEFT JOIN collections c
+			  ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
+			CROSS JOIN search_query
+			WHERE d.owner_user_id = $1
+			  AND d.archived_at IS NULL
+			  AND ($3::uuid IS NULL OR d.collection_id = $3)
+			  AND (NOT $4::boolean OR d.collection_id IS NULL)
+			  AND d.search_vector @@ search_query.value
+		), page AS (
+			SELECT *
+			FROM ranked
+			WHERE $5::real IS NULL
+			   OR (rank, updated_at, id) < ($5, $6::timestamptz, $7::uuid)
+			ORDER BY rank DESC, updated_at DESC, id DESC
+			LIMIT $8
+		)
+		SELECT
+			page.id::text,
+			page.public_id,
+			page.title,
+			page.body_start,
+			left(
+				replace(
+					replace(
+						ts_headline(
+							'simple'::regconfig,
+							page.title || E'\n' || page.body,
+							search_query.value,
+							'StartSel=<<<passage>>>, StopSel=<<</passage>>>, MaxWords=35, MinWords=15, ShortWord=2, MaxFragments=1, FragmentDelimiter= … '
+						),
+						'<<<passage>>>',
+						''
+					),
+					'<<</passage>>>',
+					''
+				),
+				240
+			) AS match_excerpt,
+			page.collection_id::text,
+			page.collection_slug,
+			page.starred,
+			page.share_token,
+			page.shared_at,
+			page.created_at,
+			page.updated_at,
+			page.rank
+		FROM page
+		CROSS JOIN search_query
+		ORDER BY page.rank DESC, page.updated_at DESC, page.id DESC
+	`, ownerID, query, scope.CollectionID, scope.Unfiled, cursorRank, cursorUpdatedAt, cursorID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []SearchResult{}
+	for rows.Next() {
+		var result SearchResult
+		var bodyStart string
+		if err := rows.Scan(
+			&result.ID,
+			&result.PublicID,
+			&result.Title,
+			&bodyStart,
+			&result.MatchExcerpt,
+			&result.CollectionID,
+			&result.CollectionSlug,
+			&result.Starred,
+			&result.ShareToken,
+			&result.SharedAt,
+			&result.CreatedAt,
+			&result.UpdatedAt,
+			&result.Rank,
+		); err != nil {
+			return nil, err
+		}
+		result.MatchExcerpt = strings.TrimSpace(result.MatchExcerpt)
+		result.Tags = tagsOf(bodyStart)
+		results = append(results, result)
+	}
+	return results, rows.Err()
 }
 
 func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {

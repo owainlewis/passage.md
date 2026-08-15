@@ -207,8 +207,18 @@ export default function Editor() {
   }
 
   function selectSearchDocument(doc: Parameters<typeof selectDoc>[0]) {
+    const existing = docs.find((candidate) => candidate.id === doc.id);
+    const selected = existing
+      ? { ...doc, body: existing.body, bodyLoaded: existing.bodyLoaded }
+      : doc;
+    setDocs((current) => {
+      const known = current.some((candidate) => candidate.id === selected.id);
+      return known
+        ? current.map((candidate) => candidate.id === selected.id ? { ...candidate, ...selected } : candidate)
+        : [selected, ...current];
+    });
     setSearchOpen(false);
-    selectDocument(doc);
+    selectDocument(selected);
     requestAnimationFrame(() => writingPaneRef.current?.focus());
   }
 
@@ -582,6 +592,7 @@ export default function Editor() {
           query={searchQuery}
           scope={searchScope}
           trigger={searchTrigger}
+          userId={userId}
           onClose={() => setSearchOpen(false)}
           onOpenDocument={selectSearchDocument}
           onQueryChange={setSearchQuery}
