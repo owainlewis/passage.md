@@ -34,12 +34,25 @@ function contrast(first: string, second: string) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function compositeBlack(background: string, overlay: string) {
+  const alpha = Number.parseFloat(overlay.match(/rgba\(0, 0, 0, ([\d.]+)\)/)?.[1] ?? "0");
+  return `#${rgb(background)
+    .map((channel) => Math.round(channel * (1 - alpha)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 describe("light workspace contrast", () => {
   const light = customProperties(declarationsFor(':root:not([data-theme="dark"]) .workspace'));
   const backgrounds = ["#fbfbf9", "#f5f4f1"];
+  const stateBackgrounds = backgrounds.flatMap((background) => [
+    background,
+    compositeBlack(background, light["--hover-soft"]),
+    compositeBlack(background, light["--hover"]),
+    compositeBlack(background, light["--hover-strong"])
+  ]);
 
-  it.each(["--muted", "--faint"])("keeps %s normal text at WCAG AA contrast", (token) => {
-    for (const background of backgrounds) {
+  it.each(["--muted", "--faint"])("keeps %s normal text at WCAG AA contrast in every interaction state", (token) => {
+    for (const background of stateBackgrounds) {
       expect(contrast(light[token], background)).toBeGreaterThanOrEqual(4.5);
     }
   });
@@ -51,12 +64,16 @@ describe("light workspace contrast", () => {
 
   it("keeps meaningful control boundaries at non-text contrast", () => {
     for (const background of backgrounds) {
-      expect(contrast(light["--hairline-strong"], background)).toBeGreaterThanOrEqual(3);
+      expect(contrast(light["--control-boundary"], background)).toBeGreaterThanOrEqual(3);
     }
 
     for (const selector of [
-      ".workspaceSidebarSearch > button",
-      ".workspaceSearchButton",
+      ".docCount",
+      ".documentFilter",
+      ".filterInput",
+      ".templateSidebarCount",
+      ".tagFilterInput",
+      ".docListMore",
       ".workspaceDocumentIcon",
       ".workspaceCollectionSelect,\n.topBarCollectionSelect",
       ".workspaceSearchEmpty button,\n.workspaceSearchResults > .workspaceSearchMore",
@@ -64,6 +81,10 @@ describe("light workspace contrast", () => {
       ".statusPill",
       ".dockButton"
     ]) {
+      expect(declarationsFor(selector)).toContain("var(--control-boundary)");
+    }
+
+    for (const selector of [".workspaceSidebarSearch > button", ".workspaceSearchButton"]) {
       expect(declarationsFor(selector)).toContain("var(--hairline-strong)");
     }
   });
@@ -99,6 +120,8 @@ describe("light workspace contrast", () => {
       "--hairline": "#282d35",
       "--hairline-strong": "#363d47"
     });
+    expect(customProperties(declarationsFor(".workspace"))["--control-boundary"]).toBe("var(--hairline)");
+    expect(dark["--control-boundary"]).toBeUndefined();
   });
 
   it("keeps hover, active, selected, disabled, and error states distinct", () => {
