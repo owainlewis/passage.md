@@ -1617,6 +1617,7 @@ describe("Write (editor)", () => {
 
     expect(await screen.findByLabelText("Client Work")).toHaveTextContent("Briefs and decisions.");
     expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Client Work" })).toHaveFocus());
     openWorkspaceSearch();
     expect(screen.getByRole("button", { name: "Client Work" })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Search workspace" }), { key: "Escape" });

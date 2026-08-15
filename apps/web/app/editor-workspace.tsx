@@ -334,7 +334,7 @@ function WorkspaceCollectionView({
   return (
     <div className="workspaceHub" aria-label={collection.title}>
       <header className="workspaceCollectionHeader">
-        <h1>{collection.title}</h1>
+        <h1 data-collection-dialog-focus-destination tabIndex={-1}>{collection.title}</h1>
         <p>{collection.description}</p>
       </header>
 

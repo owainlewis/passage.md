@@ -254,6 +254,9 @@ export default function Editor() {
       return false;
     }
     openCollection(collection.slug);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-collection-dialog-focus-destination]")?.focus();
+    });
     return true;
   }
 
