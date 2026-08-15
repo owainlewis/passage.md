@@ -57,7 +57,7 @@ Free remains limited to five active documents.
 
 These stored-resource limits are independent from the shared request rate limits.
 
-Raising one account's document allowance must not change document mutation, shared HTML, or raw Markdown rate limits.
+Raising one account's document allowance must not change document mutation, document search, shared HTML, or raw Markdown rate limits.
 
 Review a request before changing the account:
 

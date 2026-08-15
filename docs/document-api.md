@@ -452,6 +452,8 @@ Clients must render it as text, never as HTML.
 
 Search responses never contain the complete `body` and set `Cache-Control: private, no-store`.
 
+Search is limited per authenticated user and returns `429` with `Retry-After` when the limit is exceeded.
+
 `nextCursor` is omitted on the final page.
 
 The cursor is bound to the normalized query and scope that created it.
@@ -732,6 +734,7 @@ Legacy share token URLs are still accepted while older shares exist.
 - `400`: invalid JSON.
 - `401`: authentication required.
 - `402`: a bearer-token document request requires Pro.
+- `429`: an abuse limit was exceeded.
 - `403`: cross-origin mutation blocked.
 - `404`: document or public share not found.
 - `415`: create or update request was not JSON.

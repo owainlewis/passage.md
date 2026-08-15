@@ -59,7 +59,12 @@ func (a *App) searchDocs(w http.ResponseWriter, r *http.Request) {
 	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(a.docs.Search)(w, r)
+	a.requireUserForDocs(func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		if !a.allowUserRequest(w, r, a.rateLimiters.documentSearch, user.ID) {
+			return
+		}
+		a.docs.Search(w, r, user)
+	})(w, r)
 }
 
 func (a *App) createDoc(w http.ResponseWriter, r *http.Request) {
