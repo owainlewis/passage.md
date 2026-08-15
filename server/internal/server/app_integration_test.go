@@ -498,16 +498,16 @@ func TestCollectionAndDocumentMetadataRoutesWithPostgres(t *testing.T) {
 	ownerOneCookies := createIntegrationUserAndLogin(t, db, server.URL, ownerOne)
 	ownerTwoCookies := createIntegrationUserAndLogin(t, db, server.URL, ownerTwo)
 
-	var defaults struct {
+	var initialCollections struct {
 		Collections []struct {
 			Slug string `json:"slug"`
 		} `json:"collections"`
 	}
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/collections", "", ownerOneCookies, "")), &defaults); err != nil {
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/collections", "", ownerOneCookies, "")), &initialCollections); err != nil {
 		t.Fatal(err)
 	}
-	if len(defaults.Collections) != 4 {
-		t.Fatalf("default collection count = %d, want 4", len(defaults.Collections))
+	if len(initialCollections.Collections) != 0 {
+		t.Fatalf("initial stored collection count = %d, want 0", len(initialCollections.Collections))
 	}
 
 	type collectionResponse struct {
@@ -619,10 +619,18 @@ func TestDocumentSearchAPIWithPostgres(t *testing.T) {
 	if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, otherEmail).Scan(&otherID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(ctx, `SELECT id::text FROM collections WHERE owner_user_id = $1 AND slug = 'research'`, ownerID).Scan(&collectionID); err != nil {
+	if err := db.QueryRow(ctx, `
+		INSERT INTO collections (owner_user_id, slug, title)
+		VALUES ($1, 'research', 'Research')
+		RETURNING id::text
+	`, ownerID).Scan(&collectionID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(ctx, `SELECT id::text FROM collections WHERE owner_user_id = $1 AND slug = 'research'`, otherID).Scan(&otherCollectionID); err != nil {
+	if err := db.QueryRow(ctx, `
+		INSERT INTO collections (owner_user_id, slug, title)
+		VALUES ($1, 'research', 'Research')
+		RETURNING id::text
+	`, otherID).Scan(&otherCollectionID); err != nil {
 		t.Fatal(err)
 	}
 
