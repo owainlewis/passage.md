@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, SetStateAction, useCallback, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import {
   apiCollections,
   apiCreateCollection,
@@ -25,6 +25,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
   const [pendingDocIds, setPendingDocIds] = useState<Set<string>>(() => new Set());
   const [pendingCollectionSlugs, setPendingCollectionSlugs] = useState<Set<string>>(() => new Set());
   const [creatingCollection, setCreatingCollection] = useState(false);
+  const collectionVersions = useRef(new Map<string, number>());
 
   useEffect(() => {
     if (!userId) {
@@ -39,6 +40,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     setPendingDocIds(new Set());
     setPendingCollectionSlugs(new Set());
     setCreatingCollection(false);
+    collectionVersions.current = new Map();
     void apiCollections()
       .then((loaded) => {
         if (!cancelled) {
@@ -66,9 +68,15 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     }
     setNotice("");
     setPendingDocIds((current) => withValue(current, documentID));
+    const collectionVersion = collectionVersions.current.get(slug) ?? 0;
     try {
       const saved = await apiUpdateDocMetadata(documentID, { collectionId: collectionID ?? null });
-      setDocs((current) => current.map((doc) => doc.id === documentID ? mergeConfirmedMetadata(doc, saved) : doc));
+      const invalidated = (collectionVersions.current.get(slug) ?? 0) !== collectionVersion;
+      setDocs((current) => current.map((doc) => doc.id === documentID
+        ? invalidated
+          ? { ...doc, collectionId: null, collectionSlug: null }
+          : mergeConfirmedMetadata(doc, saved)
+        : doc));
       return true;
     } catch (error) {
       setNotice(messageOf(error, "Document collection could not be saved"));
@@ -134,6 +142,7 @@ export function useEditorCollections({ userId, docs, setDocs, setNotice }: Edito
     setPendingCollectionSlugs((current) => withValue(current, slug));
     try {
       await apiDeleteCollection(slug);
+      collectionVersions.current.set(slug, (collectionVersions.current.get(slug) ?? 0) + 1);
       setCollections((current) => current.filter((collection) => collection.slug !== slug));
       setDocs((current) => current.map((doc) => doc.collectionSlug === slug
         ? { ...doc, collectionId: null, collectionSlug: null }

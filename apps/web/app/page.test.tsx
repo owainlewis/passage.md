@@ -89,7 +89,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       const base = String(input.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "collection";
       let slug = base;
       let suffix = 2;
-      while (collections.some((collection) => collection.slug === slug)) slug = `${base}-${suffix++}`;
+      while (["all", "documents"].includes(slug) || collections.some((collection) => collection.slug === slug)) slug = `${base}-${suffix++}`;
       const collection = { id: `collection-${collections.length + 1}`, slug, title: input.title, description: input.description, createdAt: "2026-08-01T11:00:00Z", updatedAt: "2026-08-01T11:00:00Z" };
       collections = [...collections, collection];
       return new Response(JSON.stringify(collection), { status: 201 });
@@ -1253,6 +1253,21 @@ describe("Write (editor)", () => {
     expect(screen.getByLabelText("Client Work")).toHaveTextContent("Private note");
   });
 
+  it("keeps a user-created Documents collection distinct from the fallback", async () => {
+    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
+
+    await renderWrite();
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: "New collection" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Documents" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Documents"));
+    openSidebarCollection("Documents");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
   it("renames a collection and keeps its document assignments", async () => {
     stubSignedInFetch([{ id: "doc-context", body: "# Findings", collectionId: "collection-research", collectionSlug: "research" }]);
 
@@ -1341,6 +1356,41 @@ describe("Write (editor)", () => {
     expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Operating Context");
     openSidebarCollection("Documents");
     expect(screen.getByLabelText("Documents")).toHaveTextContent("About me");
+  });
+
+  it("discards an assignment response after its collection is deleted", async () => {
+    let resolveAssignment: ((response: Response) => void) | undefined;
+    const baseFetch = stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (String(input) === "/api/v1/docs/doc-private" && init?.method === "PATCH" && body.collectionId === "collection-research") {
+        return new Promise<Response>((resolve) => { resolveAssignment = resolve; });
+      }
+      return baseFetch(input, init);
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    await renderWrite();
+    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "research" } });
+    await waitFor(() => expect(resolveAssignment).toBeDefined());
+    openWorkspaceHome();
+    openSidebarCollection("Research");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByLabelText("Workspace home");
+    await act(async () => {
+      resolveAssignment!(new Response(JSON.stringify({
+        id: "doc-private",
+        publicId: "public-1",
+        body: "# Private note\n\nDraft.",
+        collectionId: "collection-research",
+        collectionSlug: "research",
+        starred: false
+      }), { status: 200 }));
+    });
+
+    openSidebarCollection("Documents");
+    expect(screen.getByLabelText("Documents")).toHaveTextContent("Private note");
+    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Research");
   });
 
   it("shows a later-loaded document from a deleted collection as Documents", async () => {

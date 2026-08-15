@@ -79,9 +79,11 @@ func (s *Store) Create(ctx context.Context, ownerID string, title string, descri
 	base := slugify(title)
 	slug := base
 	for suffix := 2; ; suffix++ {
-		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM collections WHERE owner_user_id = $1 AND slug = $2)`, ownerID, slug).Scan(&exists); err != nil {
-			return Collection{}, err
+		exists := reservedWorkspaceSlug(slug)
+		if !exists {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM collections WHERE owner_user_id = $1 AND slug = $2)`, ownerID, slug).Scan(&exists); err != nil {
+				return Collection{}, err
+			}
 		}
 		if !exists {
 			break
@@ -109,6 +111,10 @@ func (s *Store) Create(ctx context.Context, ownerID string, title string, descri
 		return Collection{}, err
 	}
 	return collection, nil
+}
+
+func reservedWorkspaceSlug(slug string) bool {
+	return slug == "documents" || slug == "all"
 }
 
 func (s *Store) Update(ctx context.Context, ownerID string, slug string, title string, description *string) (Collection, error) {

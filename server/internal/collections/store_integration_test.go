@@ -118,6 +118,45 @@ func TestStoreEnforcesOneHundredCollectionLimit(t *testing.T) {
 	}
 }
 
+func TestStoreReservesWorkspaceSentinelSlugs(t *testing.T) {
+	db := collectionTestDatabase(t)
+	ctx := context.Background()
+	ownerID := insertCollectionTestUser(t, db, fmt.Sprintf("collection-sentinel-%d@example.com", time.Now().UnixNano()))
+	t.Cleanup(func() { _, _ = db.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, ownerID) })
+
+	store := NewStore(db)
+	created, err := store.Create(ctx, ownerID, "Documents", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Slug != "documents-2" {
+		t.Fatalf("Documents collection slug = %q, want documents-2", created.Slug)
+	}
+	all, err := store.Create(ctx, ownerID, "All", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Slug != "all-2" {
+		t.Fatalf("All collection slug = %q, want all-2", all.Slug)
+	}
+
+	docStore := documents.NewStore(db)
+	doc, err := docStore.Create(ctx, ownerID, "# Assignable", documents.NoSavedDocumentLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := docStore.Update(ctx, ownerID, doc.ID, documents.DocumentUpdate{
+		CollectionIDSet: true,
+		CollectionID:    &created.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assigned.CollectionSlug == nil || *assigned.CollectionSlug != "documents-2" {
+		t.Fatalf("assigned collection slug = %v, want documents-2", assigned.CollectionSlug)
+	}
+}
+
 func TestDeletePreservesDocumentPaginationKeys(t *testing.T) {
 	db := collectionTestDatabase(t)
 	ctx := context.Background()
