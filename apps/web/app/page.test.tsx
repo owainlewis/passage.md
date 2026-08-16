@@ -48,6 +48,7 @@ type TestDoc = {
   id: string;
   publicId?: string;
   body: string;
+  version?: number;
   pinned?: boolean;
   starred?: boolean;
   collectionId?: string | null;
@@ -920,6 +921,242 @@ describe("Write (editor)", () => {
       configurable: true,
       value: originalMatchMedia
     });
+  });
+
+  it("sends the loaded version with autosave and keeps the draft when the server refuses it", async () => {
+    const patches: string[] = [];
+    const baseFetch = stubSignedInFetch([{ id: "doc-shared", publicId: "shared", body: "# Shared", version: 2 }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-shared" && init?.method === "PATCH") {
+        patches.push(String(init?.body ?? ""));
+        return Promise.resolve(new Response(JSON.stringify({
+          error: "document changed since it was loaded",
+          document: {
+              id: "doc-shared",
+              publicId: "shared",
+              body: "# Shared\n\nwritten by an agent",
+              version: 3,
+              starred: false,
+              collectionId: null,
+              collectionSlug: null,
+              updatedAt: "2026-08-16T12:00:00Z"
+            }
+        }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Shared\n\nwritten in the browser" }
+    });
+
+    const conflict = await screen.findByRole("alert", {}, { timeout: 3000 });
+    expect(conflict).toHaveTextContent("This document changed somewhere else");
+
+    // The save carried the version this editor loaded.
+    expect(patches).toHaveLength(1);
+    expect(JSON.parse(patches[0])).toMatchObject({ version: 2 });
+
+    // The draft survives, and the writer is offered a choice rather than overruled.
+    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue("# Shared\n\nwritten in the browser");
+    expect(within(conflict).getByRole("button", { name: "Discard mine, load theirs" })).toBeInTheDocument();
+    expect(within(conflict).getByRole("button", { name: "Keep mine, overwrite theirs" })).toBeInTheDocument();
+
+    // Nothing retried on its own.
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(patches).toHaveLength(1);
+  });
+
+  it("loads the newer version when the writer discards their draft", async () => {
+    const baseFetch = stubSignedInFetch([{ id: "doc-shared", publicId: "shared", body: "# Shared", version: 2 }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-shared" && init?.method === "PATCH") {
+        return Promise.resolve(new Response(JSON.stringify({
+          error: "document changed since it was loaded",
+          document: {
+              id: "doc-shared",
+              publicId: "shared",
+              body: "# Shared\n\nwritten by an agent",
+              version: 3,
+              starred: false,
+              collectionId: null,
+              collectionSlug: null,
+              updatedAt: "2026-08-16T12:00:00Z"
+            }
+        }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Shared\n\nwritten in the browser" }
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Discard mine, load theirs" }, { timeout: 3000 }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue("# Shared\n\nwritten by an agent")
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("retries against the newer version when the writer keeps their draft", async () => {
+    const patches: string[] = [];
+    let conflicted = false;
+    const baseFetch = stubSignedInFetch([{ id: "doc-shared", publicId: "shared", body: "# Shared", version: 2 }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-shared" && init?.method === "PATCH") {
+        patches.push(String(init?.body ?? ""));
+        if (!conflicted) {
+          conflicted = true;
+          return Promise.resolve(new Response(JSON.stringify({
+            error: "document changed since it was loaded",
+            document: {
+              id: "doc-shared",
+              publicId: "shared",
+              body: "# Shared\n\nwritten by an agent",
+              version: 3,
+              starred: false,
+              collectionId: null,
+              collectionSlug: null,
+              updatedAt: "2026-08-16T12:00:00Z"
+            }
+          }), { status: 409, headers: { "Content-Type": "application/json" } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({
+          id: "doc-shared",
+          publicId: "shared",
+          body: JSON.parse(String(init?.body ?? "{}")).body,
+          version: 4,
+          starred: false,
+          collectionId: null,
+          collectionSlug: null,
+          updatedAt: "2026-08-16T12:01:00Z"
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Shared\n\nwritten in the browser" }
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Keep mine, overwrite theirs" }, { timeout: 3000 }));
+
+    // The overwrite goes out against the version the server reported, so it is
+    // a deliberate replacement rather than a replay of the refused request.
+    await waitFor(() => expect(patches).toHaveLength(2));
+    expect(JSON.parse(patches[1])).toMatchObject({ version: 3, body: "# Shared\n\nwritten in the browser" });
+    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue("# Shared\n\nwritten in the browser");
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("overwrites with what is on screen now, not what was there when the save was refused", async () => {
+    const patches: string[] = [];
+    let conflicted = false;
+    const baseFetch = stubSignedInFetch([{ id: "doc-shared", publicId: "shared", body: "# Shared", version: 2 }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-shared" && init?.method === "PATCH") {
+        patches.push(String(init?.body ?? ""));
+        if (!conflicted) {
+          conflicted = true;
+          return Promise.resolve(new Response(JSON.stringify({
+            error: "document changed since it was loaded",
+            document: {
+              id: "doc-shared",
+              publicId: "shared",
+              body: "# Shared\n\nwritten by an agent",
+              version: 3,
+              starred: false,
+              collectionId: null,
+              collectionSlug: null,
+              updatedAt: "2026-08-16T12:00:00Z"
+            }
+          }), { status: 409, headers: { "Content-Type": "application/json" } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({
+          id: "doc-shared",
+          publicId: "shared",
+          body: JSON.parse(String(init?.body ?? "{}")).body,
+          version: 4,
+          starred: false,
+          collectionId: null,
+          collectionSlug: null,
+          updatedAt: "2026-08-16T12:01:00Z"
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    fireEvent.change(editor, { target: { value: "# Shared\n\nfirst draft" } });
+
+    const overwrite = await screen.findByRole("button", { name: "Keep mine, overwrite theirs" }, { timeout: 3000 });
+
+    // Still typing while the banner is up.
+    fireEvent.change(editor, { target: { value: "# Shared\n\nfirst draft, then more" } });
+    fireEvent.click(overwrite);
+
+    await waitFor(() => expect(patches.length).toBeGreaterThanOrEqual(2));
+    expect(JSON.parse(patches[patches.length - 1])).toMatchObject({ body: "# Shared\n\nfirst draft, then more" });
+  });
+
+  it("keeps an unresolved conflict on one document when another conflicts too", async () => {
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-one", publicId: "one", body: "# One", version: 2 },
+      { id: "doc-two", publicId: "two", body: "# Two", version: 2 }
+    ]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/v1/docs/doc-") && init?.method === "PATCH") {
+        const id = url.split("/").pop()!;
+        return Promise.resolve(new Response(JSON.stringify({
+          error: "document changed since it was loaded",
+          document: {
+            id,
+            publicId: id === "doc-one" ? "one" : "two",
+            body: `# ${id} from an agent`,
+            version: 3,
+            starred: false,
+            collectionId: null,
+            collectionSlug: null,
+            updatedAt: "2026-08-16T12:00:00Z"
+          }
+        }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# One\n\nmy words" }
+    });
+    await screen.findByRole("alert", {}, { timeout: 3000 });
+
+    // Conflict the second document too.
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: /^Two/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
+      target: { value: "# Two\n\nmy other words" }
+    });
+    await screen.findByRole("alert", {}, { timeout: 3000 });
+
+    // The first document's conflict is still waiting, with its draft intact.
+    openWorkspaceHome();
+    fireEvent.click(screen.getByRole("button", { name: /^One/ }));
+    expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("This document changed somewhere else");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("textbox", { name: "Markdown editor" })).toHaveValue("# One\n\nmy words");
   });
 
   it("creates a document, updates its title, and renders Markdown preview", async () => {

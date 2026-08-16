@@ -65,6 +65,8 @@ export default function Editor() {
     loadingMore,
     pendingSave,
     retryActive,
+    saveConflict,
+    resolveConflict,
     saveState,
     selectDoc,
     setBillingNotice,
@@ -489,6 +491,24 @@ export default function Editor() {
             </div>
           </div>
         </header>
+
+        {saveConflict && active && saveConflict.id === active.id && (
+          <div className="conflictNotice" role="alert">
+            <div className="conflictNoticeText">
+              <strong>This document changed somewhere else</strong>
+              <span>
+                An agent or another session saved it while you were writing. Your draft is still here and nothing has
+                been overwritten.
+              </span>
+            </div>
+            <div className="conflictNoticeActions">
+              <button type="button" onClick={() => resolveConflict("latest")}>Discard mine, load theirs</button>
+              <button type="button" className="conflictNoticePrimary" onClick={() => resolveConflict("overwrite")}>
+                Keep mine, overwrite theirs
+              </button>
+            </div>
+          </div>
+        )}
 
         {billingNotice ? (
           <div className="billingNotice">

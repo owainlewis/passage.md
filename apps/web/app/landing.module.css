@@ -65,16 +65,11 @@
   margin-inline: auto;
 }
 
-.kicker,
 .docLabel,
 .featureNumber {
   font: 600 0.7rem/1 var(--mono);
   letter-spacing: 0.11em;
   text-transform: uppercase;
-}
-
-.kicker {
-  color: var(--accent);
 }
 
 .heroTitle {
@@ -156,21 +151,7 @@
   text-align: left;
 }
 
-.previewCaption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  color: var(--muted);
-  font: 0.68rem/1 var(--mono);
-}
 
-.previewCaption span:first-child {
-  color: var(--ink-soft);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
 .heroDoc {
   position: relative;
@@ -278,20 +259,7 @@
   border-bottom: 1px solid var(--hairline);
 }
 
-.sectionAside {
-  position: relative;
-  margin-bottom: 28px;
-  text-align: center;
-}
 
-.sectionAside::after {
-  display: block;
-  width: 48px;
-  height: 1px;
-  margin: 20px auto 0;
-  content: "";
-  background: var(--hairline-strong);
-}
 
 .storyBody {
   max-width: 42rem;
