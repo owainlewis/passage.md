@@ -1617,6 +1617,22 @@ func TestDocumentVersionConflictWithPostgres(t *testing.T) {
 		t.Fatalf("version after resolving = %d, want 3", resolved.Version)
 	}
 
+	// A document archived between the refused write and the conflict lookup is
+	// gone, not conflicted, and must not read as a server fault.
+	var archivedDoc struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Doomed"}`, cookies, "")), &archivedDoc); err != nil {
+		t.Fatal(err)
+	}
+	doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+archivedDoc.ID, `{"body":"# Doomed\n\nmoved on","version":1}`, cookies, "")
+	if _, err := db.Exec(ctx, `UPDATE documents SET archived_at = now() WHERE id = $1`, archivedDoc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := doIntegrationStatus(t, http.MethodPatch, server.URL+"/api/v1/docs/"+archivedDoc.ID, `{"body":"# Doomed\n\nstale","version":1}`, cookies, ""); got != http.StatusNotFound {
+		t.Fatalf("stale write to an archived document = %d, want %d", got, http.StatusNotFound)
+	}
+
 	// Existing clients that omit the version keep working.
 	var legacy struct {
 		Version int `json:"version"`

@@ -50,7 +50,9 @@ export function useEditorDocuments({
   const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(ALL_DOCUMENTS);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
-  const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
+  // Keyed by document id: an unresolved conflict on one document must not be
+  // dropped because another document conflicts too.
+  const [saveConflicts, setSaveConflicts] = useState<Record<string, SaveConflict>>({});
   const [billingNotice, setBillingNoticeMessage] = useState("");
   const [billingNoticeAction, setBillingNoticeAction] = useState<BillingNoticeAction>(null);
   const [nextCursor, setNextCursor] = useState("");
@@ -82,7 +84,7 @@ export function useEditorDocuments({
 
   useEffect(() => {
     if (!userId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setPendingSave(null);
       return;
     }
@@ -217,7 +219,10 @@ export function useEditorDocuments({
           if (error instanceof DocumentConflictError) {
             // Stop retrying. The draft stays in pendingSave and in the editor
             // until the writer picks a side.
-            setSaveConflict({ id: pendingSave.id, draft: pendingSave.body, current: error.current });
+            setSaveConflicts((prev) => ({
+              ...prev,
+              [pendingSave.id]: { id: pendingSave.id, draft: pendingSave.body, current: error.current }
+            }));
             setPendingSave(null);
             setSaveState("error");
             return;
@@ -233,10 +238,11 @@ export function useEditorDocuments({
   }, [pendingSave, userId]);
 
   const active = docs.find((doc) => doc.id === activeId) ?? docs[0] ?? null;
+  const saveConflict = active ? saveConflicts[active.id] ?? null : null;
 
   useEffect(() => {
     if (userId && active && !active.bodyLoaded) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       void loadDocBody(active);
     }
   }, [active, loadDocBody, userId]);
@@ -256,19 +262,24 @@ export function useEditorDocuments({
   function resolveConflict(choice: "latest" | "overwrite") {
     const conflict = saveConflict;
     if (!conflict) return;
-    setSaveConflict(null);
+    setSaveConflicts((prev) => {
+      const next = { ...prev };
+      delete next[conflict.id];
+      return next;
+    });
     if (choice === "latest") {
       setDocs((prev) => prev.map((doc) => (doc.id === conflict.id ? { ...doc, ...conflict.current } : doc)));
       setSaveState("saved");
       return;
     }
+    // Take the body as it stands now, not as it stood when the save was
+    // refused. The writer may have kept typing while the banner was up.
+    const draft = docsRef.current.find((doc) => doc.id === conflict.id)?.body ?? conflict.draft;
     setDocs((prev) =>
-      prev.map((doc) =>
-        doc.id === conflict.id ? { ...doc, ...conflict.current, body: conflict.draft } : doc
-      )
+      prev.map((doc) => (doc.id === conflict.id ? { ...doc, ...conflict.current, body: draft } : doc))
     );
     setSaveState("saving");
-    setPendingSave({ id: conflict.id, body: conflict.draft });
+    setPendingSave({ id: conflict.id, body: draft });
   }
 
   function updateEditorURL(doc: Doc, mode: "push" | "replace") {

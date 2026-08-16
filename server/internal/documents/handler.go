@@ -363,6 +363,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 // without having to discard the draft it is holding.
 func (h *Handler) writeVersionConflict(w http.ResponseWriter, r *http.Request, user auth.User, id string) {
 	current, err := h.store.Get(r.Context(), user.ID, id)
+	if errors.Is(err, ErrNotFound) {
+		// Archived between the refused write and this read. It is gone, not
+		// conflicted, and that is not a server fault.
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
 	if err != nil {
 		httpx.WriteInternalError(w, r, "load conflicting document", err, "document could not be saved")
 		return
