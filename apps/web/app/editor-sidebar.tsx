@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { Brand } from "./brand";
 import { Doc } from "./editor-model";
 import { collectionForDoc, WorkspaceCollection, WorkspaceView } from "./editor-workspace-model";
-import { DocIcon, HomeIcon, RecentIcon, SearchIcon, StarIcon } from "./icons";
+import { DocIcon, HomeIcon, RecentIcon, SearchIcon, StarIcon, UserIcon } from "./icons";
 
 type EditorSidebarProps = {
+  accountEmail?: string;
   assignments: Record<string, string>;
   collections: WorkspaceCollection[];
   docs: Doc[];
@@ -24,6 +26,7 @@ type EditorSidebarProps = {
 };
 
 export function EditorSidebar({
+  accountEmail,
   assignments,
   collections,
   docs,
@@ -64,10 +67,10 @@ export function EditorSidebar({
         </div>
 
         <nav className="workspaceDestinations" aria-label="Workspace destinations">
-          <SidebarDestination active={view.type === "home" && !templatesActive} label="Home" onClick={() => onOpenView({ type: "home" })} />
-          <SidebarDestination active={view.type === "starred" && !templatesActive} label="Starred" count={starredCount} onClick={() => onOpenView({ type: "starred" })} />
-          <SidebarDestination active={view.type === "recent" && !templatesActive} label="Recent" onClick={() => onOpenView({ type: "recent" })} />
-          <SidebarDestination active={templatesActive} ariaLabel="Templates" label="Templates" count={templateCount} onClick={onOpenTemplates} />
+          <SidebarDestination active={view.type === "home" && !templatesActive} icon={<HomeIcon />} label="Home" onClick={() => onOpenView({ type: "home" })} />
+          <SidebarDestination active={view.type === "starred" && !templatesActive} icon={<StarIcon filled={false} />} label="Starred" count={starredCount} onClick={() => onOpenView({ type: "starred" })} />
+          <SidebarDestination active={view.type === "recent" && !templatesActive} icon={<RecentIcon />} label="Recent" onClick={() => onOpenView({ type: "recent" })} />
+          <SidebarDestination active={templatesActive} ariaLabel="Templates" icon={<DocIcon />} label="Templates" count={templateCount} onClick={onOpenTemplates} />
         </nav>
 
         <div className="workspaceSidebarCollections">
@@ -93,6 +96,13 @@ export function EditorSidebar({
         </div>
 
         <div className="sidebarFoot workspaceSidebarFoot">
+          <Link className="workspaceSidebarAccount" href="/account">
+            <UserIcon />
+            <span className="workspaceSidebarAccountText">
+              <strong>Settings</strong>
+              {accountEmail && <small title={accountEmail}>{accountEmail}</small>}
+            </span>
+          </Link>
           <div className="themeToggle">
             <span className={theme === "light" ? "themeLabel active" : "themeLabel"}>Light</span>
             <button
@@ -130,9 +140,10 @@ function MobileDestination({ active, icon, label, onClick }: { active: boolean; 
   );
 }
 
-function SidebarDestination({ active, ariaLabel, count, label, onClick }: { active: boolean; ariaLabel?: string; count?: number; label: string; onClick: () => void }) {
+function SidebarDestination({ active, ariaLabel, count, icon, label, onClick }: { active: boolean; ariaLabel?: string; count?: number; icon: ReactNode; label: string; onClick: () => void }) {
   return (
     <button type="button" aria-label={ariaLabel} className="workspaceDestination" data-active={active} onClick={onClick}>
+      {icon}
       <span>{label}</span>
       {count !== undefined && <small>{count}</small>}
     </button>

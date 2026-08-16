@@ -737,6 +737,15 @@ button {
   flex: 1 1 auto;
 }
 
+/* Destination icons are decorative and track the label colour, so the resting,
+   hover, and active states stay in step without a separate contrast rule. */
+.workspaceDestination > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: inherit;
+}
+
 .workspaceSidebarCollection > span:first-child {
   min-width: 0;
   overflow: hidden;
@@ -822,7 +831,50 @@ button {
 }
 
 .workspaceSidebarFoot {
-  gap: 0;
+  gap: 2px;
+}
+
+.workspaceSidebarAccount {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.workspaceSidebarAccount > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.workspaceSidebarAccountText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspaceSidebarAccountText strong {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.workspaceSidebarAccountText small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceSidebarAccount:hover,
+.workspaceSidebarAccount:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
 }
 
 .workspaceMobileNav {

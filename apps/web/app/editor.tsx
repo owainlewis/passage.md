@@ -382,6 +382,7 @@ export default function Editor() {
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
       <EditorSidebar
+        accountEmail={auth.user?.email}
         assignments={EMPTY_ASSIGNMENTS}
         collections={collections}
         deletedCollections={NO_DELETED_COLLECTIONS}

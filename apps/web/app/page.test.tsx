@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import Account from "./account/page";
 import { AppProviders } from "./app-providers";
@@ -2710,7 +2710,7 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
+    expect(within(await screen.findByRole("menu")).getByText("writer@example.com")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
 
     await waitFor(() => expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument());
@@ -2740,7 +2740,8 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
+    const accountMenu = await screen.findByRole("menu");
+    expect(within(accountMenu).getByText("writer@example.com")).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Account settings" })).toHaveAttribute("href", "/account");
     expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create token" })).not.toBeInTheDocument();
