@@ -309,8 +309,8 @@ describe("Landing", () => {
   it("shows the shared context workflow, current pricing, and account actions for Pro users", async () => {
     render(<Landing />);
 
-    expect(screen.getByRole("heading", { name: "Store your context where your agents can reach it." })).toBeInTheDocument();
-    expect(screen.getByText(/Group it into collections your agents can read/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "A writing app built for you and your agents." })).toBeInTheDocument();
+    expect(screen.getByText(/in a collection your agents can read/)).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
@@ -327,7 +327,7 @@ describe("Landing", () => {
     expect(screen.getByRole("heading", { name: "Group it into collections" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Give your agents access" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Share deliberately" })).toBeInTheDocument();
-    expect(screen.getByText(/Collections and indexed search organise the browser workspace/)).toBeInTheDocument();
+    expect(screen.getByText(/one CLI your agents use to read and update the same Markdown/)).toBeInTheDocument();
     expect(screen.getByText(/A folder on one machine is a poor shared memory/)).toBeInTheDocument();
     expect(screen.getAllByText("$ passage list").length).toBeGreaterThan(0);
     expect(screen.getAllByText("passage list --collection operating-context").length).toBeGreaterThan(0);
