@@ -6,6 +6,8 @@ import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
 import { Brand } from "../brand";
 import { formatDocumentCount, isNearDocumentLimit } from "../document-limits";
 import { documentLimitSupportHref, SupportLink } from "../legal";
+import { Theme } from "../editor-model";
+import { useTheme } from "../theme";
 
 type APIToken = {
   id: string;
@@ -212,6 +214,16 @@ function AccountPage() {
 
           <div className="accountPanel">
             <div className="accountPanelIntro">
+              <h2>Appearance</h2>
+              <p>How Passage looks in this browser.</p>
+            </div>
+            <div className="accountPanelBody">
+              <ThemeChoice />
+            </div>
+          </div>
+
+          <div className="accountPanel">
+            <div className="accountPanelIntro">
               <h2>API tokens</h2>
               <p>Create tokens for the CLI and API.</p>
             </div>
@@ -241,6 +253,43 @@ function AccountPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+const THEME_CHOICES: { value: Theme; label: string; hint: string }[] = [
+  { value: "light", label: "Light", hint: "Warm paper surfaces" },
+  { value: "dark", label: "Dark", hint: "Low-light reading" }
+];
+
+function ThemeChoice() {
+  const { setTheme, theme } = useTheme();
+
+  return (
+    <div className="themeChoice" role="radiogroup" aria-label="Theme">
+      {THEME_CHOICES.map((choice) => (
+        <button
+          type="button"
+          key={choice.value}
+          role="radio"
+          aria-checked={theme === choice.value}
+          className="themeChoiceOption"
+          data-selected={theme === choice.value}
+          onClick={() => setTheme(choice.value)}
+        >
+          <span className="themeChoicePreview" data-theme-preview={choice.value} aria-hidden="true">
+            <span className="themeChoicePreviewSidebar" />
+            <span className="themeChoicePreviewBody">
+              <i />
+              <i />
+            </span>
+          </span>
+          <span className="themeChoiceText">
+            <strong>{choice.label}</strong>
+            <small>{choice.hint}</small>
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 

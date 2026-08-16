@@ -25,11 +25,9 @@ function sidebar(overrides: Partial<Parameters<typeof EditorSidebar>[0]> = {}, d
       onOpenSearch={vi.fn()}
       onOpenTemplates={vi.fn()}
       onOpenView={vi.fn()}
-      onToggleDarkMode={vi.fn()}
       sidebarOpen
       templateCount={3}
       templatesActive={false}
-      theme="light"
       view={{ type: "home" }}
       {...overrides}
     />
@@ -106,12 +104,14 @@ describe("sidebar account footer", () => {
     expect(link.querySelector("small")).toBeNull();
   });
 
-  it("keeps the theme toggle beside the Settings link", () => {
+  it("leaves theme choice to the settings page rather than the sidebar", () => {
     render(sidebar());
-    const foot = document.querySelector(".workspaceSidebarFoot")!;
+    const foot = document.querySelector(".workspaceSidebarFoot") as HTMLElement;
 
-    expect(within(foot as HTMLElement).getByRole("link", { name: /Settings/ })).toBeInTheDocument();
-    expect(within(foot as HTMLElement).getByRole("switch", { name: "Dark mode" })).toBeInTheDocument();
+    expect(within(foot).getByRole("link", { name: /Settings/ })).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Light")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dark")).not.toBeInTheDocument();
   });
 
   it("truncates a long email instead of widening the sidebar", () => {
@@ -125,8 +125,8 @@ describe("sidebar account footer", () => {
   });
 
   it("keeps the footer at full height on short viewports, so its controls stay reachable", () => {
-    // .sidebar clips overflow, so a shrinkable footer would hide Settings and
-    // the theme toggle. The collections list is the only region that may give.
+    // .sidebar clips overflow, so a shrinkable footer would hide the Settings
+    // link. The collections list is the only region that may give.
     expect(declarationsFor(".workspaceSidebarFoot")).toContain("flex: 0 0 auto;");
     expect(declarationsFor(".sidebar")).toContain("overflow: hidden;");
     const collections = declarationsFor(".workspaceSidebarCollections");

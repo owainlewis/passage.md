@@ -17,11 +17,9 @@ type EditorSidebarProps = {
   onOpenSearch: () => void;
   onOpenTemplates: () => void;
   onOpenView: (view: WorkspaceView) => void;
-  onToggleDarkMode: () => void;
   sidebarOpen: boolean;
   templateCount: number;
   templatesActive: boolean;
-  theme: "light" | "dark";
   view: WorkspaceView;
 };
 
@@ -35,14 +33,11 @@ export function EditorSidebar({
   onOpenSearch,
   onOpenTemplates,
   onOpenView,
-  onToggleDarkMode,
   sidebarOpen,
   templateCount,
   templatesActive,
-  theme,
   view
 }: EditorSidebarProps) {
-  const darkActive = theme === "dark";
   const starredCount = docs.filter((doc) => doc.pinned).length;
 
   return (
@@ -103,20 +98,6 @@ export function EditorSidebar({
               {accountEmail && <small title={accountEmail}>{accountEmail}</small>}
             </span>
           </Link>
-          <div className="themeToggle">
-            <span className={theme === "light" ? "themeLabel active" : "themeLabel"}>Light</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={darkActive}
-              aria-label="Dark mode"
-              className={`switch ${darkActive ? "on" : ""}`}
-              onClick={onToggleDarkMode}
-            >
-              <span className="switchKnob" />
-            </button>
-            <span className={theme === "dark" ? "themeLabel active" : "themeLabel"}>Dark</span>
-          </div>
         </div>
       </aside>
 

@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import Account from "./account/page";
 import { AppProviders } from "./app-providers";
+import { ThemeProvider } from "./theme";
 import { AuthProvider } from "./auth";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
@@ -210,6 +211,12 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+// The real app mounts every route inside AppProviders, which supplies the
+// theme. Route components are rendered bare here, so wrap them the same way.
+function render(ui: ReactNode) {
+  return renderBare(<ThemeProvider>{ui}</ThemeProvider>);
 }
 
 async function renderWrite(ui: ReactNode = <Write />) {
@@ -2593,19 +2600,35 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("http://localhost:3000/d/public-2"));
   });
 
-  it("toggles dark mode from the sidebar for every user", async () => {
-    await renderWrite();
+  it("chooses the theme from settings, for every user", async () => {
+    render(<Account />);
 
-    const darkMode = screen.getByRole("switch", { name: "Dark mode" });
-    expect(darkMode).not.toBeDisabled();
+    const themes = await screen.findByRole("radiogroup", { name: "Theme" });
+    const dark = within(themes).getByRole("radio", { name: /Dark/ });
+    const light = within(themes).getByRole("radio", { name: /Light/ });
+    expect(light).toHaveAttribute("aria-checked", "true");
+    expect(dark).not.toBeDisabled();
+    expect(screen.queryByText("Dark mode is a Pro feature.")).not.toBeInTheDocument();
 
-    fireEvent.click(darkMode);
+    fireEvent.click(dark);
     expect(document.documentElement.dataset.themeTransitionBlocked).toBe("true");
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
+    expect(dark).toHaveAttribute("aria-checked", "true");
+    expect(light).toHaveAttribute("aria-checked", "false");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(screen.queryByText("Dark mode is a Pro feature.")).not.toBeInTheDocument();
+    fireEvent.click(light);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBeUndefined());
+    expect(localStorage.getItem("passage.theme.v1")).toBe("light");
+  });
+
+  it("carries a saved dark theme into the editor without a sidebar control", async () => {
+    localStorage.setItem("passage.theme.v1", "dark");
+    await renderWrite();
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "/account");
   });
 
   it("keeps the sign-in action stable while the session check resolves", () => {
