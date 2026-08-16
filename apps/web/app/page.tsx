@@ -120,10 +120,6 @@ function LandingContent() {
           </div>
 
           <div className={styles.heroPreview} aria-hidden="true">
-            <div className={styles.previewCaption}>
-              <span>One source of context</span>
-              <span>01 / 03</span>
-            </div>
             <div className={styles.heroDoc}>
               <div className={styles.docChrome}>
                 <span className={styles.docDots}>
@@ -161,7 +157,6 @@ function LandingContent() {
         <section className={styles.features} id="workflow">
           <div className={styles.featuresHeader}>
             <div>
-              <p className={styles.kicker}>How Passage works</p>
               <h2 className={styles.sectionHeading}>Keep context and writing together.</h2>
             </div>
             <p>Deliberately minimal. Collections to organise your context, search that reads every word, and one CLI your agents use to read and update the same Markdown.</p>
@@ -181,9 +176,6 @@ function LandingContent() {
         </section>
 
         <section className={styles.story} id="story">
-          <div className={styles.sectionAside}>
-            <p className={styles.kicker}>Why hosted Markdown</p>
-          </div>
           <div className={styles.storyBody}>
             <p className={styles.storyLead}>Your agents are only as useful as the context they can reach.</p>
             <p>
@@ -210,7 +202,6 @@ function LandingContent() {
         <section className={styles.pricing} id="pricing">
           <div className={styles.pricingHeader}>
             <div>
-              <p className={styles.kicker}>Pricing</p>
               <h2 className={styles.sectionHeading}>Simple pricing</h2>
             </div>
             <p>Start for free. Upgrade when you need a larger context library, sharing, or private access from agents.</p>
