@@ -1388,12 +1388,24 @@ button {
   white-space: nowrap;
 }
 
+/* Toolbar metadata control. It sits between two ghost icon buttons, so it
+   borrows their shape and weight: quiet at rest, with the boundary appearing
+   on hover and focus where the affordance actually matters. */
 .topBarCollectionSelect {
-  border: 1px solid var(--control-boundary);
-  border-radius: 7px;
-  background: var(--surface);
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
   color: var(--muted);
   font: 600 0.6875rem/1 var(--sans);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.topBarCollectionSelect:hover,
+.topBarCollectionSelect:focus-visible {
+  border-color: var(--control-boundary);
+  background: var(--hover);
+  color: var(--ink);
 }
 
 .topBarCollectionSelect:focus-visible {
@@ -1402,9 +1414,8 @@ button {
 }
 
 .topBarCollectionSelect {
-  max-width: 145px;
-  min-height: 30px;
-  padding: 0 24px 0 8px;
+  max-width: 150px;
+  padding: 0 22px 0 10px;
 }
 
 .workspaceStarButton {

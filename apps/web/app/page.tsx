@@ -9,19 +9,19 @@ import styles from "./landing.module.css";
 
 const workflow = [
   {
-    title: "Store stable context",
-    body: "Keep goals, product notes, preferences, and research in private collections. Star the documents you return to most.",
+    title: "Store your knowledge",
+    body: "Goals, product notes, preferences, research, drafts. One private place for the writing you keep coming back to, instead of folders on one machine.",
+    example: "Every note in one app"
+  },
+  {
+    title: "Group it into collections",
+    body: "A collection is the unit you hand to an agent. Put your operating context in one, a project in another, and keep the boundary clear.",
     example: "Collections / Operating Context"
   },
   {
-    title: "Find and write with it",
-    body: "Search the full text of your Markdown, then draft notes and plans beside the source material they depend on.",
-    example: "Full-text search / every Markdown body"
-  },
-  {
-    title: "Use it from agents",
-    body: "Let agents read and update the same private Markdown through the authenticated API or CLI without copying files into another tool.",
-    example: "passage cat <doc-id>"
+    title: "Give your agents access",
+    body: "Agents read and update the same private Markdown through the authenticated API or CLI, and search the full text of every document.",
+    example: "passage list --collection operating-context"
   },
   {
     title: "Share deliberately",
@@ -104,10 +104,10 @@ function LandingContent() {
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
             <p className={styles.heroKicker}>Context for agents and humans</p>
-            <h1 className={styles.heroTitle}>One Markdown workspace for you and your agents.</h1>
+            <h1 className={styles.heroTitle}>Store your context where your agents can reach it.</h1>
             <p className={styles.heroSub}>
-              Give your goals, product notes, preferences, and drafts one stable home instead of scattering them across
-              local files and chats. You and your agents can use the same private Markdown.
+              Keep your writing, notes, and knowledge in one simple app. Group it into collections your agents can read.
+              No local Markdown files to sync, and no context buried in an old chat.
             </p>
             <div className={styles.heroActions}>
               <Link className={styles.primaryButton} href={primaryHref}>
@@ -192,12 +192,13 @@ function LandingContent() {
               agent starts cold, so you explain the same project again and paste the same files into another chat.
             </p>
             <p>
-              Passage gives that context one stable home. Use collections for the parts of your world, star the documents
-              you rely on, and find any phrase again with indexed full-text search.
+              Passage gives that context one home. Collections are the parts of your world, and a collection is what you
+              hand to an agent. Star what you rely on, and find any phrase again with indexed full-text search.
             </p>
             <p>
-              Write ordinary notes and drafts beside that context. Your agents can use the same private Markdown through
-              the authenticated API or CLI. Share a clean page or raw Markdown link only when you choose.
+              No more Markdown files scattered across one laptop. No more pasting the same background into another chat.
+              Your writing and your agent context live in the same private place, reachable from the browser, the API,
+              and the CLI. Share a clean page or raw Markdown link only when you choose.
             </p>
             <p className={styles.storyClose}>Markdown is a good format. A folder on one machine is a poor shared memory.</p>
           </div>

@@ -104,7 +104,6 @@ describe("light workspace contrast", () => {
       ".tagFilterInput",
       ".docListMore",
       ".workspaceDocumentIcon",
-      ".topBarCollectionSelect",
       ".workspaceSearchEmpty button,\n.workspaceSearchResults > .workspaceSearchMore",
       ".workspaceLoadMore button",
       ".statusPill",
@@ -116,6 +115,13 @@ describe("light workspace contrast", () => {
     for (const selector of [".workspaceSidebarSearch > button", ".workspaceSearchButton"]) {
       expect(declarationsFor(selector)).toContain("var(--hairline-strong)");
     }
+
+    // The toolbar collection control is a ghost button at rest, matching the
+    // icon buttons beside it, so its 3:1 boundary belongs to hover and focus.
+    expect(declarationsFor(".topBarCollectionSelect")).toContain("border: 1px solid transparent");
+    expect(
+      declarationsFor(".topBarCollectionSelect:hover,\n.topBarCollectionSelect:focus-visible")
+    ).toContain("border-color: var(--control-boundary)");
   });
 
   it("uses the AA text token for the reported labels, counts, metadata, and icons", () => {

@@ -86,7 +86,6 @@
 }
 
 .heroTitle {
-  max-width: 19ch;
   margin: 0 auto;
   color: var(--ink-display);
   font-family: var(--serif);
@@ -542,7 +541,6 @@
 
 @media (max-width: 900px) {
   .heroTitle {
-    max-width: 18ch;
     font-size: clamp(2.4rem, 5.4vw, 3.2rem);
   }
 }
