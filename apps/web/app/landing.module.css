@@ -77,16 +77,7 @@
   color: var(--accent);
 }
 
-.heroKicker {
-  margin: 0 0 20px;
-  color: var(--accent);
-  font: 600 0.7rem/1 var(--mono);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
 .heroTitle {
-  max-width: 19ch;
   margin: 0 auto;
   color: var(--ink-display);
   font-family: var(--serif);
@@ -542,7 +533,6 @@
 
 @media (max-width: 900px) {
   .heroTitle {
-    max-width: 18ch;
     font-size: clamp(2.4rem, 5.4vw, 3.2rem);
   }
 }

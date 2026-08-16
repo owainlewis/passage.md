@@ -9,19 +9,19 @@ import styles from "./landing.module.css";
 
 const workflow = [
   {
-    title: "Store stable context",
-    body: "Keep goals, product notes, preferences, and research in private collections. Star the documents you return to most.",
+    title: "Store your knowledge",
+    body: "Goals, product notes, preferences, research, drafts. One private place for the writing you keep coming back to, instead of folders on one machine.",
+    example: "Every note in one app"
+  },
+  {
+    title: "Group it into collections",
+    body: "A collection is the unit you hand to an agent. Put your operating context in one, a project in another, and keep the boundary clear.",
     example: "Collections / Operating Context"
   },
   {
-    title: "Find and write with it",
-    body: "Search the full text of your Markdown, then draft notes and plans beside the source material they depend on.",
-    example: "Full-text search / every Markdown body"
-  },
-  {
-    title: "Use it from agents",
-    body: "Let agents read and update the same private Markdown through the authenticated API or CLI without copying files into another tool.",
-    example: "passage cat <doc-id>"
+    title: "Give your agents access",
+    body: "Agents read and update the same private Markdown through the authenticated API or CLI, and search the full text of every document.",
+    example: "passage list --collection operating-context"
   },
   {
     title: "Share deliberately",
@@ -103,11 +103,10 @@ function LandingContent() {
       <main className={styles.main}>
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <p className={styles.heroKicker}>Context for agents and humans</p>
-            <h1 className={styles.heroTitle}>One Markdown workspace for you and your agents.</h1>
+            <h1 className={styles.heroTitle}>A writing app built for you and your agents.</h1>
             <p className={styles.heroSub}>
-              Give your goals, product notes, preferences, and drafts one stable home instead of scattering them across
-              local files and chats. You and your agents can use the same private Markdown.
+              Keep your goals, priorities, and business context in a collection your agents can read, and your everyday
+              writing alongside it. No local Markdown files spread across machines, and nothing to sync.
             </p>
             <div className={styles.heroActions}>
               <Link className={styles.primaryButton} href={primaryHref}>
@@ -165,7 +164,7 @@ function LandingContent() {
               <p className={styles.kicker}>How Passage works</p>
               <h2 className={styles.sectionHeading}>Keep context and writing together.</h2>
             </div>
-            <p>Collections and indexed search organise the browser workspace. Agents use the authenticated API or CLI for private document bodies.</p>
+            <p>Deliberately minimal. Collections to organise your context, search that reads every word, and one CLI your agents use to read and update the same Markdown.</p>
           </div>
           <div className={styles.featureList}>
             {workflow.map((feature, index) => (
@@ -192,12 +191,17 @@ function LandingContent() {
               agent starts cold, so you explain the same project again and paste the same files into another chat.
             </p>
             <p>
-              Passage gives that context one stable home. Use collections for the parts of your world, star the documents
-              you rely on, and find any phrase again with indexed full-text search.
+              Passage gives that context one home. Collections are the parts of your world, and a collection is what you
+              hand to an agent. Star what you rely on, and find any phrase again with indexed full-text search.
             </p>
             <p>
-              Write ordinary notes and drafts beside that context. Your agents can use the same private Markdown through
-              the authenticated API or CLI. Share a clean page or raw Markdown link only when you choose.
+              It replaces the sprawl. Markdown files on one laptop, half of them in a folder you sync through Dropbox,
+              the rest pasted into a chat you cannot find again. One app instead, deliberately minimal, holding only
+              what you and your agents need to write each day.
+            </p>
+            <p>
+              Your agents read and update the same private Markdown through one CLI. Share a clean page or a raw
+              Markdown link only when you choose.
             </p>
             <p className={styles.storyClose}>Markdown is a good format. A folder on one machine is a poor shared memory.</p>
           </div>
@@ -261,7 +265,7 @@ function LandingContent() {
       <footer className={styles.footer}>
         <div className={styles.footerBrand}>
           <Brand />
-          <span className={styles.footerTag}>Shared Markdown context for agents and humans.</span>
+          <span className={styles.footerTag}>A writing app built for you and your agents.</span>
           <span className={styles.footerTag}>
             Operated by <MerchantLink />.
           </span>

@@ -309,8 +309,8 @@ describe("Landing", () => {
   it("shows the shared context workflow, current pricing, and account actions for Pro users", async () => {
     render(<Landing />);
 
-    expect(screen.getByRole("heading", { name: "One Markdown workspace for you and your agents." })).toBeInTheDocument();
-    expect(screen.getByText(/one stable home instead of scattering them across/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "A writing app built for you and your agents." })).toBeInTheDocument();
+    expect(screen.getByText(/in a collection your agents can read/)).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
@@ -323,14 +323,14 @@ describe("Landing", () => {
     expect(screen.queryByRole("link", { name: "Go Pro" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Upgrade" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Keep context and writing together." })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Store stable context" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Find and write with it" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Use it from agents" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Store your knowledge" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Group it into collections" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Give your agents access" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Share deliberately" })).toBeInTheDocument();
-    expect(screen.getByText(/Collections and indexed search organise the browser workspace/)).toBeInTheDocument();
+    expect(screen.getByText(/one CLI your agents use to read and update the same Markdown/)).toBeInTheDocument();
     expect(screen.getByText(/A folder on one machine is a poor shared memory/)).toBeInTheDocument();
     expect(screen.getAllByText("$ passage list").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("passage cat <doc-id>").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("passage list --collection operating-context").length).toBeGreaterThan(0);
     expect(screen.getAllByText("passage share <doc-id>").length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
@@ -943,7 +943,7 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
     expect(screen.queryByText("Library")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
@@ -1290,7 +1290,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
   });
 
@@ -1320,14 +1320,14 @@ describe("Write (editor)", () => {
     await screen.findByLabelText("Workspace home");
 
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
     fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
     expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
 
     act(() => window.history.back());
     await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates"));
-    expect(screen.getByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
   });
 
   it("does not push duplicate history for the active workspace destination", async () => {
