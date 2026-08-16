@@ -404,3 +404,85 @@ func searchResultByID(results []SearchResult, id string) *SearchResult {
 	}
 	return nil
 }
+
+func TestStoreContentVersionGuardsConcurrentWrites(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	db, err := database.Open(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	if _, err := migrations.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	store := NewStore(db)
+	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("version-%d@example.com", time.Now().UnixNano()))
+
+	created, err := store.Create(ctx, ownerID, "# Start", NoSavedDocumentLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Version != 1 {
+		t.Fatalf("new document version = %d, want 1", created.Version)
+	}
+
+	body := "# Start\n\nfirst writer"
+	first, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Body: &body, IfVersion: &created.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Version != 2 {
+		t.Fatalf("version after update = %d, want 2", first.Version)
+	}
+
+	// The second writer still holds version 1, so it must lose rather than
+	// overwrite the first writer's body.
+	stale := "# Start\n\nsecond writer"
+	if _, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Body: &stale, IfVersion: &created.Version}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale update error = %v, want ErrVersionConflict", err)
+	}
+
+	after, err := store.Get(ctx, ownerID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Body != body {
+		t.Fatalf("body after rejected write = %q, want %q", after.Body, body)
+	}
+	if after.Version != 2 {
+		t.Fatalf("version after rejected write = %d, want 2", after.Version)
+	}
+	if !after.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Fatalf("rejected write moved updated_at from %v to %v", first.UpdatedAt, after.UpdatedAt)
+	}
+
+	// Omitting the version keeps the old unconditional behaviour for existing
+	// API clients, and still advances the version for everyone else.
+	legacy := "# Start\n\nlegacy client"
+	unconditional, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Body: &legacy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unconditional.Version != 3 {
+		t.Fatalf("version after unconditional update = %d, want 3", unconditional.Version)
+	}
+
+	// Metadata-only writes are not content changes, so they leave the version
+	// alone and a held version stays usable.
+	starred := true
+	metadata, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Starred: &starred, IfVersion: &unconditional.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Version != 3 {
+		t.Fatalf("version after metadata update = %d, want 3", metadata.Version)
+	}
+	if !metadata.Starred {
+		t.Fatal("metadata update did not persist the star")
+	}
+}

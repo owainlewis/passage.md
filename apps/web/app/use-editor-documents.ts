@@ -1,7 +1,7 @@
 "use client";
 
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
-import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc } from "./editor-api";
+import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc, DocumentConflictError } from "./editor-api";
 import { docMatchesFilter } from "./editor-list";
 import {
   ALL_DOCUMENTS,
@@ -17,6 +17,17 @@ import {
 export type PendingSave = {
   id: string;
   body: string;
+};
+
+/**
+ * A save the server refused because the document moved on. The draft is kept
+ * verbatim so the writer never loses what they typed, and no recovery happens
+ * until they choose one.
+ */
+export type SaveConflict = {
+  id: string;
+  draft: string;
+  current: Doc;
 };
 
 export type BillingNoticeAction = "upgrade" | "limit" | null;
@@ -39,6 +50,7 @@ export function useEditorDocuments({
   const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(ALL_DOCUMENTS);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
   const [billingNotice, setBillingNoticeMessage] = useState("");
   const [billingNoticeAction, setBillingNoticeAction] = useState<BillingNoticeAction>(null);
   const [nextCursor, setNextCursor] = useState("");
@@ -50,6 +62,14 @@ export function useEditorDocuments({
   const activeRequest = useRef(0);
   const bodyRequests = useRef(new Set<string>());
   const accountGeneration = useRef(0);
+  // The autosave effect needs the version it loaded without taking docs as a
+  // dependency, which would restart the debounce on every keystroke. Reading
+  // it at save time rather than at edit time also keeps a save that lands
+  // mid-typing from making the next one look stale.
+  const docsRef = useRef(docs);
+  useEffect(() => {
+    docsRef.current = docs;
+  }, [docs]);
 
   const setBillingNotice: Dispatch<SetStateAction<string>> = useCallback((value) => {
     setBillingNoticeAction(null);
@@ -173,7 +193,8 @@ export function useEditorDocuments({
       void (async () => {
         setSaveState("saving");
         try {
-          const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body);
+          const loadedVersion = docsRef.current.find((doc) => doc.id === pendingSave.id)?.version;
+          const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body, loadedVersion);
           if (cancelled) return;
           setDocs((prev) =>
             prev.map((doc) =>
@@ -191,8 +212,17 @@ export function useEditorDocuments({
           );
           setSaveState("saved");
           setPendingSave(null);
-        } catch {
-          if (!cancelled) setSaveState("error");
+        } catch (error) {
+          if (cancelled) return;
+          if (error instanceof DocumentConflictError) {
+            // Stop retrying. The draft stays in pendingSave and in the editor
+            // until the writer picks a side.
+            setSaveConflict({ id: pendingSave.id, draft: pendingSave.body, current: error.current });
+            setPendingSave(null);
+            setSaveState("error");
+            return;
+          }
+          setSaveState("error");
         }
       })();
     }, 500);
@@ -216,6 +246,29 @@ export function useEditorDocuments({
     setSaveState("saving");
     setPendingSave({ id: active.id, body });
     setDocs((prev) => prev.map((doc) => (doc.id === active.id ? { ...doc, body } : doc)));
+  }
+
+  /**
+   * Recovery from a refused save. "latest" drops the draft for the stored
+   * version; "overwrite" republishes the draft on top of it. Both are explicit
+   * choices, and neither runs on its own.
+   */
+  function resolveConflict(choice: "latest" | "overwrite") {
+    const conflict = saveConflict;
+    if (!conflict) return;
+    setSaveConflict(null);
+    if (choice === "latest") {
+      setDocs((prev) => prev.map((doc) => (doc.id === conflict.id ? { ...doc, ...conflict.current } : doc)));
+      setSaveState("saved");
+      return;
+    }
+    setDocs((prev) =>
+      prev.map((doc) =>
+        doc.id === conflict.id ? { ...doc, ...conflict.current, body: conflict.draft } : doc
+      )
+    );
+    setSaveState("saving");
+    setPendingSave({ id: conflict.id, body: conflict.draft });
   }
 
   function updateEditorURL(doc: Doc, mode: "push" | "replace") {
@@ -359,6 +412,8 @@ export function useEditorDocuments({
     retryActive: () => {
       if (active) void loadDocBody(active);
     },
+    saveConflict,
+    resolveConflict,
     saveState,
     selectDoc,
     documentFilter,

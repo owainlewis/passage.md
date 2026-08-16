@@ -337,7 +337,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		CollectionIDSet: input.CollectionID.Set,
 		CollectionID:    input.CollectionID.Value,
 		Starred:         input.Starred,
+		IfVersion:       input.Version,
 	})
+	if errors.Is(err, ErrVersionConflict) {
+		h.writeVersionConflict(w, r, user, id)
+		return
+	}
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "document not found")
 		return
@@ -351,6 +356,21 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+// writeVersionConflict returns the stored document alongside the error, so a
+// client can show what it is up against without a second round trip and
+// without having to discard the draft it is holding.
+func (h *Handler) writeVersionConflict(w http.ResponseWriter, r *http.Request, user auth.User, id string) {
+	current, err := h.store.Get(r.Context(), user.ID, id)
+	if err != nil {
+		httpx.WriteInternalError(w, r, "load conflicting document", err, "document could not be saved")
+		return
+	}
+	writeJSON(w, http.StatusConflict, map[string]any{
+		"error":    "document changed since it was loaded",
+		"document": current,
+	})
 }
 
 func (h *Handler) Archive(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -471,6 +491,9 @@ type documentUpdateInput struct {
 	Body         *string        `json:"body"`
 	CollectionID nullableString `json:"collectionId"`
 	Starred      *bool          `json:"starred"`
+	// Version makes the write conditional. Omitting it keeps the
+	// unconditional behaviour existing API clients depend on.
+	Version *int `json:"version"`
 }
 
 type nullableString struct {

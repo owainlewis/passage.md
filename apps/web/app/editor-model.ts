@@ -15,6 +15,8 @@ export type Doc = {
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;
+  /** Server content version this body was loaded at. Sent back on save. */
+  version?: number;
 };
 
 export type Mode = "edit" | "preview";

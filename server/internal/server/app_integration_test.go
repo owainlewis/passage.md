@@ -1513,3 +1513,118 @@ func doIntegrationRequestRaw(t *testing.T, method string, url string, body strin
 	}
 	return string(responseBody), res.StatusCode
 }
+
+func TestDocumentVersionConflictWithPostgres(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	stamp := time.Now().UnixNano()
+	owner := fmt.Sprintf("versions-%d@example.com", stamp)
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, owner)
+
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{Billing: config.BillingConfig{
+		FreeMaxSavedDocs: 5,
+		ProMaxSavedDocs:  1000,
+	}})
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+
+	cookies := createIntegrationUserAndLogin(t, db, server.URL, owner)
+
+	var created struct {
+		ID      string `json:"id"`
+		Version int    `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Shared note"}`, cookies, "")), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Version != 1 {
+		t.Fatalf("created version = %d, want 1", created.Version)
+	}
+
+	// An agent updates the document while a browser holds version 1.
+	var agentWrite struct {
+		Body    string `json:"body"`
+		Version int    `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+created.ID, `{"body":"# Shared note\n\nagent edit","version":1}`, cookies, "")), &agentWrite); err != nil {
+		t.Fatal(err)
+	}
+	if agentWrite.Version != 2 {
+		t.Fatalf("version after agent write = %d, want 2", agentWrite.Version)
+	}
+
+	// The stale browser save must be refused, and must be told what it is up
+	// against so it can offer a recovery choice.
+	conflictBody, status := doIntegrationRequestRaw(t, http.MethodPatch, server.URL+"/api/v1/docs/"+created.ID, `{"body":"# Shared note\n\nstale browser edit","version":1}`, cookies, "")
+	if status != http.StatusConflict {
+		t.Fatalf("stale save status = %d, want %d", status, http.StatusConflict)
+	}
+	var conflict struct {
+		Error    string `json:"error"`
+		Document struct {
+			ID      string `json:"id"`
+			Body    string `json:"body"`
+			Version int    `json:"version"`
+		} `json:"document"`
+	}
+	if err := json.Unmarshal([]byte(conflictBody), &conflict); err != nil {
+		t.Fatal(err)
+	}
+	if conflict.Error == "" {
+		t.Fatal("conflict response carried no error message")
+	}
+	if conflict.Document.ID != created.ID || conflict.Document.Version != 2 {
+		t.Fatalf("conflict document = %+v, want id %s at version 2", conflict.Document, created.ID)
+	}
+	if conflict.Document.Body != agentWrite.Body {
+		t.Fatalf("conflict body = %q, want the agent's %q", conflict.Document.Body, agentWrite.Body)
+	}
+
+	// The refused write changed nothing.
+	var current struct {
+		Body    string `json:"body"`
+		Version int    `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/"+created.ID, "", cookies, "")), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Body != agentWrite.Body || current.Version != 2 {
+		t.Fatalf("document after refused write = %+v, want the agent body at version 2", current)
+	}
+
+	// Retrying against the version the server reported succeeds.
+	var resolved struct {
+		Body    string `json:"body"`
+		Version int    `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+created.ID, `{"body":"# Shared note\n\nmerged by hand","version":2}`, cookies, "")), &resolved); err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Version != 3 {
+		t.Fatalf("version after resolving = %d, want 3", resolved.Version)
+	}
+
+	// Existing clients that omit the version keep working.
+	var legacy struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+created.ID, `{"body":"# Shared note\n\nlegacy client"}`, cookies, "")), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Version != 4 {
+		t.Fatalf("version after versionless write = %d, want 4", legacy.Version)
+	}
+}

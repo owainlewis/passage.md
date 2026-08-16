@@ -44,7 +44,7 @@ func TestCollectionMigrationsPreservePopulatedDataAndStopDefaults(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "023_collections,024_document_full_text_search,025_remove_seeded_collections" {
+	if strings.Join(applied, ",") != "023_collections,024_document_full_text_search,025_remove_seeded_collections,026_document_content_version" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	assertNoCollections(t, db, ownerID)
@@ -122,7 +122,7 @@ func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections" {
+		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version" {
 			t.Fatalf("applied migrations = %q", applied)
 		}
 		assertDocumentSearchSchema(t, db)

@@ -76,7 +76,7 @@ func TestRemoveSeededCollectionsCleansExistingAccountWithoutMutatingDocuments(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "025_remove_seeded_collections" {
+	if strings.Join(applied, ",") != "025_remove_seeded_collections,026_document_content_version" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	assertNoCollections(t, db, ownerID)
@@ -181,7 +181,7 @@ func TestRemoveSeededCollectionsUsesNarrowOriginFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if applied, err := Apply(ctx, db); err != nil || strings.Join(applied, ",") != "025_remove_seeded_collections" {
+	if applied, err := Apply(ctx, db); err != nil || strings.Join(applied, ",") != "025_remove_seeded_collections,026_document_content_version" {
 		t.Fatalf("apply cleanup = %q, %v", applied, err)
 	}
 
@@ -261,7 +261,10 @@ func seededCollectionIDs(t *testing.T, db *database.Pool, ownerID string) map[st
 func migrationDocumentSnapshots(t *testing.T, db *database.Pool, ownerID string) map[string]documentSnapshot {
 	t.Helper()
 	rows, err := db.Query(context.Background(), `
-		SELECT id::text, (to_jsonb(documents) - 'collection_id')::text,
+		-- content_version is dropped alongside collection_id because 026 adds it
+		-- to every row with a default. This snapshot is about 025 leaving
+		-- document content alone, not about the schema never growing.
+		SELECT id::text, (to_jsonb(documents) - 'collection_id' - 'content_version')::text,
 		       md5(body), collection_id::text
 		FROM documents
 		WHERE owner_user_id = $1

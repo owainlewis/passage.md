@@ -3815,6 +3815,72 @@ button {
 
 /* --------------------------------------------------------------- account */
 
+/* Save conflict. Louder than the billing notice because it is blocking work
+   and needs a decision, but it never acts on its own. */
+.conflictNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 18px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--elevated);
+  box-shadow: inset 3px 0 0 #a04a3e;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.conflictNoticeText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conflictNoticeText strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.conflictNoticeText span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.conflictNoticeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.conflictNoticeActions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--control-boundary);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.conflictNoticeActions button:hover {
+  background: var(--hover);
+}
+
+.conflictNoticeActions .conflictNoticePrimary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.conflictNoticeActions .conflictNoticePrimary:hover {
+  background: color-mix(in srgb, var(--accent) 86%, var(--accent-strong));
+}
+
 .billingNotice {
   display: flex;
   align-items: center;

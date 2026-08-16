@@ -107,14 +107,35 @@ export async function apiCreateDoc(body: string): Promise<Doc> {
   return normalizeDoc(payload as Doc, true);
 }
 
-export async function apiUpdateDoc(id: string, body: string): Promise<Doc> {
+/**
+ * Raised when the stored document moved on since this editor loaded it.
+ * Carries the server's copy so the caller can show both sides rather than
+ * discarding the draft in hand.
+ */
+export class DocumentConflictError extends Error {
+  readonly current: Doc;
+
+  constructor(message: string, current: Doc) {
+    super(message);
+    this.name = "DocumentConflictError";
+    this.current = current;
+  }
+}
+
+export async function apiUpdateDoc(id: string, body: string, version?: number): Promise<Doc> {
   const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body })
+    body: JSON.stringify(typeof version === "number" ? { body, version } : { body })
   });
   const payload = await res.json().catch(() => ({}));
+  if (res.status === 409 && payload && typeof payload === "object" && payload.document) {
+    throw new DocumentConflictError(
+      typeof payload.error === "string" ? payload.error : "Document changed since it was loaded",
+      normalizeDoc(payload.document as Doc, true)
+    );
+  }
   if (!res.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be saved");
   }
