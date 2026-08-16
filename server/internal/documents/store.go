@@ -489,30 +489,25 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 		&doc.ArchivedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		var documentExists bool
-		if existsErr := s.db.QueryRow(ctx, `
-			SELECT EXISTS (
-				SELECT 1 FROM documents
-				WHERE owner_user_id = $1 AND id = $2 AND archived_at IS NULL
-			)
-		`, ownerID, id).Scan(&documentExists); existsErr != nil {
-			return Document{}, existsErr
+		// One statement decides both whether the row is still there and what
+		// version it holds. Asking separately leaves a window where an archive
+		// between the two reads surfaces as an unmapped no-row error.
+		var currentVersion int
+		versionErr := s.db.QueryRow(ctx, `
+			SELECT content_version FROM documents
+			WHERE owner_user_id = $1 AND id = $2 AND archived_at IS NULL
+		`, ownerID, id).Scan(&currentVersion)
+		if errors.Is(versionErr, pgx.ErrNoRows) {
+			return Document{}, ErrNotFound
 		}
-		if documentExists && update.IfVersion != nil {
-			// The row is still there and still ours, so the guard is what
-			// rejected the write rather than the document being gone.
-			var currentVersion int
-			if versionErr := s.db.QueryRow(ctx, `
-				SELECT content_version FROM documents
-				WHERE owner_user_id = $1 AND id = $2 AND archived_at IS NULL
-			`, ownerID, id).Scan(&currentVersion); versionErr != nil {
-				return Document{}, versionErr
-			}
-			if currentVersion != *update.IfVersion {
-				return Document{}, ErrVersionConflict
-			}
+		if versionErr != nil {
+			return Document{}, versionErr
 		}
-		if documentExists && update.CollectionIDSet && update.CollectionID != nil {
+		if update.IfVersion != nil && currentVersion != *update.IfVersion {
+			// The row is still ours, so the guard is what rejected the write.
+			return Document{}, ErrVersionConflict
+		}
+		if update.CollectionIDSet && update.CollectionID != nil {
 			return Document{}, ErrCollectionNotFound
 		}
 		return Document{}, ErrNotFound
