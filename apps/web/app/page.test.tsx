@@ -943,7 +943,7 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
     expect(screen.queryByText("Library")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
@@ -1290,7 +1290,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
   });
 
@@ -1320,14 +1320,14 @@ describe("Write (editor)", () => {
     await screen.findByLabelText("Workspace home");
 
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
     fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
     expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
 
     act(() => window.history.back());
     await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates"));
-    expect(screen.getByRole("heading", { name: "Create from a template" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
   });
 
   it("does not push duplicate history for the active workspace destination", async () => {

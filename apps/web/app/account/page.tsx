@@ -257,7 +257,7 @@ function AccountPage() {
 }
 
 const THEME_CHOICES: { value: Theme; label: string; hint: string }[] = [
-  { value: "light", label: "Light", hint: "Warm paper surfaces" },
+  { value: "light", label: "Light", hint: "Clean and bright" },
   { value: "dark", label: "Dark", hint: "Low-light reading" }
 ];
 

@@ -53,15 +53,31 @@ describe("light workspace contrast", () => {
     composite(background, light["--hover-strong"])
   ]);
 
-  it("uses warmer, dimmer paper surfaces and quiet decorative rules", () => {
+  it("uses neutral surfaces with no warm cast and quiet decorative rules", () => {
     expect(light).toMatchObject({
-      "--bg": "#f2efe8",
-      "--sidebar-bg": "#efebe2",
-      "--surface": "#f7f4ed",
-      "--hairline": "#d9d4c9"
+      "--bg": "#fcfcfd",
+      "--sidebar-bg": "#f6f6f8",
+      "--surface": "#ffffff",
+      "--hairline": "#ebebef"
     });
-    expect(luminance(light["--surface"])).toBeLessThan(luminance("#fbfbf9"));
+    // The old palette was warm paper. Every surface now stays neutral or a
+    // touch cool: channels within a few steps, and blue never below red.
+    for (const token of ["--bg", "--sidebar-bg", "--surface", "--hairline"]) {
+      const [red, green, blue] = rgb(light[token]);
+      expect(Math.max(red, green, blue) - Math.min(red, green, blue), `${token} has a colour cast`).toBeLessThanOrEqual(4);
+      expect(blue, `${token} is warmer than neutral`).toBeGreaterThanOrEqual(red);
+    }
     expect(contrast(light["--hairline"], light["--surface"])).toBeLessThan(1.5);
+  });
+
+  it("keeps the settings theme previews in step with the real palettes", () => {
+    // The previews are hand-painted swatches, so they silently go stale when
+    // the palette moves. They did exactly that once already.
+    const dark = customProperties(declarationsFor(':root[data-theme="dark"]'));
+    expect(declarationsFor('.themeChoicePreview[data-theme-preview="light"]')).toContain(light["--bg"]);
+    expect(declarationsFor('.themeChoicePreview[data-theme-preview="dark"]')).toContain(dark["--bg"]);
+    expect(declarationsFor('.themeChoicePreview[data-theme-preview="dark"] .themeChoicePreviewSidebar'))
+      .toContain(dark["--sidebar-bg"]);
   });
 
   it.each(["--muted", "--faint"])("keeps %s normal text at WCAG AA contrast in every interaction state", (token) => {
@@ -141,9 +157,9 @@ describe("light workspace contrast", () => {
 
   it("keeps hover, active, selected, disabled, and error states distinct", () => {
     expect(light).toMatchObject({
-      "--hover": "rgba(55, 50, 42, 0.07)",
-      "--hover-soft": "rgba(55, 50, 42, 0.045)",
-      "--hover-strong": "rgba(55, 50, 42, 0.105)"
+      "--hover": "rgba(20, 20, 32, 0.055)",
+      "--hover-soft": "rgba(20, 20, 32, 0.035)",
+      "--hover-strong": "rgba(20, 20, 32, 0.085)"
     });
     expect(declarationsFor('.workspaceDestination[data-active="true"],\n.workspaceSidebarCollection[data-active="true"]')).toContain(
       "font-weight: 650"

@@ -1,24 +1,24 @@
 :root {
-  --bg: #fbfbf9;
-  --sidebar-bg: #f5f4f1;
-  --surface: #fbfbf9;
-  --ink: #1b1a18;
-  --ink-soft: #363531;
-  --muted: #6f716a;
-  --faint: #b1b1aa;
-  --hairline: #e7e6e0;
-  --hairline-strong: #dcdad3;
+  --bg: #fcfcfd;
+  --sidebar-bg: #f6f6f8;
+  --surface: #ffffff;
+  --ink: #16161a;
+  --ink-soft: #33333a;
+  --muted: #55555f;
+  --faint: #83838e;
+  --hairline: #ebebef;
+  --hairline-strong: #dcdce2;
   --accent: #48685f;
-  --accent-strong: #24231f;
-  --accent-tint: #e8eeeb;
+  --accent-strong: #1d1d21;
+  --accent-tint: #e9efec;
   --accent-contrast: #fff;
-  --ink-display: #1b1a18;
-  --code-bg: #f0efe8;
+  --ink-display: #16161a;
+  --code-bg: #f4f4f6;
   --selection: rgba(72, 104, 95, 0.16);
   --elevated: var(--surface);
-  --hover: rgba(0, 0, 0, 0.05);
-  --hover-soft: rgba(0, 0, 0, 0.035);
-  --hover-strong: rgba(0, 0, 0, 0.07);
+  --hover: rgba(20, 20, 32, 0.055);
+  --hover-soft: rgba(20, 20, 32, 0.035);
+  --hover-strong: rgba(20, 20, 32, 0.085);
   --sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --serif: var(--font-serif), Georgia, "Times New Roman", serif;
@@ -119,20 +119,20 @@ button {
  * keep their required contrast.
  */
 :root:not([data-theme="dark"]) .workspace {
-  --bg: #f2efe8;
-  --sidebar-bg: #efebe2;
-  --surface: #f7f4ed;
-  --elevated: #f3efe7;
-  --ink: #22211e;
-  --ink-soft: #3c3a35;
-  --muted: #52544f;
-  --faint: #5d5e57;
-  --hairline: #d9d4c9;
-  --hairline-strong: #7c7f77;
-  --control-boundary: #7c7f77;
-  --hover: rgba(55, 50, 42, 0.07);
-  --hover-soft: rgba(55, 50, 42, 0.045);
-  --hover-strong: rgba(55, 50, 42, 0.105);
+  --bg: #fcfcfd;
+  --sidebar-bg: #f6f6f8;
+  --surface: #ffffff;
+  --elevated: #ffffff;
+  --ink: #16161a;
+  --ink-soft: #33333a;
+  --muted: #55555f;
+  --faint: #63636d;
+  --hairline: #ebebef;
+  --hairline-strong: #c9c9d1;
+  --control-boundary: #75757f;
+  --hover: rgba(20, 20, 32, 0.055);
+  --hover-soft: rgba(20, 20, 32, 0.035);
+  --hover-strong: rgba(20, 20, 32, 0.085);
 }
 
 :root:not([data-theme="dark"]) .workspace
@@ -1155,11 +1155,16 @@ button {
   margin-bottom: 14px;
 }
 
+/* A small tracked label, not a second title. It marks the section without
+   competing with the serif page title above or the row titles below, which
+   is what lets the rule under it go away. */
 .workspaceSectionHeading h2 {
   margin: 0;
-  color: var(--ink);
-  font-size: 0.875rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
   font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .workspaceSectionHeading button,
@@ -1171,14 +1176,43 @@ button {
   font-size: 0.6875rem;
 }
 
+/* The arrow only leans out on hover, so the resting state stays quiet. */
+.workspaceSectionHeading button::after {
+  content: "→";
+  display: inline-block;
+  margin-left: 5px;
+  transform: translateX(-2px);
+  opacity: 0;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
 .workspaceSectionHeading button:hover,
 .workspaceSectionHeading button:focus-visible {
   color: var(--ink);
 }
 
+.workspaceSectionHeading button:hover::after,
+.workspaceSectionHeading button:focus-visible::after {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspaceSectionHeading button::after {
+    transition: none;
+  }
+}
+
+.workspaceSectionHeading button:hover,
+.workspaceSectionHeading button:focus-visible {
+  color: var(--ink);
+}
+
+/* No rule under the section label. A heading rule plus a rule under every row
+   stacks lines of equal weight and flattens the hierarchy; spacing separates
+   the sections instead, and the row rules are left to do one job. */
 .workspaceCollectionGrid {
   display: block;
-  border-top: 1px solid var(--hairline);
 }
 
 .workspaceCollectionCard {
@@ -1193,6 +1227,10 @@ button {
   background: transparent;
   color: var(--ink);
   text-align: left;
+}
+
+.workspaceCollectionCard:last-child {
+  border-bottom: 0;
 }
 
 /* The highlight is drawn behind the row rather than on it, so it can sit
@@ -1260,7 +1298,6 @@ button {
 }
 
 .workspaceDocumentList {
-  border-top: 1px solid var(--hairline);
   background: transparent;
 }
 
@@ -3936,7 +3973,7 @@ button {
 }
 
 .themeChoicePreview[data-theme-preview="light"] {
-  background: #fbfbf9;
+  background: #fcfcfd;
 }
 
 .themeChoicePreview[data-theme-preview="dark"] {
@@ -3950,7 +3987,7 @@ button {
 }
 
 .themeChoicePreview[data-theme-preview="light"] .themeChoicePreviewSidebar {
-  background: #efebe2;
+  background: #f0f0f3;
 }
 
 .themeChoicePreview[data-theme-preview="dark"] .themeChoicePreviewSidebar {
@@ -3978,7 +4015,7 @@ button {
 }
 
 .themeChoicePreview[data-theme-preview="light"] .themeChoicePreviewBody {
-  color: #8c897f;
+  color: #83838e;
 }
 
 .themeChoicePreview[data-theme-preview="dark"] .themeChoicePreviewBody {
