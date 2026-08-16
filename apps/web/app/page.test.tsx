@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import Account from "./account/page";
 import { AppProviders } from "./app-providers";
+import { ThemeProvider } from "./theme";
 import { AuthProvider } from "./auth";
 import CLIPage from "./cli/page";
 import Login from "./login/page";
@@ -212,6 +213,12 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
   return fetchMock;
 }
 
+// The real app mounts every route inside AppProviders, which supplies the
+// theme. Route components are rendered bare here, so wrap them the same way.
+function render(ui: ReactNode) {
+  return renderBare(<ThemeProvider>{ui}</ThemeProvider>);
+}
+
 async function renderWrite(ui: ReactNode = <Write />) {
   const view = render(ui);
   await waitFor(() => {
@@ -231,6 +238,13 @@ async function renderWrite(ui: ReactNode = <Write />) {
   await screen.findByRole("region", { name: "Markdown editor" });
   await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
   return view;
+}
+
+// Collections are assigned from the open document, so a list row has to be
+// opened first.
+async function openDocumentNamed(title: string) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${title}`) }));
+  await screen.findByRole("region", { name: "Markdown editor" });
 }
 
 async function createBlankDocument() {
@@ -1491,21 +1505,29 @@ describe("Write (editor)", () => {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({ matches: query === "(max-width: 720px)" }))
     });
-    stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
+    // Restore in a finally, so a failure here cannot leak a mobile matchMedia
+    // into every test that follows.
+    try {
+      stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
 
-    await renderWrite();
-    const documentCollection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
-    fireEvent.change(documentCollection, { target: { value: "research" } });
-    await waitFor(() => expect(documentCollection).toHaveValue("research"));
+      await renderWrite();
+      const documentCollection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
+      fireEvent.change(documentCollection, { target: { value: "research" } });
+      await waitFor(() => expect(documentCollection).toHaveValue("research"));
 
-    openSidebarCollection("Research");
-    const rowCollection = await screen.findByRole("combobox", { name: "Collection for Mobile note" });
-    fireEvent.change(rowCollection, { target: { value: "documents" } });
-    await waitFor(() => expect(screen.getByLabelText("Research")).not.toHaveTextContent("Mobile note"));
-    openSidebarCollection("Documents");
-    expect(screen.getByLabelText("Documents")).toHaveTextContent("Mobile note");
+      openSidebarCollection("Research");
+      expect(screen.getByLabelText("Research")).toHaveTextContent("Mobile note");
 
-    Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+      await openDocumentNamed("Mobile note");
+      const movedBack = await screen.findByRole("combobox", { name: "Collection for Mobile note" });
+      fireEvent.change(movedBack, { target: { value: "documents" } });
+      await waitFor(() => expect(movedBack).toHaveValue("documents"));
+
+      openSidebarCollection("Documents");
+      expect(screen.getByLabelText("Documents")).toHaveTextContent("Mobile note");
+    } finally {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+    }
   });
 
   it("keeps the confirmed mobile collection when assignment fails", async () => {
@@ -1643,8 +1665,9 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: "Client Work" })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Search workspace" }), { key: "Escape" });
     openSidebarCollection("Documents");
+    await openDocumentNamed("Private note");
     fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "client-work" } });
-    await waitFor(() => expect(screen.getByLabelText("Documents")).not.toHaveTextContent("Private note"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).toHaveValue("client-work"));
     openSidebarCollection("Client Work");
     expect(screen.getByLabelText("Client Work")).toHaveTextContent("Private note");
   });
@@ -2593,19 +2616,35 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("http://localhost:3000/d/public-2"));
   });
 
-  it("toggles dark mode from the sidebar for every user", async () => {
-    await renderWrite();
+  it("chooses the theme from settings, for every user", async () => {
+    render(<Account />);
 
-    const darkMode = screen.getByRole("switch", { name: "Dark mode" });
-    expect(darkMode).not.toBeDisabled();
+    const themes = await screen.findByRole("radiogroup", { name: "Theme" });
+    const dark = within(themes).getByRole("radio", { name: /Dark/ });
+    const light = within(themes).getByRole("radio", { name: /Light/ });
+    expect(light).toHaveAttribute("aria-checked", "true");
+    expect(dark).not.toBeDisabled();
+    expect(screen.queryByText("Dark mode is a Pro feature.")).not.toBeInTheDocument();
 
-    fireEvent.click(darkMode);
+    fireEvent.click(dark);
     expect(document.documentElement.dataset.themeTransitionBlocked).toBe("true");
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
+    expect(dark).toHaveAttribute("aria-checked", "true");
+    expect(light).toHaveAttribute("aria-checked", "false");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(screen.queryByText("Dark mode is a Pro feature.")).not.toBeInTheDocument();
+    fireEvent.click(light);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBeUndefined());
+    expect(localStorage.getItem("passage.theme.v1")).toBe("light");
+  });
+
+  it("carries a saved dark theme into the editor without a sidebar control", async () => {
+    localStorage.setItem("passage.theme.v1", "dark");
+    await renderWrite();
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "/account");
   });
 
   it("keeps the sign-in action stable while the session check resolves", () => {
@@ -2710,7 +2749,7 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
+    expect(within(await screen.findByRole("menu")).getByText("writer@example.com")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
 
     await waitFor(() => expect(screen.queryByText("writer@example.com")).not.toBeInTheDocument());
@@ -2740,7 +2779,8 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
-    expect(await screen.findByText("writer@example.com")).toBeInTheDocument();
+    const accountMenu = await screen.findByRole("menu");
+    expect(within(accountMenu).getByText("writer@example.com")).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Account settings" })).toHaveAttribute("href", "/account");
     expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create token" })).not.toBeInTheDocument();

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "./auth";
+import { ThemeProvider } from "./theme";
 
 export function sessionRouteKey(pathname: string | null) {
   if (!pathname) return "public";
@@ -20,13 +21,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const markRouteVerified = useCallback(() => setVerifiedRouteKey(routeKey), [routeKey]);
 
   return (
-    <AuthProvider routeRevalidating={routeRevalidating}>
-      <SessionRevalidator
-        markRouteVerified={markRouteVerified}
-        routeRevalidating={routeRevalidating}
-      />
-      {children}
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider routeRevalidating={routeRevalidating}>
+        <SessionRevalidator
+          markRouteVerified={markRouteVerified}
+          routeRevalidating={routeRevalidating}
+        />
+        {children}
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

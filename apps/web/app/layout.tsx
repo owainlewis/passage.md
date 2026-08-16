@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Castoro, Inter, IBM_Plex_Mono } from "next/font/google";
 import { AppProviders } from "./app-providers";
+import { THEME_BOOT_SCRIPT } from "./theme";
 import "./globals.css";
 
 const sans = Inter({
@@ -58,6 +59,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
+      <head>
+        {/* Applies the saved theme before the first paint, so a dark-theme
+            reader never sees a light flash while React hydrates. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body>
         <AppProviders>{children}</AppProviders>
       </body>

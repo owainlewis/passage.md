@@ -737,6 +737,15 @@ button {
   flex: 1 1 auto;
 }
 
+/* Destination icons are decorative and track the label colour, so the resting,
+   hover, and active states stay in step without a separate contrast rule. */
+.workspaceDestination > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: inherit;
+}
+
 .workspaceSidebarCollection > span:first-child {
   min-width: 0;
   overflow: hidden;
@@ -821,8 +830,70 @@ button {
   color: var(--ink);
 }
 
+/* The sidebar clips its overflow, so the footer must not shrink. Vertical
+   pressure belongs on the scrollable collections list, which keeps Settings
+   and the theme toggle reachable on short viewports. */
 .workspaceSidebarFoot {
-  gap: 0;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+/* Below roughly 404px the fixed rows alone are taller than the sidebar, so
+   shrinking the collections list is no longer enough. Scroll the sidebar as a
+   whole instead of clipping the footer. A landscape phone still wide enough
+   for the desktop sidebar lands here. */
+@media (max-height: 480px) {
+  .workspaceSidebar {
+    overflow-y: auto;
+  }
+
+  .workspaceSidebarCollections {
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
+}
+
+.workspaceSidebarAccount {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.workspaceSidebarAccount > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.workspaceSidebarAccountText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspaceSidebarAccountText strong {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.workspaceSidebarAccountText small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceSidebarAccount:hover,
+.workspaceSidebarAccount:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
 }
 
 .workspaceMobileNav {
@@ -1111,6 +1182,7 @@ button {
 }
 
 .workspaceCollectionCard {
+  position: relative;
   width: 100%;
   min-height: 76px;
   display: block;
@@ -1123,8 +1195,27 @@ button {
   text-align: left;
 }
 
-.workspaceCollectionCard:hover,
-.workspaceCollectionCard:focus-visible {
+/* The highlight is drawn behind the row rather than on it, so it can sit
+   inset from the divider and bleed past the text column. A full-bleed square
+   fill reads as a table selection; this reads as a list row. */
+.workspaceCollectionCard::before,
+.workspaceDocumentRow::before {
+  content: "";
+  position: absolute;
+  inset: 4px -12px;
+  border-radius: 10px;
+  background: transparent;
+  transition: background 0.12s ease;
+  pointer-events: none;
+}
+
+.workspaceCollectionCard > *,
+.workspaceDocumentRow > * {
+  position: relative;
+}
+
+.workspaceCollectionCard:hover::before,
+.workspaceCollectionCard:focus-visible::before {
   background: var(--hover-soft);
 }
 
@@ -1147,12 +1238,14 @@ button {
   color: var(--ink);
 }
 
+/* List rows are interface, not prose. The serif is reserved for page titles
+   and document content, where it reads as editorial rather than decorative. */
 .workspaceCollectionTitle strong {
   min-width: 0;
   flex: 1 1 auto;
-  font-family: var(--serif);
-  font-size: 0.98rem;
-  font-weight: 400;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.006em;
   overflow-wrap: anywhere;
 }
 
@@ -1172,11 +1265,11 @@ button {
 }
 
 .workspaceDocumentRow {
+  position: relative;
   min-height: 64px;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--hairline);
-  transition: background 0.12s ease;
 }
 
 .workspaceDocumentRow:last-child {
@@ -1201,8 +1294,8 @@ button {
   outline: 0;
 }
 
-.workspaceDocumentRow:hover,
-.workspaceDocumentRow:focus-within {
+.workspaceDocumentRow:hover::before,
+.workspaceDocumentRow:focus-within::before {
   background: var(--hover-soft);
 }
 
@@ -1229,9 +1322,9 @@ button {
 .workspaceDocumentText strong {
   overflow: hidden;
   color: var(--ink);
-  font-family: var(--serif);
-  font-size: 0.95rem;
-  font-weight: 400;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.006em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1258,7 +1351,6 @@ button {
   white-space: nowrap;
 }
 
-.workspaceCollectionSelect,
 .topBarCollectionSelect {
   border: 1px solid var(--control-boundary);
   border-radius: 7px;
@@ -1267,21 +1359,9 @@ button {
   font: 600 0.6875rem/1 var(--sans);
 }
 
-.workspaceCollectionSelect:focus-visible,
 .topBarCollectionSelect:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-.workspaceCollectionSelect {
-  max-width: 132px;
-  min-height: 30px;
-  padding: 0 24px 0 8px;
-  border-color: transparent;
-}
-
-:root:not([data-theme="dark"]) .workspace .workspaceCollectionSelect {
-  border-color: var(--control-boundary);
 }
 
 .topBarCollectionSelect {
@@ -3812,6 +3892,116 @@ button {
   gap: 14px;
 }
 
+.themeChoice {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.themeChoiceOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.themeChoiceOption:hover {
+  border-color: var(--hairline-strong);
+}
+
+.themeChoiceOption:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.themeChoiceOption[data-selected="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.themeChoicePreview {
+  width: 54px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+}
+
+.themeChoicePreview[data-theme-preview="light"] {
+  background: #fbfbf9;
+}
+
+.themeChoicePreview[data-theme-preview="dark"] {
+  background: #111318;
+}
+
+.themeChoicePreviewSidebar {
+  width: 16px;
+  flex: 0 0 auto;
+  border-right: 1px solid rgba(128, 128, 128, 0.28);
+}
+
+.themeChoicePreview[data-theme-preview="light"] .themeChoicePreviewSidebar {
+  background: #efebe2;
+}
+
+.themeChoicePreview[data-theme-preview="dark"] .themeChoicePreviewSidebar {
+  background: #15171c;
+}
+
+.themeChoicePreviewBody {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+}
+
+.themeChoicePreviewBody i {
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.themeChoicePreviewBody i:last-child {
+  width: 60%;
+  opacity: 0.55;
+}
+
+.themeChoicePreview[data-theme-preview="light"] .themeChoicePreviewBody {
+  color: #8c897f;
+}
+
+.themeChoicePreview[data-theme-preview="dark"] .themeChoicePreviewBody {
+  color: #969da8;
+}
+
+.themeChoiceText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.themeChoiceText strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.themeChoiceText small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .accountMetaList {
   width: 100%;
   margin: 0;
@@ -4612,10 +4802,6 @@ button {
     display: none;
   }
 
-  .workspaceCollectionSelect {
-    max-width: 108px;
-  }
-
   .workspaceDocumentActions {
     opacity: 1;
   }
@@ -4662,7 +4848,9 @@ button {
 }
 
 @media (max-width: 360px) {
+  /* The document view holds the only collection control, so it has to survive
+     the narrowest layout rather than be hidden. */
   .topBarCollectionSelect {
-    display: none;
+    max-width: 84px;
   }
 }

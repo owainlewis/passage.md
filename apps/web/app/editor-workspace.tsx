@@ -21,14 +21,12 @@ import { useEditorSearch } from "./use-editor-search";
 
 type EditorWorkspaceProps = {
   assignments: Record<string, string>;
-  assignmentDisabled: boolean;
   collectionAvailable: boolean;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
   saveState: SaveState;
   view: WorkspaceView;
-  onAssignCollection: (id: string, slug: string) => Promise<boolean>;
   onCreateCollection: (title: string, description: string) => Promise<string | null>;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenCollection: (slug: string) => void;
@@ -46,14 +44,12 @@ type EditorWorkspaceProps = {
 
 export function EditorWorkspace({
   assignments,
-  assignmentDisabled,
   collectionAvailable,
   collections,
   docs,
   deletedCollections,
   saveState,
   view,
-  onAssignCollection,
   onCreateCollection,
   onDeleteCollection,
   onOpenCollection,
@@ -107,10 +103,8 @@ export function EditorWorkspace({
     content = collection ? (
       <WorkspaceCollectionView
         assignments={assignments}
-        assignmentDisabled={assignmentDisabled}
         collection={collection}
         docs={docsInCollection(docs, collection.slug, assignments, deletedCollections)}
-        onAssignCollection={onAssignCollection}
         onDeleteCollection={onDeleteCollection}
         onOpenDocument={onOpenDocument}
         onOpenSearch={() => onOpenSearch(collection.slug)}
@@ -137,7 +131,6 @@ export function EditorWorkspace({
     content = (
       <WorkspaceList
         assignments={assignments}
-        assignmentDisabled={assignmentDisabled}
         collections={collections}
         docs={list}
         deletedCollections={deletedCollections}
@@ -148,7 +141,6 @@ export function EditorWorkspace({
             : "Your latest Markdown, ordered by its most recent saved update."
         }
         empty={view.type === "starred" ? "Star a document to keep it close." : "No recent documents yet."}
-        onAssignCollection={onAssignCollection}
         onOpenDocument={onOpenDocument}
         onToggleStar={onToggleStar}
         pendingDocIds={pendingDocIds}
@@ -297,12 +289,10 @@ function CollectionGrid({
 
 function WorkspaceCollectionView({
   assignments,
-  assignmentDisabled,
   collection,
   collections,
   docs,
   deletedCollections,
-  onAssignCollection,
   onDeleteCollection,
   onOpenDocument,
   onOpenSearch,
@@ -313,12 +303,10 @@ function WorkspaceCollectionView({
   collectionCountComplete
 }: {
   assignments: Record<string, string>;
-  assignmentDisabled: boolean;
   collection: WorkspaceCollection;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
-  onAssignCollection: (id: string, slug: string) => Promise<boolean>;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
@@ -360,14 +348,12 @@ function WorkspaceCollectionView({
         </div>
         <WorkspaceDocumentRows
           assignments={assignments}
-          assignmentDisabled={assignmentDisabled}
-          docs={docs}
+            docs={docs}
           deletedCollections={deletedCollections}
           empty="No documents here yet. Use + in the top bar to add the first one."
           showActions
           showCollectionLabel={false}
-          onAssignCollection={onAssignCollection}
-          onOpenDocument={onOpenDocument}
+            onOpenDocument={onOpenDocument}
           onToggleStar={onToggleStar}
           collections={collections}
           pendingDocIds={pendingDocIds}
@@ -395,27 +381,23 @@ function WorkspaceCollectionView({
 
 function WorkspaceList({
   assignments,
-  assignmentDisabled,
   collections,
   docs,
   deletedCollections,
   title,
   description,
   empty,
-  onAssignCollection,
   onOpenDocument,
   onToggleStar,
   pendingDocIds
 }: {
   assignments: Record<string, string>;
-  assignmentDisabled: boolean;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
   title: string;
   description: string;
   empty: string;
-  onAssignCollection: (id: string, slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onToggleStar: (id: string) => Promise<boolean>;
   pendingDocIds: Set<string>;
@@ -428,12 +410,10 @@ function WorkspaceList({
       </header>
       <WorkspaceDocumentRows
         assignments={assignments}
-        assignmentDisabled={assignmentDisabled}
         docs={docs}
         deletedCollections={deletedCollections}
         empty={empty}
         showActions
-        onAssignCollection={onAssignCollection}
         onOpenDocument={onOpenDocument}
         onToggleStar={onToggleStar}
         collections={collections}
@@ -464,27 +444,23 @@ function WorkspaceSectionHeading({
 
 function WorkspaceDocumentRows({
   assignments,
-  assignmentDisabled = false,
   collections = WORKSPACE_COLLECTIONS,
   docs,
   deletedCollections = [],
   empty = "No documents yet.",
   showActions = false,
   showCollectionLabel = true,
-  onAssignCollection,
   onOpenDocument,
   onToggleStar,
   pendingDocIds = new Set()
 }: {
   assignments: Record<string, string>;
-  assignmentDisabled?: boolean;
   collections?: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections?: string[];
   empty?: string;
   showActions?: boolean;
   showCollectionLabel?: boolean;
-  onAssignCollection?: (id: string, slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onToggleStar?: (id: string) => Promise<boolean>;
   pendingDocIds?: Set<string>;
@@ -504,17 +480,6 @@ function WorkspaceDocumentRows({
           </button>
           {showActions && (
             <div className="workspaceDocumentActions">
-              {onAssignCollection && (
-                <select
-                  className="workspaceCollectionSelect"
-                  aria-label={`Collection for ${editorDocTitle(doc)}`}
-                  value={collectionForDoc(doc, assignments, deletedCollections)}
-                  disabled={assignmentDisabled || pendingDocIds.has(doc.id)}
-                  onChange={(event) => void onAssignCollection(doc.id, event.target.value)}
-                >
-                  {collections.map((collection) => <option value={collection.slug} key={collection.slug}>{collection.title}</option>)}
-                </select>
-              )}
               {onToggleStar && (
                 <button
                   type="button"

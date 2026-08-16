@@ -19,7 +19,7 @@ import { useEditorDocuments } from "./use-editor-documents";
 import { useEditorCollections } from "./use-editor-collections";
 import { useEditorSharing } from "./use-editor-sharing";
 import { useEditorTemplates } from "./use-editor-templates";
-import { useEditorTheme } from "./use-editor-theme";
+import { useTheme } from "./theme";
 
 const EMPTY_ASSIGNMENTS: Record<string, string> = {};
 const NO_DELETED_COLLECTIONS: string[] = [];
@@ -46,7 +46,7 @@ export default function Editor() {
   const auth = useAuth();
   const userId = auth.user?.id;
   const entitlements = useEntitlements();
-  const { darkActive, theme, toggleDarkMode } = useEditorTheme();
+  const { darkActive } = useTheme();
   const templateState = useEditorTemplates(userId);
   const {
     active,
@@ -382,6 +382,7 @@ export default function Editor() {
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
       <EditorSidebar
+        accountEmail={auth.user?.email}
         assignments={EMPTY_ASSIGNMENTS}
         collections={collections}
         deletedCollections={NO_DELETED_COLLECTIONS}
@@ -390,11 +391,9 @@ export default function Editor() {
         onOpenSearch={() => openSearch()}
         onOpenTemplates={openTemplates}
         onOpenView={(view) => openWorkspaceView(view)}
-        onToggleDarkMode={toggleDarkMode}
         sidebarOpen={sidebarOpen}
         templateCount={templateState.templates.length}
         templatesActive={templatesOpen}
-        theme={theme}
         view={workspaceView}
       />
 
@@ -566,14 +565,12 @@ export default function Editor() {
         </section> : (
           <EditorWorkspace
             assignments={EMPTY_ASSIGNMENTS}
-            assignmentDisabled={!collectionState.available}
             collectionAvailable={collectionState.available}
             collections={collections}
             deletedCollections={NO_DELETED_COLLECTIONS}
             docs={docs}
             saveState={collectionState.loading ? "loading" : saveState}
             view={workspaceView}
-            onAssignCollection={collectionState.assignCollection}
             onCreateCollection={createCollection}
             onDeleteCollection={deleteCollection}
             onOpenCollection={openCollection}
