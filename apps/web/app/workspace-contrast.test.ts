@@ -88,7 +88,7 @@ describe("light workspace contrast", () => {
       ".tagFilterInput",
       ".docListMore",
       ".workspaceDocumentIcon",
-      ".workspaceCollectionSelect,\n.topBarCollectionSelect",
+      ".topBarCollectionSelect",
       ".workspaceSearchEmpty button,\n.workspaceSearchResults > .workspaceSearchMore",
       ".workspaceLoadMore button",
       ".statusPill",
@@ -137,13 +137,6 @@ describe("light workspace contrast", () => {
     expect(customProperties(declarationsFor(".workspace"))["--control-boundary"]).toBe("var(--hairline)");
     expect(dark["--control-boundary"]).toBeUndefined();
     expect(stylesheet).not.toMatch(/(?:^|\})\s*\.workspaceSearchInput input::placeholder\s*\{/);
-  });
-
-  it("strengthens row collection boundaries only in the light workspace", () => {
-    expect(declarationsFor(".workspaceCollectionSelect")).toContain("border-color: transparent");
-    expect(
-      declarationsFor(':root:not([data-theme="dark"]) .workspace .workspaceCollectionSelect')
-    ).toContain("border-color: var(--control-boundary)");
   });
 
   it("keeps hover, active, selected, disabled, and error states distinct", () => {

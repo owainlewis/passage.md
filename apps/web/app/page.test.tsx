@@ -240,6 +240,13 @@ async function renderWrite(ui: ReactNode = <Write />) {
   return view;
 }
 
+// Collections are assigned from the open document, so a list row has to be
+// opened first.
+async function openDocumentNamed(title: string) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${title}`) }));
+  await screen.findByRole("region", { name: "Markdown editor" });
+}
+
 async function createBlankDocument() {
   fireEvent.click(screen.getByRole("button", { name: "New document" }));
   fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
@@ -1498,21 +1505,29 @@ describe("Write (editor)", () => {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({ matches: query === "(max-width: 720px)" }))
     });
-    stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
+    // Restore in a finally, so a failure here cannot leak a mobile matchMedia
+    // into every test that follows.
+    try {
+      stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
 
-    await renderWrite();
-    const documentCollection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
-    fireEvent.change(documentCollection, { target: { value: "research" } });
-    await waitFor(() => expect(documentCollection).toHaveValue("research"));
+      await renderWrite();
+      const documentCollection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
+      fireEvent.change(documentCollection, { target: { value: "research" } });
+      await waitFor(() => expect(documentCollection).toHaveValue("research"));
 
-    openSidebarCollection("Research");
-    const rowCollection = await screen.findByRole("combobox", { name: "Collection for Mobile note" });
-    fireEvent.change(rowCollection, { target: { value: "documents" } });
-    await waitFor(() => expect(screen.getByLabelText("Research")).not.toHaveTextContent("Mobile note"));
-    openSidebarCollection("Documents");
-    expect(screen.getByLabelText("Documents")).toHaveTextContent("Mobile note");
+      openSidebarCollection("Research");
+      expect(screen.getByLabelText("Research")).toHaveTextContent("Mobile note");
 
-    Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+      await openDocumentNamed("Mobile note");
+      const movedBack = await screen.findByRole("combobox", { name: "Collection for Mobile note" });
+      fireEvent.change(movedBack, { target: { value: "documents" } });
+      await waitFor(() => expect(movedBack).toHaveValue("documents"));
+
+      openSidebarCollection("Documents");
+      expect(screen.getByLabelText("Documents")).toHaveTextContent("Mobile note");
+    } finally {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+    }
   });
 
   it("keeps the confirmed mobile collection when assignment fails", async () => {
@@ -1650,8 +1665,9 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("button", { name: "Client Work" })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Search workspace" }), { key: "Escape" });
     openSidebarCollection("Documents");
+    await openDocumentNamed("Private note");
     fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "client-work" } });
-    await waitFor(() => expect(screen.getByLabelText("Documents")).not.toHaveTextContent("Private note"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).toHaveValue("client-work"));
     openSidebarCollection("Client Work");
     expect(screen.getByLabelText("Client Work")).toHaveTextContent("Private note");
   });

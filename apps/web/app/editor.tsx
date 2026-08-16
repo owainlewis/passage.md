@@ -565,14 +565,12 @@ export default function Editor() {
         </section> : (
           <EditorWorkspace
             assignments={EMPTY_ASSIGNMENTS}
-            assignmentDisabled={!collectionState.available}
             collectionAvailable={collectionState.available}
             collections={collections}
             deletedCollections={NO_DELETED_COLLECTIONS}
             docs={docs}
             saveState={collectionState.loading ? "loading" : saveState}
             view={workspaceView}
-            onAssignCollection={collectionState.assignCollection}
             onCreateCollection={createCollection}
             onDeleteCollection={deleteCollection}
             onOpenCollection={openCollection}

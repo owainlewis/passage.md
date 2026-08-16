@@ -1351,7 +1351,6 @@ button {
   white-space: nowrap;
 }
 
-.workspaceCollectionSelect,
 .topBarCollectionSelect {
   border: 1px solid var(--control-boundary);
   border-radius: 7px;
@@ -1360,21 +1359,9 @@ button {
   font: 600 0.6875rem/1 var(--sans);
 }
 
-.workspaceCollectionSelect:focus-visible,
 .topBarCollectionSelect:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-.workspaceCollectionSelect {
-  max-width: 132px;
-  min-height: 30px;
-  padding: 0 24px 0 8px;
-  border-color: transparent;
-}
-
-:root:not([data-theme="dark"]) .workspace .workspaceCollectionSelect {
-  border-color: var(--control-boundary);
 }
 
 .topBarCollectionSelect {
@@ -4815,10 +4802,6 @@ button {
     display: none;
   }
 
-  .workspaceCollectionSelect {
-    max-width: 108px;
-  }
-
   .workspaceDocumentActions {
     opacity: 1;
   }
@@ -4865,7 +4848,9 @@ button {
 }
 
 @media (max-width: 360px) {
+  /* The document view holds the only collection control, so it has to survive
+     the narrowest layout rather than be hidden. */
   .topBarCollectionSelect {
-    display: none;
+    max-width: 84px;
   }
 }

@@ -19,14 +19,40 @@ function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[]) {
   return (
     <EditorWorkspace
       assignments={{}}
-      assignmentDisabled={false}
       collectionAvailable
       collections={collections}
       docs={docs}
       deletedCollections={[]}
       saveState="saved"
       view={{ type: "home" }}
-      onAssignCollection={vi.fn()}
+      onCreateCollection={vi.fn()}
+      onDeleteCollection={vi.fn()}
+      onOpenCollection={vi.fn()}
+      onOpenDocument={vi.fn()}
+      onOpenSearch={vi.fn()}
+      onOpenView={vi.fn()}
+      hasMoreDocs={false}
+      loadingMore={false}
+      onLoadMoreDocs={vi.fn()}
+      onToggleStar={vi.fn()}
+      onUpdateCollection={vi.fn()}
+      pendingCollectionSlugs={new Set()}
+      pendingDocIds={new Set()}
+    />
+  );
+}
+
+// Recent is the list view that shows per-row actions.
+function listWorkspace(docs: Doc[]) {
+  return (
+    <EditorWorkspace
+      assignments={{}}
+      collectionAvailable
+      collections={WORKSPACE_COLLECTIONS}
+      docs={docs}
+      deletedCollections={[]}
+      saveState="saved"
+      view={{ type: "recent" }}
       onCreateCollection={vi.fn()}
       onDeleteCollection={vi.fn()}
       onOpenCollection={vi.fn()}
@@ -66,6 +92,21 @@ it("keeps every home section on one left edge with the sidebar open or closed", 
   expect(document.querySelector(".workspace")).not.toHaveClass("withSidebar");
 });
 
+it("keeps list rows to opening and starring, with no per-row collection picker", () => {
+  const docs = [{
+    id: "doc-1",
+    body: "# Draft",
+    bodyLoaded: true,
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  }] as Doc[];
+  render(listWorkspace(docs));
+
+  expect(screen.getByRole("button", { name: /Star Draft/ })).toBeInTheDocument();
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Collection for Draft" })).not.toBeInTheDocument();
+  expect(document.querySelector(".workspaceDocumentActions select")).toBeNull();
+});
+
 it("keeps the virtual Documents view and empty sections readable", () => {
   render(homeWorkspace(WORKSPACE_COLLECTIONS, []));
   const home = screen.getByLabelText("Workspace home");
@@ -101,8 +142,13 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.workspace\.withSidebar \.workspaceMobileNav\s*\{[^}]*display: none;/
   );
+  // The open document holds the only collection control, so it must survive the
+  // narrowest layout rather than be hidden.
   expect(stylesheet).toMatch(
-    /@media \(max-width: 360px\)\s*\{[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
+    /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*max-width: 84px;/
+  );
+  expect(stylesheet).not.toMatch(
+    /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
   );
   expect(declarationsFor(".statusDock")).toContain("border: 1px solid var(--hairline);");
 });
