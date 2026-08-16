@@ -830,8 +830,27 @@ button {
   color: var(--ink);
 }
 
+/* The sidebar clips its overflow, so the footer must not shrink. Vertical
+   pressure belongs on the scrollable collections list, which keeps Settings
+   and the theme toggle reachable on short viewports. */
 .workspaceSidebarFoot {
+  flex: 0 0 auto;
   gap: 2px;
+}
+
+/* Below roughly 404px the fixed rows alone are taller than the sidebar, so
+   shrinking the collections list is no longer enough. Scroll the sidebar as a
+   whole instead of clipping the footer. A landscape phone still wide enough
+   for the desktop sidebar lands here. */
+@media (max-height: 480px) {
+  .workspaceSidebar {
+    overflow-y: auto;
+  }
+
+  .workspaceSidebarCollections {
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
 }
 
 .workspaceSidebarAccount {

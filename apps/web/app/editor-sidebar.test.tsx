@@ -124,6 +124,29 @@ describe("sidebar account footer", () => {
     expect(declarationsFor(".workspaceSidebarAccountText")).toContain("min-width: 0;");
   });
 
+  it("keeps the footer at full height on short viewports, so its controls stay reachable", () => {
+    // .sidebar clips overflow, so a shrinkable footer would hide Settings and
+    // the theme toggle. The collections list is the only region that may give.
+    expect(declarationsFor(".workspaceSidebarFoot")).toContain("flex: 0 0 auto;");
+    expect(declarationsFor(".sidebar")).toContain("overflow: hidden;");
+    const collections = declarationsFor(".workspaceSidebarCollections");
+    expect(collections).toContain("flex: 1 1 auto;");
+    expect(collections).toContain("min-height: 0;");
+    expect(collections).toContain("overflow-y: auto;");
+  });
+
+  it("scrolls the whole sidebar once the fixed rows no longer fit", () => {
+    // Under about 404px the fixed rows outgrow the sidebar even with the
+    // collections list at zero height, so clipping the footer is unavoidable
+    // unless the sidebar itself scrolls. A landscape phone reaches this.
+    expect(stylesheet).toMatch(
+      /@media \(max-height: 480px\)\s*\{[\s\S]*?\.workspaceSidebar\s*\{[^}]*overflow-y: auto;/
+    );
+    expect(stylesheet).toMatch(
+      /@media \(max-height: 480px\)\s*\{[\s\S]*?\.workspaceSidebarCollections\s*\{[^}]*overflow-y: visible;/
+    );
+  });
+
   it("gives the Settings link a visible hover and focus state", () => {
     expect(declarationsFor(".workspaceSidebarAccount:hover,\n.workspaceSidebarAccount:focus-visible"))
       .toContain("background: var(--hover);");
