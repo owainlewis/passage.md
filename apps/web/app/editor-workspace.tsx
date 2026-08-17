@@ -322,28 +322,30 @@ function WorkspaceCollectionView({
   return (
     <div className="workspaceHub" aria-label={collection.title}>
       <header className="workspaceCollectionHeader">
-        <h1 data-collection-dialog-focus-destination tabIndex={-1}>{collection.title}</h1>
-        <p>{collection.description}</p>
+        <div className="workspaceCollectionHeaderText">
+          <h1 data-collection-dialog-focus-destination tabIndex={-1}>{collection.title}</h1>
+          <p>{collection.description}</p>
+        </div>
+        <div className="workspaceCollectionUtilityActions">
+          <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>
+          {collection.slug !== "documents" && <button type="button" disabled={pendingCollectionSlugs.has(collection.slug)} onClick={() => setEditing(true)}>Edit</button>}
+          {collection.slug !== "documents" && (
+            <button
+              type="button"
+              className="workspaceCollectionDelete"
+              disabled={pendingCollectionSlugs.has(collection.slug)}
+              onClick={() => setDeleting(true)}
+            >
+              {pendingCollectionSlugs.has(collection.slug) ? "Deleting…" : "Delete"}
+            </button>
+          )}
+        </div>
       </header>
 
       <section className="workspaceSection workspaceCollectionSection">
         <div className="workspaceCollectionToolbar">
           <div className="workspaceCollectionToolbarTitle">
             <span>{docs.length} {docs.length === 1 ? "file" : "files"}</span>
-          </div>
-          <div className="workspaceCollectionUtilityActions">
-            <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>
-            {collection.slug !== "documents" && <button type="button" disabled={pendingCollectionSlugs.has(collection.slug)} onClick={() => setEditing(true)}>Edit</button>}
-            {collection.slug !== "documents" && (
-              <button
-                type="button"
-                className="workspaceCollectionDelete"
-                disabled={pendingCollectionSlugs.has(collection.slug)}
-                onClick={() => setDeleting(true)}
-              >
-                {pendingCollectionSlugs.has(collection.slug) ? "Deleting…" : "Delete"}
-              </button>
-            )}
           </div>
         </div>
         <WorkspaceDocumentRows

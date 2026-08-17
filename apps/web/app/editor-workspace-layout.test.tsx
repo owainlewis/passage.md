@@ -85,11 +85,34 @@ it("keeps every home section on one left edge with the sidebar open or closed", 
     "workspaceSection",
     "workspaceSection"
   ]);
-  expect(declarationsFor(".workspaceHome > *")).toContain("margin-left: 0;");
+  // Every child of the hub sits on one column, left-aligned. Centring a fixed
+  // column inside a main area that changes width is what made the page shift
+  // sideways when the sidebar was toggled.
+  const column = declarationsFor(".workspaceHub > *");
+  expect(column).toContain("max-width: 1080px;");
+  expect(column).toContain("margin-left: 0;");
+  expect(column).not.toContain("margin-left: auto");
 
   view.rerender(workspaceShell(false, content));
   expect(screen.getByLabelText("Workspace home")).toHaveClass("workspaceHome");
   expect(document.querySelector(".workspace")).not.toHaveClass("withSidebar");
+});
+
+it("puts every page header on the same column as the content it introduces", () => {
+  // These three headers used to cap at 760px and left-align while their
+  // sections centred at 1080px, so each title sat on a different grid to its
+  // own list.
+  const headers = declarationsFor(".workspaceHero,\n.workspacePageHeader,\n.workspaceCollectionHeader");
+  expect(headers).not.toContain("max-width: 760px");
+  expect(headers).not.toContain("margin-left: 0");
+
+  // Only the collection header carries actions, so only it is a row. A flex
+  // hero would lay the title, description and search box out side by side.
+  // Matched off the stylesheet directly: declarationsFor would find the
+  // grouped rule above, where this selector is the last of three.
+  expect(stylesheet).toMatch(/\n\.workspaceCollectionHeader \{[^}]*display: flex;/);
+  expect(declarationsFor(".workspaceHero")).not.toContain("display: flex");
+  expect(declarationsFor(".workspacePageHeader")).not.toContain("display: flex");
 });
 
 it("keeps list rows to opening and starring, with no per-row collection picker", () => {
