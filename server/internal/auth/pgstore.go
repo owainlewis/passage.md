@@ -129,8 +129,8 @@ func (s *PGStore) RevokeAPIToken(ctx context.Context, userID string, id string) 
 	return nil
 }
 
-func (s *PGStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error) {
-	var user User
+func (s *PGStore) FindActorByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (Actor, error) {
+	var actor Actor
 	err := s.db.QueryRow(ctx, `
 		UPDATE api_tokens
 		SET last_used_at = $2,
@@ -139,27 +139,27 @@ func (s *PGStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, 
 		WHERE api_tokens.user_id = users.id
 		  AND api_tokens.token_hash = $1
 		  AND api_tokens.revoked_at IS NULL
-		RETURNING users.id::text, users.email
-	`, tokenHash, now).Scan(&user.ID, &user.Email)
+		RETURNING users.id::text, users.email, api_tokens.id::text, api_tokens.name
+	`, tokenHash, now).Scan(&actor.User.ID, &actor.User.Email, &actor.TokenID, &actor.TokenName)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return User{}, ErrUnauthorized
+		return Actor{}, ErrUnauthorized
 	}
-	return user, err
+	return actor, err
 }
 
-func (s *PGStore) FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (User, error) {
-	var user User
+func (s *PGStore) FindActorByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (Actor, error) {
+	var actor Actor
 	err := s.db.QueryRow(ctx, `
-		SELECT users.id::text, users.email
+		SELECT users.id::text, users.email, api_tokens.id::text, api_tokens.name
 		FROM api_tokens
 		JOIN users ON users.id = api_tokens.user_id
 		WHERE api_tokens.token_hash = $1
 		  AND api_tokens.revoked_at IS NULL
-	`, tokenHash).Scan(&user.ID, &user.Email)
+	`, tokenHash).Scan(&actor.User.ID, &actor.User.Email, &actor.TokenID, &actor.TokenName)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return User{}, ErrUnauthorized
+		return Actor{}, ErrUnauthorized
 	}
-	return user, err
+	return actor, err
 }
 
 func (s *PGStore) ConsumePasswordResetAttempt(ctx context.Context, ipHash string, emailHash string, now time.Time, window time.Duration, limit int) (time.Duration, error) {

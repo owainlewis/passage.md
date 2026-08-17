@@ -88,7 +88,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 			WritesDisabled:      options.WritesDisabled,
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
-		app.docs = documents.NewHandler(documents.NewStore(db))
+		app.docs = documents.NewHandler(documents.NewStore(db), nil)
 		app.collections = collections.NewHandler(collections.NewStore(db))
 		app.templates = templates.NewHandler(templates.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)

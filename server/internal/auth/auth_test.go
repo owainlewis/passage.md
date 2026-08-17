@@ -758,20 +758,20 @@ func (s *memoryStore) RevokeAPIToken(ctx context.Context, userID string, id stri
 	return ErrUnauthorized
 }
 
-func (s *memoryStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error) {
+func (s *memoryStore) FindActorByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (Actor, error) {
 	s.trackedTokenReads++
 	record, ok := s.apiTokens[tokenHash]
 	if !ok || record.revoked {
-		return User{}, ErrUnauthorized
+		return Actor{}, ErrUnauthorized
 	}
-	return record.user, nil
+	return Actor{User: record.user, TokenID: record.token.ID, TokenName: record.token.Name}, nil
 }
 
-func (s *memoryStore) FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (User, error) {
+func (s *memoryStore) FindActorByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (Actor, error) {
 	s.readOnlyTokenReads++
 	record, ok := s.apiTokens[tokenHash]
 	if !ok || record.revoked {
-		return User{}, ErrUnauthorized
+		return Actor{}, ErrUnauthorized
 	}
-	return record.user, nil
+	return Actor{User: record.user, TokenID: record.token.ID, TokenName: record.token.Name}, nil
 }

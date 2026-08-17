@@ -76,7 +76,7 @@ func TestRemoveSeededCollectionsCleansExistingAccountWithoutMutatingDocuments(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "025_remove_seeded_collections,026_document_content_version" {
+	if strings.Join(applied, ",") != "025_remove_seeded_collections,026_document_content_version,027_document_contributors" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	assertNoCollections(t, db, ownerID)
@@ -181,7 +181,7 @@ func TestRemoveSeededCollectionsUsesNarrowOriginFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if applied, err := Apply(ctx, db); err != nil || strings.Join(applied, ",") != "025_remove_seeded_collections,026_document_content_version" {
+	if applied, err := Apply(ctx, db); err != nil || strings.Join(applied, ",") != "025_remove_seeded_collections,026_document_content_version,027_document_contributors" {
 		t.Fatalf("apply cleanup = %q, %v", applied, err)
 	}
 
@@ -264,7 +264,7 @@ func migrationDocumentSnapshots(t *testing.T, db *database.Pool, ownerID string)
 		-- content_version is dropped alongside collection_id because 026 adds it
 		-- to every row with a default. This snapshot is about 025 leaving
 		-- document content alone, not about the schema never growing.
-		SELECT id::text, (to_jsonb(documents) - 'collection_id' - 'content_version')::text,
+		SELECT id::text, (to_jsonb(documents) - 'collection_id' - 'content_version' - 'last_editor_key' - 'last_editor_name' - 'last_edited_at')::text,
 		       md5(body), collection_id::text
 		FROM documents
 		WHERE owner_user_id = $1

@@ -51,7 +51,7 @@ func TestValidateSameOriginAllowsSameOriginRequests(t *testing.T) {
 
 func TestHandlerUsesAuthenticatedOwnerForCreateAndList(t *testing.T) {
 	store := &fakeStore{}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1", Email: "u@example.com"}
 
 	create := httptest.NewRecorder()
@@ -85,7 +85,7 @@ func TestHandlerListsBoundedMetadataPagesWithoutBodies(t *testing.T) {
 		{ID: "11111111-1111-1111-1111-111111111112", Title: "Two", Excerpt: "second", UpdatedAt: now.Add(-time.Minute)},
 		{ID: "11111111-1111-1111-1111-111111111111", Title: "One", Excerpt: "first", UpdatedAt: now.Add(-2 * time.Minute)},
 	}}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs?limit=2", nil)
 
@@ -117,7 +117,7 @@ func TestHandlerListsBoundedMetadataPagesWithoutBodies(t *testing.T) {
 }
 
 func TestHandlerRejectsInvalidDocumentPagination(t *testing.T) {
-	handler := NewHandler(&fakeStore{})
+	handler := NewHandler(&fakeStore{}, nil)
 	for _, target := range []string{
 		"http://passage.test/api/v1/docs?limit=0",
 		"http://passage.test/api/v1/docs?limit=101",
@@ -140,7 +140,7 @@ func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
 		{ID: "11111111-1111-1111-1111-111111111112", Title: "Two", MatchExcerpt: "second match", Rank: 0.8, UpdatedAt: now.Add(-time.Minute)},
 		{ID: "11111111-1111-1111-1111-111111111111", Title: "One", MatchExcerpt: "first match", Rank: 0.7, UpdatedAt: now.Add(-2 * time.Minute)},
 	}}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=%20agent%20%20work%20&collectionId="+collectionID+"&limit=2", nil)
 
@@ -212,7 +212,7 @@ func TestHandlerRejectsInvalidSearchInputsWithoutCallingStore(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			store := &fakeStore{}
-			handler := NewHandler(store)
+			handler := NewHandler(store, nil)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, test.target, nil)
 			handler.Search(rec, req, auth.User{ID: "user-1"})
@@ -237,7 +237,7 @@ func TestHandlerReportsParsedQueryAndCollectionErrors(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := &fakeStore{searchErr: test.err}
-			handler := NewHandler(store)
+			handler := NewHandler(store, nil)
 			rec := httptest.NewRecorder()
 			handler.Search(rec, httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=%21%21%21", nil), auth.User{ID: "user-1"})
 			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), test.want) {
@@ -259,7 +259,7 @@ func TestNormalizeSearchQueryUsesUnicodeCharacterLimit(t *testing.T) {
 
 func TestHandlerReportsSearchFailureWithoutDroppingPrivateCachePolicy(t *testing.T) {
 	store := &fakeStore{searchErr: errors.New("database unavailable")}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=agent", nil)
 
@@ -275,7 +275,7 @@ func TestHandlerReportsSearchFailureWithoutDroppingPrivateCachePolicy(t *testing
 
 func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 	store := &fakeStore{}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1", Email: "u@example.com"}
 	body := strings.Repeat("x", MaxDocumentBodyBytes+1)
 
@@ -307,7 +307,7 @@ func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 
 func TestHandlerKeepsBodyOnlyUpdatesCompatibleAndSupportsMetadataOnlyUpdates(t *testing.T) {
 	store := &fakeStore{}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1"}
 	id := "11111111-1111-1111-1111-111111111111"
 
@@ -345,7 +345,7 @@ func TestHandlerKeepsBodyOnlyUpdatesCompatibleAndSupportsMetadataOnlyUpdates(t *
 
 func TestHandlerRejectsEmptyAndInvalidCollectionUpdates(t *testing.T) {
 	store := &fakeStore{}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1"}
 	id := "11111111-1111-1111-1111-111111111111"
 	for _, input := range []string{`{}`, `{"collectionId":"another-owner"}`} {
@@ -362,7 +362,7 @@ func TestHandlerRejectsEmptyAndInvalidCollectionUpdates(t *testing.T) {
 
 func TestHandlerReportsSavedDocumentLimit(t *testing.T) {
 	store := &fakeStore{createErr: ErrLimitReached}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"# One"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -379,7 +379,7 @@ func TestHandlerReportsSavedDocumentLimit(t *testing.T) {
 
 func TestHandlerRejectsOversizedDocumentRequests(t *testing.T) {
 	store := &fakeStore{}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(strings.Repeat("x", maxDocumentRequestBytes+1)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -396,7 +396,7 @@ func TestHandlerRejectsOversizedDocumentRequests(t *testing.T) {
 
 func TestHandlerReturnsNotFoundForOtherUsersDocument(t *testing.T) {
 	store := &fakeStore{getErr: ErrNotFound}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/11111111-1111-1111-1111-111111111111", nil)
 	req.SetPathValue("id", "11111111-1111-1111-1111-111111111111")
 
@@ -413,7 +413,7 @@ func TestHandlerReturnsNotFoundForOtherUsersDocument(t *testing.T) {
 
 func TestHandlerReturnsNotFoundForMalformedDocumentID(t *testing.T) {
 	store := &fakeStore{}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/not-a-uuid", nil)
 	req.SetPathValue("id", "not-a-uuid")
 
@@ -431,7 +431,7 @@ func TestHandlerReturnsNotFoundForMalformedDocumentID(t *testing.T) {
 func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 	publicID := "abcdefghijklmnopqrstuv"
 	store := &fakeStore{publicID: publicID}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1"}
 
 	share := httptest.NewRecorder()
@@ -460,7 +460,7 @@ func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 
 func TestHandlerRequiresUnshareBeforeArchive(t *testing.T) {
 	store := &fakeStore{archiveErr: ErrShared}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1"}
 
 	rec := httptest.NewRecorder()
@@ -489,7 +489,7 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 				"\n\nBody.",
 		},
 	}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 
 	html := httptest.NewRecorder()
 	htmlReq := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+publicID, nil)
@@ -577,7 +577,7 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 				"```\n\n```go\nfmt.Println(\"still code\")\n```",
 		},
 	}
-	handler := NewHandler(store)
+	handler := NewHandler(store, nil)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://passage.test/d/"+publicID, nil)
@@ -612,6 +612,8 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 }
 
 type fakeStore struct {
+	actor        Actor
+	contributors []Contributor
 	ownerID      string
 	body         string
 	update       DocumentUpdate
@@ -654,7 +656,12 @@ func (s *fakeStore) ListPage(ctx context.Context, ownerID string, limit int, cur
 	return s.page, nil
 }
 
-func (s *fakeStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {
+func (s *fakeStore) Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error) {
+	return s.contributors, nil
+}
+
+func (s *fakeStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error) {
+	s.actor = actor
 	s.ownerID = ownerID
 	s.body = body
 	s.maxSavedDocs = maxSavedDocs

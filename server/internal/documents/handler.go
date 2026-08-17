@@ -19,7 +19,8 @@ import (
 )
 
 type Handler struct {
-	store documentStore
+	store        documentStore
+	resolveActor func(*http.Request) Actor
 }
 
 const (
@@ -30,15 +31,43 @@ const (
 	maxSearchQueryLength    = 200
 )
 
-func NewHandler(store documentStore) *Handler {
-	return &Handler{store: store}
+// NewHandler wires the document routes. resolveActor is retained for callers
+// that want to override how a request is attributed; by default the actor is
+// read from the request context, where authentication put it.
+func NewHandler(store documentStore, resolveActor func(*http.Request) Actor) *Handler {
+	return &Handler{store: store, resolveActor: resolveActor}
+}
+
+// actorFor answers who is making this request. Authentication already resolved
+// it, so this never touches the database and cannot disagree with the identity
+// the request was authorised under.
+func (h *Handler) actorFor(r *http.Request) Actor {
+	if h.resolveActor != nil {
+		return h.resolveActor(r)
+	}
+	return ActorFromContext(r.Context())
+}
+
+type actorContextKey struct{}
+
+// WithActor carries the authenticated actor on a request. A request without
+// one is the owner working in a browser.
+func WithActor(ctx context.Context, actor Actor) context.Context {
+	return context.WithValue(ctx, actorContextKey{}, actor)
+}
+
+// ActorFromContext reads the actor authentication established.
+func ActorFromContext(ctx context.Context) Actor {
+	actor, _ := ctx.Value(actorContextKey{}).(Actor)
+	return actor
 }
 
 type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
 	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
 	Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error)
-	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error)
+	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error)
+	Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error)
 	Archive(ctx context.Context, ownerID string, id string) error
@@ -278,7 +307,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User,
 	if !validateDocumentBody(w, input.Body) {
 		return
 	}
-	doc, err := h.store.Create(r.Context(), user.ID, input.Body, maxSavedDocs)
+	doc, err := h.store.Create(r.Context(), user.ID, input.Body, maxSavedDocs, h.actorFor(r))
 	if errors.Is(err, ErrLimitReached) {
 		writeError(w, http.StatusPaymentRequired, "saved document limit reached")
 		return
@@ -305,6 +334,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, user auth.User) {
 		httpx.WriteInternalError(w, r, "get document", err, "document could not be loaded")
 		return
 	}
+	contributors, err := h.store.Contributors(r.Context(), user.ID, id)
+	if err != nil {
+		httpx.WriteInternalError(w, r, "load document contributors", err, "document could not be loaded")
+		return
+	}
+	doc.Contributors = contributors
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -338,6 +373,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		CollectionID:    input.CollectionID.Value,
 		Starred:         input.Starred,
 		IfVersion:       input.Version,
+		Actor:           h.actorFor(r),
 	})
 	if errors.Is(err, ErrVersionConflict) {
 		h.writeVersionConflict(w, r, user, id)

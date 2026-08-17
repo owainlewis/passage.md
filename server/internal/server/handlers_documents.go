@@ -167,11 +167,18 @@ func (a *App) requireUserForDocs(next func(http.ResponseWriter, *http.Request, a
 			next(w, r, user)
 			return
 		}
-		if user, ok := a.auth.UserFromBearerRequest(r); ok {
-			if !a.requirePro(w, r, user) {
+		// Resolve the bearer token once and carry the actor on the request.
+		// Looking it up a second time to attribute the write would charge
+		// another round trip and, on a transient failure, quietly credit an
+		// agent's change to the account owner.
+		if actor, ok := a.auth.ActorFromBearerRequest(r); ok {
+			if !a.requirePro(w, r, actor.User) {
 				return
 			}
-			next(w, r, user)
+			next(w, r.WithContext(documents.WithActor(r.Context(), documents.Actor{
+				TokenID:   actor.TokenID,
+				TokenName: actor.TokenName,
+			})), actor.User)
 			return
 		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
