@@ -231,6 +231,7 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 		); err != nil {
 			return nil, err
 		}
+		doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 		doc.Title = titleOf(doc.Excerpt)
 		doc.Tags = tagsOf(doc.Excerpt)
 		docs = append(docs, doc)
@@ -602,6 +603,16 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 			    )
 			  )
 			RETURNING d.*
+		), contribution AS (
+			-- Same statement as the write. Recording this afterwards meant a
+			-- failure here reported a failed save for content that was
+			-- already committed, which the version guard then turned into a
+			-- conflict on the retry.
+			INSERT INTO document_contributors (document_id, actor_key, actor_name)
+			SELECT id, $11, $12 FROM updated WHERE $3
+			ON CONFLICT (document_id, actor_key) DO UPDATE
+			SET last_contributed_at = now(),
+			    actor_name = COALESCE(EXCLUDED.actor_name, document_contributors.actor_name)
 		)
 		SELECT d.id::text, d.public_id, d.title, d.body,
 		       d.collection_id::text, c.slug, d.starred, d.content_version,
@@ -659,9 +670,6 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 	// metadata, and attributing them would make an agent that starred a
 	// document look like it had written one.
 	if bodySet {
-		if contribErr := recordContribution(ctx, s.db, doc.ID, update.Actor); contribErr != nil {
-			return Document{}, contribErr
-		}
 		doc.LastEditor = &LastEditor{
 			ActorKey: update.Actor.key(),
 			Name:     update.Actor.name(),
@@ -832,7 +840,6 @@ func scanDocument(row scanner) (Document, error) {
 		&doc.UpdatedAt,
 		&doc.ArchivedAt,
 	)
-	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	return doc, err
 }

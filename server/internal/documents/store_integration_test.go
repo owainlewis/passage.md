@@ -572,6 +572,25 @@ func TestStoreAttributesContentWritesToTheActingIdentity(t *testing.T) {
 		t.Fatalf("a metadata write added a contributor: %#v", contributors)
 	}
 
+	// The paginated list carries attribution too. It scanned the columns and
+	// dropped them once, which made every list response look unattributed.
+	page, err := store.ListPage(ctx, ownerID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed *DocumentMetadata
+	for i := range page {
+		if page[i].ID == created.ID {
+			listed = &page[i]
+		}
+	}
+	if listed == nil {
+		t.Fatal("document missing from the list page")
+	}
+	if listed.LastEditor == nil || listed.LastEditor.ActorKey != agent.TokenID {
+		t.Fatalf("list page last editor = %#v, want the agent", listed.LastEditor)
+	}
+
 	// Attribution is owner-scoped: another account cannot read who writes here.
 	otherID := insertDocumentTestUser(t, db, fmt.Sprintf("attribution-other-%d@example.com", time.Now().UnixNano()))
 	foreign, err := store.Contributors(ctx, otherID, created.ID)

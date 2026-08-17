@@ -88,13 +88,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 			WritesDisabled:      options.WritesDisabled,
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
-		app.docs = documents.NewHandler(documents.NewStore(db), func(r *http.Request) documents.Actor {
-			actor, ok := app.auth.ActorFromRequest(r)
-			if !ok || !actor.IsAPIToken() {
-				return documents.Actor{}
-			}
-			return documents.Actor{TokenID: actor.TokenID, TokenName: actor.TokenName}
-		})
+		app.docs = documents.NewHandler(documents.NewStore(db), nil)
 		app.collections = collections.NewHandler(collections.NewStore(db))
 		app.templates = templates.NewHandler(templates.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)

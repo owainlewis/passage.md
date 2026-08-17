@@ -1734,6 +1734,34 @@ func TestDocumentAttributionWithPostgres(t *testing.T) {
 		t.Fatalf("contributors = %#v, want the owner and the token", detail.Contributors)
 	}
 
+	// The list response carries the last editor, so the sidebar can show who
+	// touched a document without fetching each one.
+	var listed struct {
+		Documents []struct {
+			ID         string `json:"id"`
+			LastEditor *struct {
+				IsOwner bool    `json:"isOwner"`
+				Name    *string `json:"name"`
+			} `json:"lastEditor"`
+		} `json:"documents"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs?limit=50", "", cookies, "")), &listed); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, doc := range listed.Documents {
+		if doc.ID != created.ID {
+			continue
+		}
+		found = true
+		if doc.LastEditor == nil || doc.LastEditor.Name == nil || *doc.LastEditor.Name != "Nightly runner" {
+			t.Fatalf("list attribution = %#v, want the token", doc.LastEditor)
+		}
+	}
+	if !found {
+		t.Fatal("document missing from the list response")
+	}
+
 	// Anything published must not say who has been writing.
 	doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs/"+created.ID+"/share", "", cookies, "")
 	for _, path := range []string{"/d/" + created.PublicID, "/d/" + created.PublicID + ".md"} {

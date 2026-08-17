@@ -31,19 +31,35 @@ const (
 	maxSearchQueryLength    = 200
 )
 
-// NewHandler wires the document routes. resolveActor answers who is making a
-// request, so a content write can be attributed to a named API token rather
-// than only to the owning account. A nil resolver attributes everything to the
-// owner, which is what tests and session-only deployments want.
+// NewHandler wires the document routes. resolveActor is retained for callers
+// that want to override how a request is attributed; by default the actor is
+// read from the request context, where authentication put it.
 func NewHandler(store documentStore, resolveActor func(*http.Request) Actor) *Handler {
 	return &Handler{store: store, resolveActor: resolveActor}
 }
 
+// actorFor answers who is making this request. Authentication already resolved
+// it, so this never touches the database and cannot disagree with the identity
+// the request was authorised under.
 func (h *Handler) actorFor(r *http.Request) Actor {
-	if h.resolveActor == nil {
-		return Actor{}
+	if h.resolveActor != nil {
+		return h.resolveActor(r)
 	}
-	return h.resolveActor(r)
+	return ActorFromContext(r.Context())
+}
+
+type actorContextKey struct{}
+
+// WithActor carries the authenticated actor on a request. A request without
+// one is the owner working in a browser.
+func WithActor(ctx context.Context, actor Actor) context.Context {
+	return context.WithValue(ctx, actorContextKey{}, actor)
+}
+
+// ActorFromContext reads the actor authentication established.
+func ActorFromContext(ctx context.Context) Actor {
+	actor, _ := ctx.Value(actorContextKey{}).(Actor)
+	return actor
 }
 
 type documentStore interface {
