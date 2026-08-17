@@ -998,7 +998,7 @@ button {
 
 .workspaceHero > p:last-of-type,
 .workspacePageHeader > p:last-child,
-.workspaceCollectionHeader > p {
+.workspaceCollectionHeaderText > p {
   max-width: 650px;
   margin: 10px 0 0;
   color: var(--muted);
@@ -4924,8 +4924,21 @@ button {
 
   .workspaceHero > p:last-of-type,
   .workspacePageHeader > p:last-child,
-  .workspaceCollectionHeader > p {
+  .workspaceCollectionHeaderText > p {
     font-size: 0.98rem;
+  }
+
+  /* The header is a title/actions row on desktop. On a phone there is no room
+     for two columns, so it stacks and the actions sit under the title rather
+     than squeezing it into a third of the width. */
+  .workspaceCollectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .workspaceCollectionHeaderText {
+    max-width: none;
   }
 
   .workspaceHeroActions {
@@ -4970,7 +4983,6 @@ button {
   }
 
   .workspaceCollectionUtilityActions {
-    width: 100%;
     flex-wrap: wrap;
   }
 
@@ -4992,7 +5004,7 @@ button {
 
   .topBarCollectionSelect {
     min-width: 0;
-    max-width: 108px;
+    max-width: 136px;
     padding-right: 18px;
   }
 
@@ -5000,8 +5012,11 @@ button {
 
 @media (max-width: 360px) {
   /* The document view holds the only collection control, so it has to survive
-     the narrowest layout rather than be hidden. */
+     the narrowest layout rather than be hidden. Smaller type keeps a real
+     collection name readable instead of clipping it mid-word. */
   .topBarCollectionSelect {
-    max-width: 84px;
+    max-width: 104px;
+    padding-right: 16px;
+    font-size: 0.625rem;
   }
 }

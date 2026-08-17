@@ -155,6 +155,24 @@ it("keeps collection modal surfaces fixed to the full viewport", () => {
     .toContain("background: #a04a3e;");
 });
 
+it("stacks the collection header on a phone instead of squeezing the title", () => {
+  // The header is a title/actions row on desktop. Left as a row on a phone it
+  // crushed the title into a third of the width with the actions stranded in
+  // the space beside it.
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeader\s*\{[^}]*flex-direction: column;/
+  );
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeaderText\s*\{[^}]*max-width: none;/
+  );
+  // The mobile type rule has to follow the element it styles: the description
+  // moved inside the text wrapper and this selector silently stopped matching.
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeaderText > p\s*\{[^}]*font-size:/
+  );
+  expect(stylesheet).not.toMatch(/\.workspaceCollectionHeader > p\s*\{/);
+});
+
 it("keeps narrow editor chrome compact and unobstructed", () => {
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.statusDock\s*\{[^}]*grid-template-columns: auto minmax\(0, 1fr\);/
@@ -168,7 +186,7 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   // The open document holds the only collection control, so it must survive the
   // narrowest layout rather than be hidden.
   expect(stylesheet).toMatch(
-    /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*max-width: 84px;/
+    /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*max-width: 104px;/
   );
   expect(stylesheet).not.toMatch(
     /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
