@@ -89,19 +89,19 @@ func (s *routeAuthStore) RevokeAPIToken(ctx context.Context, userID string, id s
 	return auth.ErrUnauthorized
 }
 
-func (s *routeAuthStore) FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (auth.User, error) {
+func (s *routeAuthStore) FindActorByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (auth.Actor, error) {
 	if s.revoked[tokenHash] {
-		return auth.User{}, auth.ErrUnauthorized
+		return auth.Actor{}, auth.ErrUnauthorized
 	}
 	user, ok := s.users[tokenHash]
 	if !ok {
-		return auth.User{}, auth.ErrUnauthorized
+		return auth.Actor{}, auth.ErrUnauthorized
 	}
-	return user, nil
+	return auth.Actor{User: user, TokenID: "token-" + tokenHash[:8], TokenName: "Test token"}, nil
 }
 
-func (s *routeAuthStore) FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (auth.User, error) {
-	return s.FindUserByAPITokenHash(ctx, tokenHash, time.Time{})
+func (s *routeAuthStore) FindActorByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (auth.Actor, error) {
+	return s.FindActorByAPITokenHash(ctx, tokenHash, time.Time{})
 }
 
 func routeTokenHash(token string) string {
@@ -157,7 +157,11 @@ func (s *routeDocumentStore) Search(ctx context.Context, ownerID string, query s
 	return []documents.SearchResult{}, nil
 }
 
-func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (documents.Document, error) {
+func (s *routeDocumentStore) Contributors(ctx context.Context, ownerID string, id string) ([]documents.Contributor, error) {
+	return nil, nil
+}
+
+func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor documents.Actor) (documents.Document, error) {
 	s.ownerID = ownerID
 	s.body = body
 	return documents.Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil

@@ -32,7 +32,7 @@ func TestDocumentRoutesAcceptBearerTokensAndEnforceOwnership(t *testing.T) {
 	app := &App{
 		static: fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:   auth.NewService(authStore, "test-secret", false),
-		docs:   documents.NewHandler(docStore),
+		docs:   documents.NewHandler(docStore, nil),
 	}
 
 	anonymous := httptest.NewRecorder()
@@ -113,7 +113,7 @@ func TestCreateDocReturnsPaymentRequiredAtFreeLimit(t *testing.T) {
 	app := &App{
 		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:    auth.NewService(authStore, "test-secret", false),
-		docs:    documents.NewHandler(docStore),
+		docs:    documents.NewHandler(docStore, nil),
 		billing: billing.NewService(billingStore, routeBillingConfig()),
 	}
 
@@ -138,7 +138,7 @@ func TestPaidOnlyRoutesReturnPaymentRequiredForFreeUsers(t *testing.T) {
 	app := &App{
 		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:    auth.NewService(authStore, "test-secret", false),
-		docs:    documents.NewHandler(docStore),
+		docs:    documents.NewHandler(docStore, nil),
 		billing: billing.NewService(newRouteBillingStore(), routeBillingConfig()),
 	}
 
@@ -166,7 +166,7 @@ func TestBearerDocumentAPIReturnsPaymentRequiredForFreeUsers(t *testing.T) {
 	app := &App{
 		static:  fstest.MapFS{"index.html": {Data: []byte("<main>passage</main>")}},
 		auth:    auth.NewService(authStore, "test-secret", false),
-		docs:    documents.NewHandler(docStore),
+		docs:    documents.NewHandler(docStore, nil),
 		billing: billing.NewService(newRouteBillingStore(), routeBillingConfig()),
 	}
 

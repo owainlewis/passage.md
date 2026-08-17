@@ -46,6 +46,20 @@ type User struct {
 	Email string `json:"email"`
 }
 
+// Actor is who is making a request, as the server understands it. A browser
+// session is the owner; a bearer request also carries the token that was used,
+// so a write can be attributed to a named agent rather than just an account.
+// Callers must never take this from client-supplied fields.
+type Actor struct {
+	User      User
+	TokenID   string
+	TokenName string
+}
+
+// IsAPIToken reports whether the request came from an API token rather than a
+// signed-in browser session.
+func (a Actor) IsAPIToken() bool { return a.TokenID != "" }
+
 type UserWithPassword struct {
 	User
 	PasswordHash string
@@ -79,8 +93,8 @@ type Store interface {
 	ListAPITokens(ctx context.Context, userID string) ([]APIToken, error)
 	CreateAPIToken(ctx context.Context, userID string, name string, tokenHash string) (APIToken, error)
 	RevokeAPIToken(ctx context.Context, userID string, id string) error
-	FindUserByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (User, error)
-	FindUserByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (User, error)
+	FindActorByAPITokenHash(ctx context.Context, tokenHash string, now time.Time) (Actor, error)
+	FindActorByAPITokenHashReadOnly(ctx context.Context, tokenHash string) (Actor, error)
 }
 
 type PasswordResetStore interface {
@@ -405,21 +419,35 @@ func (s *Service) UserFromRequest(r *http.Request) (User, bool) {
 }
 
 func (s *Service) UserFromBearerRequest(r *http.Request) (User, bool) {
+	actor, ok := s.ActorFromBearerRequest(r)
+	return actor.User, ok
+}
+
+// ActorFromRequest resolves a request to the user and, for bearer requests, the
+// token behind it.
+func (s *Service) ActorFromRequest(r *http.Request) (Actor, bool) {
+	if user, ok := s.UserFromSessionRequest(r); ok {
+		return Actor{User: user}, true
+	}
+	return s.ActorFromBearerRequest(r)
+}
+
+func (s *Service) ActorFromBearerRequest(r *http.Request) (Actor, bool) {
 	token, ok := readBearerToken(r)
 	if !ok {
-		return User{}, false
+		return Actor{}, false
 	}
-	var user User
+	var actor Actor
 	var err error
 	if s.writesDisabled {
-		user, err = s.store.FindUserByAPITokenHashReadOnly(r.Context(), hashToken(token))
+		actor, err = s.store.FindActorByAPITokenHashReadOnly(r.Context(), hashToken(token))
 	} else {
-		user, err = s.store.FindUserByAPITokenHash(r.Context(), hashToken(token), s.now())
+		actor, err = s.store.FindActorByAPITokenHash(r.Context(), hashToken(token), s.now())
 	}
 	if err != nil && !errors.Is(err, ErrUnauthorized) {
 		httpx.LogError(r, "authenticate API token", err)
 	}
-	return user, err == nil
+	return actor, err == nil
 }
 
 func (s *Service) UserFromSessionRequest(r *http.Request) (User, bool) {

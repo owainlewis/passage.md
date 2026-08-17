@@ -19,7 +19,8 @@ import (
 )
 
 type Handler struct {
-	store documentStore
+	store        documentStore
+	resolveActor func(*http.Request) Actor
 }
 
 const (
@@ -30,15 +31,27 @@ const (
 	maxSearchQueryLength    = 200
 )
 
-func NewHandler(store documentStore) *Handler {
-	return &Handler{store: store}
+// NewHandler wires the document routes. resolveActor answers who is making a
+// request, so a content write can be attributed to a named API token rather
+// than only to the owning account. A nil resolver attributes everything to the
+// owner, which is what tests and session-only deployments want.
+func NewHandler(store documentStore, resolveActor func(*http.Request) Actor) *Handler {
+	return &Handler{store: store, resolveActor: resolveActor}
+}
+
+func (h *Handler) actorFor(r *http.Request) Actor {
+	if h.resolveActor == nil {
+		return Actor{}
+	}
+	return h.resolveActor(r)
 }
 
 type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
 	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
 	Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error)
-	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error)
+	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error)
+	Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error)
 	Archive(ctx context.Context, ownerID string, id string) error
@@ -278,7 +291,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User,
 	if !validateDocumentBody(w, input.Body) {
 		return
 	}
-	doc, err := h.store.Create(r.Context(), user.ID, input.Body, maxSavedDocs)
+	doc, err := h.store.Create(r.Context(), user.ID, input.Body, maxSavedDocs, h.actorFor(r))
 	if errors.Is(err, ErrLimitReached) {
 		writeError(w, http.StatusPaymentRequired, "saved document limit reached")
 		return
@@ -305,6 +318,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, user auth.User) {
 		httpx.WriteInternalError(w, r, "get document", err, "document could not be loaded")
 		return
 	}
+	contributors, err := h.store.Contributors(r.Context(), user.ID, id)
+	if err != nil {
+		httpx.WriteInternalError(w, r, "load document contributors", err, "document could not be loaded")
+		return
+	}
+	doc.Contributors = contributors
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -338,6 +357,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		CollectionID:    input.CollectionID.Value,
 		Starred:         input.Starred,
 		IfVersion:       input.Version,
+		Actor:           h.actorFor(r),
 	})
 	if errors.Is(err, ErrVersionConflict) {
 		h.writeVersionConflict(w, r, user, id)

@@ -148,7 +148,7 @@ func TestDocumentMutationLimitIsPerAuthenticatedUser(t *testing.T) {
 	app := &App{
 		static: fstest.MapFS{"index.html": {Data: []byte("ok")}},
 		auth:   auth.NewService(authStore, "test-secret", false),
-		docs:   documents.NewHandler(docStore),
+		docs:   documents.NewHandler(docStore, nil),
 		rateLimiters: newAppRateLimiters(config.AbuseRateLimitConfig{
 			DocumentMutation: config.RateLimitConfig{Requests: 1, Window: time.Minute},
 		}),
@@ -173,7 +173,7 @@ func TestDocumentSearchLimitIsPerAuthenticatedUserAndIndependentFromMutations(t 
 	app := &App{
 		static: fstest.MapFS{"index.html": {Data: []byte("ok")}},
 		auth:   auth.NewService(authStore, "test-secret", false),
-		docs:   documents.NewHandler(docStore),
+		docs:   documents.NewHandler(docStore, nil),
 		rateLimiters: newAppRateLimiters(config.AbuseRateLimitConfig{
 			DocumentMutation: config.RateLimitConfig{Requests: 1, Window: time.Minute},
 			DocumentSearch:   config.RateLimitConfig{Requests: 1, Window: time.Minute},
@@ -223,7 +223,7 @@ func TestAPITokenLimitAppliesToRepresentativeRoute(t *testing.T) {
 func TestSharedHTMLAndRawMarkdownHaveIndependentIPLimits(t *testing.T) {
 	app := &App{
 		static: fstest.MapFS{"index.html": {Data: []byte("ok")}},
-		docs:   documents.NewHandler(newRouteDocumentStore()),
+		docs:   documents.NewHandler(newRouteDocumentStore(), nil),
 		rateLimiters: newAppRateLimiters(config.AbuseRateLimitConfig{
 			SharedHTML:  config.RateLimitConfig{Requests: 1, Window: time.Minute},
 			RawMarkdown: config.RateLimitConfig{Requests: 1, Window: time.Minute},

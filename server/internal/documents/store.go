@@ -24,35 +24,38 @@ var errPublicIDCollision = errors.New("public id collision")
 const NoSavedDocumentLimit = -1
 
 type Document struct {
-	ID             string     `json:"id"`
-	PublicID       string     `json:"publicId"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	CollectionID   *string    `json:"collectionId"`
-	CollectionSlug *string    `json:"collectionSlug"`
-	Starred        bool       `json:"starred"`
-	Version        int        `json:"version"`
-	ShareToken     *string    `json:"shareToken,omitempty"`
-	SharedAt       *time.Time `json:"sharedAt,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
-	ArchivedAt     *time.Time `json:"archivedAt,omitempty"`
+	ID             string        `json:"id"`
+	PublicID       string        `json:"publicId"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	CollectionID   *string       `json:"collectionId"`
+	CollectionSlug *string       `json:"collectionSlug"`
+	Starred        bool          `json:"starred"`
+	Version        int           `json:"version"`
+	LastEditor     *LastEditor   `json:"lastEditor,omitempty"`
+	Contributors   []Contributor `json:"contributors,omitempty"`
+	ShareToken     *string       `json:"shareToken,omitempty"`
+	SharedAt       *time.Time    `json:"sharedAt,omitempty"`
+	CreatedAt      time.Time     `json:"createdAt"`
+	UpdatedAt      time.Time     `json:"updatedAt"`
+	ArchivedAt     *time.Time    `json:"archivedAt,omitempty"`
 }
 
 type DocumentMetadata struct {
-	ID             string     `json:"id"`
-	PublicID       string     `json:"publicId"`
-	Title          string     `json:"title"`
-	Excerpt        string     `json:"excerpt"`
-	Tags           []string   `json:"tags"`
-	CollectionID   *string    `json:"collectionId"`
-	CollectionSlug *string    `json:"collectionSlug"`
-	Starred        bool       `json:"starred"`
-	Version        int        `json:"version"`
-	ShareToken     *string    `json:"shareToken,omitempty"`
-	SharedAt       *time.Time `json:"sharedAt,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID             string      `json:"id"`
+	PublicID       string      `json:"publicId"`
+	Title          string      `json:"title"`
+	Excerpt        string      `json:"excerpt"`
+	Tags           []string    `json:"tags"`
+	CollectionID   *string     `json:"collectionId"`
+	CollectionSlug *string     `json:"collectionSlug"`
+	Starred        bool        `json:"starred"`
+	Version        int         `json:"version"`
+	LastEditor     *LastEditor `json:"lastEditor,omitempty"`
+	ShareToken     *string     `json:"shareToken,omitempty"`
+	SharedAt       *time.Time  `json:"sharedAt,omitempty"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
 }
 
 type SearchResult struct {
@@ -82,7 +85,53 @@ type SearchCursor struct {
 	ID        string
 }
 
+// OwnerActorKey is the contributor key for the account holder writing in a
+// browser. API tokens contribute under their own id.
+const OwnerActorKey = "owner"
+
+// Actor is who is performing a content write, as resolved by the server.
+// A zero Actor means the owner in a browser.
+type Actor struct {
+	TokenID   string
+	TokenName string
+}
+
+func (a Actor) key() string {
+	if a.TokenID == "" {
+		return OwnerActorKey
+	}
+	return a.TokenID
+}
+
+func (a Actor) name() *string {
+	if a.TokenName == "" {
+		return nil
+	}
+	name := a.TokenName
+	return &name
+}
+
+// Contributor is one identity that has changed a document's content.
+type Contributor struct {
+	ActorKey string    `json:"actorKey"`
+	Name     *string   `json:"name"`
+	IsOwner  bool      `json:"isOwner"`
+	FirstAt  time.Time `json:"firstContributedAt"`
+	LastAt   time.Time `json:"lastContributedAt"`
+}
+
+// LastEditor summarises the most recent content change.
+type LastEditor struct {
+	ActorKey string     `json:"actorKey"`
+	Name     *string    `json:"name"`
+	IsOwner  bool       `json:"isOwner"`
+	At       *time.Time `json:"at"`
+}
+
 type DocumentUpdate struct {
+	// Actor attributes a content change. Ignored for metadata-only updates,
+	// because sharing, starring and filing are not content contributions.
+	Actor           Actor
 	Body            *string
 	CollectionIDSet bool
 	CollectionID    *string
@@ -110,6 +159,7 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT d.id::text, d.public_id, d.title, d.body,
 		       d.collection_id::text, c.slug, d.starred, d.content_version,
+		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM documents d
 		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
@@ -143,6 +193,7 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 	rows, err := s.db.Query(ctx, `
 		SELECT d.id::text, d.public_id, left(d.body, 4096),
 		       d.collection_id::text, c.slug, d.starred, d.content_version,
+		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at
 		FROM documents d
 		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
@@ -160,6 +211,8 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 	docs := []DocumentMetadata{}
 	for rows.Next() {
 		var doc DocumentMetadata
+		var editorKey, editorName *string
+		var editedAt *time.Time
 		if err := rows.Scan(
 			&doc.ID,
 			&doc.PublicID,
@@ -168,6 +221,9 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 			&doc.CollectionSlug,
 			&doc.Starred,
 			&doc.Version,
+			&editorKey,
+			&editorName,
+			&editedAt,
 			&doc.ShareToken,
 			&doc.SharedAt,
 			&doc.CreatedAt,
@@ -317,13 +373,13 @@ func (s *Store) Search(ctx context.Context, ownerID string, query string, scope 
 	return results, rows.Err()
 }
 
-func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int) (Document, error) {
+func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error) {
 	for range 5 {
 		publicID, err := randomPublicID()
 		if err != nil {
 			return Document{}, err
 		}
-		doc, err := s.createWithPublicID(ctx, ownerID, body, publicID, maxSavedDocs)
+		doc, err := s.createWithPublicID(ctx, ownerID, body, publicID, maxSavedDocs, actor)
 		if errors.Is(err, errPublicIDCollision) {
 			continue
 		}
@@ -332,7 +388,7 @@ func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSave
 	return Document{}, errPublicIDCollision
 }
 
-func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body string, publicID string, maxSavedDocs int) (Document, error) {
+func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body string, publicID string, maxSavedDocs int, actor Actor) (Document, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Document{}, err
@@ -357,13 +413,17 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 	}
 
 	var doc Document
+	var editorKey, editorName *string
+	var editedAt *time.Time
 	err = tx.QueryRow(ctx, `
-		INSERT INTO documents (owner_user_id, public_id, title, body)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO documents (owner_user_id, public_id, title, body,
+		                       last_editor_key, last_editor_name, last_edited_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now())
 		RETURNING id::text, public_id, title, body,
 		          collection_id::text, NULL::text, starred, content_version,
+		          last_editor_key, last_editor_name, last_edited_at,
 		          share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, publicID, titleOf(body), body).Scan(
+	`, ownerID, publicID, titleOf(body), body, actor.key(), actor.name()).Scan(
 		&doc.ID,
 		&doc.PublicID,
 		&doc.Title,
@@ -372,12 +432,16 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 		&doc.CollectionSlug,
 		&doc.Starred,
 		&doc.Version,
+		&editorKey,
+		&editorName,
+		&editedAt,
 		&doc.ShareToken,
 		&doc.SharedAt,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 		&doc.ArchivedAt,
 	)
+	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return Document{}, errPublicIDCollision
@@ -385,10 +449,69 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 	if err != nil {
 		return Document{}, err
 	}
+	if err := recordContribution(ctx, tx, doc.ID, actor); err != nil {
+		return Document{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Document{}, err
 	}
+	doc.LastEditor = &LastEditor{
+		ActorKey: actor.key(),
+		Name:     actor.name(),
+		IsOwner:  !actor.IsAPIToken(),
+		At:       &doc.UpdatedAt,
+	}
 	return doc, nil
+}
+
+// IsAPIToken reports whether this actor is an API token rather than the owner
+// working in a browser.
+func (a Actor) IsAPIToken() bool { return a.TokenID != "" }
+
+// recordContribution opens or refreshes one contributor row per identity, so
+// repeated autosaves by the same writer do not create duplicates.
+func recordContribution(ctx context.Context, q interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, documentID string, actor Actor) error {
+	_, err := q.Exec(ctx, `
+		INSERT INTO document_contributors (document_id, actor_key, actor_name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (document_id, actor_key) DO UPDATE
+		SET last_contributed_at = now(),
+		    actor_name = COALESCE(EXCLUDED.actor_name, document_contributors.actor_name)
+	`, documentID, actor.key(), actor.name())
+	return err
+}
+
+// Contributors lists every identity that has changed a document's content,
+// most recent first. Owner-scoped: a document that is not yours returns
+// nothing rather than leaking who has been writing to it.
+func (s *Store) Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error) {
+	if !validUUID(id) {
+		return nil, ErrNotFound
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT c.actor_key, c.actor_name, c.first_contributed_at, c.last_contributed_at
+		FROM document_contributors c
+		JOIN documents d ON d.id = c.document_id
+		WHERE c.document_id = $1 AND d.owner_user_id = $2
+		ORDER BY c.last_contributed_at DESC
+	`, id, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	contributors := []Contributor{}
+	for rows.Next() {
+		var contributor Contributor
+		if err := rows.Scan(&contributor.ActorKey, &contributor.Name, &contributor.FirstAt, &contributor.LastAt); err != nil {
+			return nil, err
+		}
+		contributor.IsOwner = contributor.ActorKey == OwnerActorKey
+		contributors = append(contributors, contributor)
+	}
+	return contributors, rows.Err()
 }
 
 func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, error) {
@@ -396,9 +519,12 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, e
 		return Document{}, ErrNotFound
 	}
 	var doc Document
+	var editorKey, editorName *string
+	var editedAt *time.Time
 	err := s.db.QueryRow(ctx, `
 		SELECT d.id::text, d.public_id, d.title, d.body,
 		       d.collection_id::text, c.slug, d.starred, d.content_version,
+		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM documents d
 		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
@@ -414,12 +540,16 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, e
 		&doc.CollectionSlug,
 		&doc.Starred,
 		&doc.Version,
+		&editorKey,
+		&editorName,
+		&editedAt,
 		&doc.ShareToken,
 		&doc.SharedAt,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 		&doc.ArchivedAt,
 	)
+	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
@@ -441,6 +571,8 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 		starred = *update.Starred
 	}
 	var doc Document
+	var editorKey, editorName *string
+	var editedAt *time.Time
 	// The version guard lives in the UPDATE's WHERE clause so the compare and
 	// the write are one statement. Two concurrent writers holding the same
 	// version cannot both match: the second blocks on the row lock, then sees
@@ -453,6 +585,9 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 			    collection_id = CASE WHEN $6 THEN $7 ELSE d.collection_id END,
 			    starred = CASE WHEN $8 THEN $9 ELSE d.starred END,
 			    content_version = CASE WHEN $3 THEN d.content_version + 1 ELSE d.content_version END,
+			    last_editor_key = CASE WHEN $3 THEN $11 ELSE d.last_editor_key END,
+			    last_editor_name = CASE WHEN $3 THEN $12 ELSE d.last_editor_name END,
+			    last_edited_at = CASE WHEN $3 THEN now() ELSE d.last_edited_at END,
 			    updated_at = now()
 			WHERE d.owner_user_id = $1
 			  AND d.id = $2
@@ -470,10 +605,11 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 		)
 		SELECT d.id::text, d.public_id, d.title, d.body,
 		       d.collection_id::text, c.slug, d.starred, d.content_version,
+		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM updated d
 		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
-	`, ownerID, id, bodySet, titleOf(body), body, update.CollectionIDSet, update.CollectionID, starredSet, starred, update.IfVersion).Scan(
+	`, ownerID, id, bodySet, titleOf(body), body, update.CollectionIDSet, update.CollectionID, starredSet, starred, update.IfVersion, update.Actor.key(), update.Actor.name()).Scan(
 		&doc.ID,
 		&doc.PublicID,
 		&doc.Title,
@@ -482,12 +618,16 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 		&doc.CollectionSlug,
 		&doc.Starred,
 		&doc.Version,
+		&editorKey,
+		&editorName,
+		&editedAt,
 		&doc.ShareToken,
 		&doc.SharedAt,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 		&doc.ArchivedAt,
 	)
+	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// One statement decides both whether the row is still there and what
 		// version it holds. Asking separately leaves a window where an archive
@@ -512,7 +652,24 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 		}
 		return Document{}, ErrNotFound
 	}
-	return doc, err
+	if err != nil {
+		return Document{}, err
+	}
+	// Only content counts as a contribution. Sharing, filing and starring are
+	// metadata, and attributing them would make an agent that starred a
+	// document look like it had written one.
+	if bodySet {
+		if contribErr := recordContribution(ctx, s.db, doc.ID, update.Actor); contribErr != nil {
+			return Document{}, contribErr
+		}
+		doc.LastEditor = &LastEditor{
+			ActorKey: update.Actor.key(),
+			Name:     update.Actor.name(),
+			IsOwner:  !update.Actor.IsAPIToken(),
+			At:       &doc.UpdatedAt,
+		}
+	}
+	return doc, nil
 }
 
 func (s *Store) Archive(ctx context.Context, ownerID string, id string) error {
@@ -565,6 +722,8 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 		return Document{}, ErrNotFound
 	}
 	var doc Document
+	var editorKey, editorName *string
+	var editedAt *time.Time
 	err := s.db.QueryRow(ctx, `
 		WITH updated AS (
 		UPDATE documents
@@ -577,6 +736,7 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 		)
 		SELECT d.id::text, d.public_id, d.title, d.body,
 		       d.collection_id::text, c.slug, d.starred, d.content_version,
+		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM updated d
 		LEFT JOIN collections c ON c.owner_user_id = d.owner_user_id AND c.id = d.collection_id
@@ -589,12 +749,16 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 		&doc.CollectionSlug,
 		&doc.Starred,
 		&doc.Version,
+		&editorKey,
+		&editorName,
+		&editedAt,
 		&doc.ShareToken,
 		&doc.SharedAt,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 		&doc.ArchivedAt,
 	)
+	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrNotFound
 	}
@@ -629,6 +793,7 @@ func (s *Store) GetPublic(ctx context.Context, token string) (Document, error) {
 	doc, err := scanDocument(s.db.QueryRow(ctx, `
 		SELECT id::text, public_id, title, body,
 		       NULL::text, NULL::text, false, content_version,
+		       NULL::text, NULL::text, NULL::timestamptz,
 		       share_token, shared_at, created_at, updated_at, archived_at
 		FROM documents
 		WHERE (public_id = $1 OR share_token = $1)
@@ -647,6 +812,8 @@ type scanner interface {
 
 func scanDocument(row scanner) (Document, error) {
 	var doc Document
+	var editorKey, editorName *string
+	var editedAt *time.Time
 	err := row.Scan(
 		&doc.ID,
 		&doc.PublicID,
@@ -656,13 +823,33 @@ func scanDocument(row scanner) (Document, error) {
 		&doc.CollectionSlug,
 		&doc.Starred,
 		&doc.Version,
+		&editorKey,
+		&editorName,
+		&editedAt,
 		&doc.ShareToken,
 		&doc.SharedAt,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 		&doc.ArchivedAt,
 	)
+	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
+	doc.LastEditor = lastEditorOf(editorKey, editorName, editedAt)
 	return doc, err
+}
+
+// lastEditorOf folds the three stored columns into a summary. A document that
+// has not been written since attribution shipped has no last editor rather
+// than a fabricated one.
+func lastEditorOf(key *string, name *string, at *time.Time) *LastEditor {
+	if key == nil {
+		return nil
+	}
+	return &LastEditor{
+		ActorKey: *key,
+		Name:     name,
+		IsOwner:  *key == OwnerActorKey,
+		At:       at,
+	}
 }
 
 func tagsOf(body string) []string {

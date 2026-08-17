@@ -289,7 +289,7 @@ func TestStoreSearchUsesDeterministicKeysetPaginationAndTracksWrites(t *testing.
 		}
 	}
 
-	document, err := store.Create(ctx, ownerID, "# Generated vector\n\nOriginal marker.", NoSavedDocumentLimit)
+	document, err := store.Create(ctx, ownerID, "# Generated vector\n\nOriginal marker.", NoSavedDocumentLimit, Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +423,7 @@ func TestStoreContentVersionGuardsConcurrentWrites(t *testing.T) {
 	store := NewStore(db)
 	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("version-%d@example.com", time.Now().UnixNano()))
 
-	created, err := store.Create(ctx, ownerID, "# Start", NoSavedDocumentLimit)
+	created, err := store.Create(ctx, ownerID, "# Start", NoSavedDocumentLimit, Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,5 +484,101 @@ func TestStoreContentVersionGuardsConcurrentWrites(t *testing.T) {
 	}
 	if !metadata.Starred {
 		t.Fatal("metadata update did not persist the star")
+	}
+}
+
+func TestStoreAttributesContentWritesToTheActingIdentity(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	db, err := database.Open(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	if _, err := migrations.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	store := NewStore(db)
+	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("attribution-%d@example.com", time.Now().UnixNano()))
+	agent := Actor{TokenID: "11111111-1111-1111-1111-111111111111", TokenName: "Nightly runner"}
+
+	created, err := store.Create(ctx, ownerID, "# Shared", NoSavedDocumentLimit, Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.LastEditor == nil || !created.LastEditor.IsOwner {
+		t.Fatalf("created last editor = %#v, want the owner", created.LastEditor)
+	}
+
+	// Two owner autosaves must not become two contributors.
+	for _, body := range []string{"# Shared\n\none", "# Shared\n\ntwo"} {
+		if _, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Body: &body}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	contributors, err := store.Contributors(ctx, ownerID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contributors) != 1 || !contributors[0].IsOwner {
+		t.Fatalf("contributors after owner autosaves = %#v, want one owner", contributors)
+	}
+
+	agentBody := "# Shared\n\nwritten by the agent"
+	agentWrite, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Body: &agentBody, Actor: agent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agentWrite.LastEditor == nil || agentWrite.LastEditor.IsOwner {
+		t.Fatalf("last editor after agent write = %#v, want the token", agentWrite.LastEditor)
+	}
+	if agentWrite.LastEditor.Name == nil || *agentWrite.LastEditor.Name != "Nightly runner" {
+		t.Fatalf("last editor name = %#v, want the token name snapshot", agentWrite.LastEditor.Name)
+	}
+
+	contributors, err = store.Contributors(ctx, ownerID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contributors) != 2 {
+		t.Fatalf("contributors = %#v, want the owner and the agent", contributors)
+	}
+	if contributors[0].ActorKey != agent.TokenID {
+		t.Fatalf("contributors are not most-recent-first: %#v", contributors)
+	}
+
+	// Metadata is not authorship. Starring must not make the agent the last
+	// editor of content it never wrote.
+	starred := true
+	if _, err := store.Update(ctx, ownerID, created.ID, DocumentUpdate{Starred: &starred, Actor: Actor{TokenID: "22222222-2222-2222-2222-222222222222", TokenName: "Filing bot"}}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.Get(ctx, ownerID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.LastEditor == nil || after.LastEditor.ActorKey != agent.TokenID {
+		t.Fatalf("last editor after a metadata write = %#v, want it unchanged", after.LastEditor)
+	}
+	contributors, err = store.Contributors(ctx, ownerID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contributors) != 2 {
+		t.Fatalf("a metadata write added a contributor: %#v", contributors)
+	}
+
+	// Attribution is owner-scoped: another account cannot read who writes here.
+	otherID := insertDocumentTestUser(t, db, fmt.Sprintf("attribution-other-%d@example.com", time.Now().UnixNano()))
+	foreign, err := store.Contributors(ctx, otherID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(foreign) != 0 {
+		t.Fatalf("contributors leaked to another owner: %#v", foreign)
 	}
 }

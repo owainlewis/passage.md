@@ -1644,3 +1644,107 @@ func TestDocumentVersionConflictWithPostgres(t *testing.T) {
 		t.Fatalf("version after versionless write = %d, want 4", legacy.Version)
 	}
 }
+
+func TestDocumentAttributionWithPostgres(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := migrations.Apply(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	owner := fmt.Sprintf("attribution-api-%d@example.com", time.Now().UnixNano())
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, owner)
+
+	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{Billing: config.BillingConfig{
+		FreeMaxSavedDocs: 5,
+		ProMaxSavedDocs:  1000,
+	}})
+	server := httptest.NewServer(app.Routes())
+	defer server.Close()
+
+	cookies := createIntegrationUserAndLogin(t, db, server.URL, owner)
+
+	// API tokens are a Pro feature, and attribution is what they are for.
+	if _, err := db.Exec(ctx, `
+		INSERT INTO billing_accounts (user_id, manual_plan)
+		SELECT id, 'pro' FROM users WHERE email = $1
+	`, owner); err != nil {
+		t.Fatal(err)
+	}
+
+	var token struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/api-tokens", `{"name":"Nightly runner"}`, cookies, "")), &token); err != nil {
+		t.Fatal(err)
+	}
+
+	var created struct {
+		ID         string `json:"id"`
+		PublicID   string `json:"publicId"`
+		LastEditor *struct {
+			IsOwner bool    `json:"isOwner"`
+			Name    *string `json:"name"`
+		} `json:"lastEditor"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Shared note"}`, cookies, "")), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.LastEditor == nil || !created.LastEditor.IsOwner {
+		t.Fatalf("browser create attribution = %#v, want the owner", created.LastEditor)
+	}
+
+	// The same document written through a named token is attributed to it.
+	var agentWrite struct {
+		LastEditor *struct {
+			IsOwner bool    `json:"isOwner"`
+			Name    *string `json:"name"`
+		} `json:"lastEditor"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+created.ID, `{"body":"# Shared note\n\nfrom the agent"}`, nil, token.Token)), &agentWrite); err != nil {
+		t.Fatal(err)
+	}
+	if agentWrite.LastEditor == nil || agentWrite.LastEditor.IsOwner {
+		t.Fatalf("token write attribution = %#v, want the token", agentWrite.LastEditor)
+	}
+	if agentWrite.LastEditor.Name == nil || *agentWrite.LastEditor.Name != "Nightly runner" {
+		t.Fatalf("token write name = %#v, want the token name", agentWrite.LastEditor.Name)
+	}
+
+	// The detail response carries the contributor list.
+	var detail struct {
+		Contributors []struct {
+			IsOwner bool    `json:"isOwner"`
+			Name    *string `json:"name"`
+		} `json:"contributors"`
+	}
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/"+created.ID, "", cookies, "")), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Contributors) != 2 {
+		t.Fatalf("contributors = %#v, want the owner and the token", detail.Contributors)
+	}
+
+	// Anything published must not say who has been writing.
+	doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs/"+created.ID+"/share", "", cookies, "")
+	for _, path := range []string{"/d/" + created.PublicID, "/d/" + created.PublicID + ".md"} {
+		body, status := doIntegrationRequestRaw(t, http.MethodGet, server.URL+path, "", nil, "")
+		if status != http.StatusOK {
+			t.Fatalf("%s status = %d", path, status)
+		}
+		for _, leak := range []string{"Nightly runner", "lastEditor", "contributors", "actorKey"} {
+			if strings.Contains(body, leak) {
+				t.Fatalf("%s exposed %q", path, leak)
+			}
+		}
+	}
+}

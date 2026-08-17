@@ -44,7 +44,7 @@ func TestStorePersistsOwnerScopedCollectionsMembershipAndStars(t *testing.T) {
 	}
 
 	docStore := documents.NewStore(db)
-	doc, err := docStore.Create(ctx, ownerID, "# Stable body", documents.NoSavedDocumentLimit)
+	doc, err := docStore.Create(ctx, ownerID, "# Stable body", documents.NoSavedDocumentLimit, documents.Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestStoreReservesWorkspaceSentinelSlugs(t *testing.T) {
 	}
 
 	docStore := documents.NewStore(db)
-	doc, err := docStore.Create(ctx, ownerID, "# Assignable", documents.NoSavedDocumentLimit)
+	doc, err := docStore.Create(ctx, ownerID, "# Assignable", documents.NoSavedDocumentLimit, documents.Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,15 +169,15 @@ func TestDeletePreservesDocumentPaginationKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	docStore := documents.NewStore(db)
-	newest, err := docStore.Create(ctx, ownerID, "# Newest", documents.NoSavedDocumentLimit)
+	newest, err := docStore.Create(ctx, ownerID, "# Newest", documents.NoSavedDocumentLimit, documents.Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assigned, err := docStore.Create(ctx, ownerID, "# Assigned", documents.NoSavedDocumentLimit)
+	assigned, err := docStore.Create(ctx, ownerID, "# Assigned", documents.NoSavedDocumentLimit, documents.Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldest, err := docStore.Create(ctx, ownerID, "# Oldest", documents.NoSavedDocumentLimit)
+	oldest, err := docStore.Create(ctx, ownerID, "# Oldest", documents.NoSavedDocumentLimit, documents.Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
