@@ -85,13 +85,13 @@ it("keeps every home section on one left edge with the sidebar open or closed", 
     "workspaceSection",
     "workspaceSection"
   ]);
-  // Every child of the hub sits on one column, left-aligned. Centring a fixed
-  // column inside a main area that changes width is what made the page shift
-  // sideways when the sidebar was toggled.
+  // Every child of the hub takes the same measure, so no element can drift
+  // onto its own grid. The misalignment this guards against came from headers
+  // using a different width and a different alignment to their own content.
   const column = declarationsFor(".workspaceHub > *");
-  expect(column).toContain("max-width: 1080px;");
-  expect(column).toContain("margin-left: 0;");
-  expect(column).not.toContain("margin-left: auto");
+  expect(column).toContain("max-width: var(--workspace-measure);");
+  expect(column).toContain("margin-left: auto;");
+  expect(column).toContain("margin-right: auto;");
 
   view.rerender(workspaceShell(false, content));
   expect(screen.getByLabelText("Workspace home")).toHaveClass("workspaceHome");

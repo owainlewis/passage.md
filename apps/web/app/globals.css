@@ -26,6 +26,10 @@
   /* Reading measure tuned for dense long-form text. */
   --measure: 40rem;
 
+  /* Workspace column. Wide enough for a title and a summary on one row,
+     narrow enough to stay a column rather than a band across the display. */
+  --workspace-measure: 55rem;
+
   /* Editorial document type scale. */
   --text-body: 1rem; /* 16px */
   --text-h1: 2.125rem; /* 34px */
@@ -908,15 +912,16 @@ button {
   background: var(--bg);
 }
 
-/* One column for every page in the workspace. Left-aligned rather than
-   centred: the sidebar already anchors the layout, and centring a fixed column
-   inside a main area that changes width makes the whole page shift sideways
-   when the sidebar is toggled. */
+/* One column for every page in the workspace, centred in the reading area.
+   Every child takes the same measure, so nothing can drift onto its own grid
+   the way the page headers used to. Centred rather than left-aligned: on a
+   wide display a left-hugging column leaves the page lopsided, and 1080px of
+   list for a title and a one-line summary reads as empty rather than roomy. */
 .workspaceHub > * {
   width: 100%;
-  max-width: 1080px;
-  margin-left: 0;
-  margin-right: 0;
+  max-width: var(--workspace-measure);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .workspaceHubLoading {
@@ -1296,11 +1301,12 @@ button {
   line-height: 1.5;
 }
 
+/* The count belongs to the title, so it sits beside it. Pinned to the far
+   right of a 1080px row it read as an unrelated stray number. */
 .workspaceCollectionTitle {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   color: var(--ink);
 }
 
@@ -1308,7 +1314,7 @@ button {
    and document content, where it reads as editorial rather than decorative. */
 .workspaceCollectionTitle strong {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: -0.006em;
@@ -1316,8 +1322,9 @@ button {
 }
 
 .workspaceCollectionTitle small {
+  flex: 0 0 auto;
   color: var(--faint);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   white-space: nowrap;
 }
 
