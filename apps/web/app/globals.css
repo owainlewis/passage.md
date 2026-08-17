@@ -26,6 +26,10 @@
   /* Reading measure tuned for dense long-form text. */
   --measure: 40rem;
 
+  /* Workspace column. Wide enough for a title and a summary on one row,
+     narrow enough to stay a column rather than a band across the display. */
+  --workspace-measure: 55rem;
+
   /* Editorial document type scale. */
   --text-body: 1rem; /* 16px */
   --text-h1: 2.125rem; /* 34px */
@@ -904,18 +908,20 @@ button {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: clamp(36px, 5vw, 60px) clamp(24px, 6vw, 76px) 104px;
+  padding: clamp(28px, 3vw, 44px) clamp(24px, 6vw, 76px) 104px;
   background: var(--bg);
 }
 
+/* One column for every page in the workspace, centred in the reading area.
+   Every child takes the same measure, so nothing can drift onto its own grid
+   the way the page headers used to. Centred rather than left-aligned: on a
+   wide display a left-hugging column leaves the page lopsided, and 1080px of
+   list for a title and a one-line summary reads as empty rather than roomy. */
 .workspaceHub > * {
-  width: min(100%, 1080px);
+  width: 100%;
+  max-width: var(--workspace-measure);
   margin-left: auto;
   margin-right: auto;
-}
-
-.workspaceHome > * {
-  margin-left: 0;
 }
 
 .workspaceHubLoading {
@@ -936,11 +942,32 @@ button {
   animation: spin 0.7s linear infinite;
 }
 
+/* Page headers sit on the workspace column set by .workspaceHub > *. They used
+   to cap at 760px and left-align while their sections centred at 1080px, which
+   put every page title on a different grid to the content it introduces. */
 .workspaceHero,
 .workspacePageHeader,
 .workspaceCollectionHeader {
-  max-width: 760px;
-  margin-left: 0;
+  margin-bottom: 34px;
+}
+
+/* Only the collection header carries actions, so only it becomes a row. */
+.workspaceCollectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.workspaceCollectionHeaderText {
+  min-width: 0;
+  max-width: 60ch;
+}
+
+/* Prose keeps a reading measure even though its block spans the column. */
+.workspaceHero > p,
+.workspacePageHeader > p {
+  max-width: 60ch;
 }
 
 .workspaceHero {
@@ -971,7 +998,7 @@ button {
 
 .workspaceHero > p:last-of-type,
 .workspacePageHeader > p:last-child,
-.workspaceCollectionHeader > p {
+.workspaceCollectionHeaderText > p {
   max-width: 650px;
   margin: 10px 0 0;
   color: var(--muted);
@@ -1085,11 +1112,17 @@ button {
 
 .workspaceCollectionToolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
   gap: 18px;
-  min-height: 34px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.workspaceCollectionToolbarTitle {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .workspaceCollectionToolbarTitle span {
@@ -1268,11 +1301,12 @@ button {
   line-height: 1.5;
 }
 
+/* The count belongs to the title, so it sits beside it. Pinned to the far
+   right of a 1080px row it read as an unrelated stray number. */
 .workspaceCollectionTitle {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   color: var(--ink);
 }
 
@@ -1280,7 +1314,7 @@ button {
    and document content, where it reads as editorial rather than decorative. */
 .workspaceCollectionTitle strong {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: -0.006em;
@@ -1288,8 +1322,9 @@ button {
 }
 
 .workspaceCollectionTitle small {
+  flex: 0 0 auto;
   color: var(--faint);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   white-space: nowrap;
 }
 
@@ -1465,9 +1500,11 @@ button {
 
 .workspaceEmptyList {
   margin: 0;
-  padding: 38px 20px;
+  padding: 44px 24px;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: 12px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   text-align: center;
 }
 
@@ -1840,6 +1877,7 @@ button {
 /* -------------------------------------------------------------------- main */
 
 .main {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -3815,38 +3853,55 @@ button {
 
 /* --------------------------------------------------------------- account */
 
-/* Save conflict. Louder than the billing notice because it is blocking work
-   and needs a decision, but it never acts on its own. */
+/* Save conflict. A compact card docked to the writing pane rather than a
+   full-width bar: it needs a decision, but it should not shove the document
+   down the page or strand its buttons at the far edge of a wide display. */
+/* Programmatic focus targets. These carry tabindex="-1" so code can move
+   focus to them for screen readers after a navigation or a dialog closes.
+   They are not keyboard-reachable and not interactive, so the browser's
+   default ring reads as a stray blue box drawn around the page. */
+.writingPane:focus,
+.workspaceHub:focus,
+.workspaceCollectionDialog:focus,
+.workspaceCollectionHeader h1:focus {
+  outline: none;
+}
+
 .conflictNotice {
+  position: absolute;
+  z-index: 4;
+  /* Below the 56px top bar row, not over its controls. */
+  top: 70px;
+  right: 18px;
+  left: auto;
+  width: min(360px, calc(100% - 36px));
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 18px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--hairline);
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
   background: var(--elevated);
-  box-shadow: inset 3px 0 0 #a04a3e;
+  box-shadow: 0 12px 32px rgba(15, 15, 20, 0.16);
   color: var(--ink-soft);
-  font-size: 0.9rem;
 }
 
 .conflictNoticeText {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .conflictNoticeText strong {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.8125rem;
   font-weight: 650;
 }
 
 .conflictNoticeText span {
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: 0.78125rem;
   line-height: 1.5;
 }
 
@@ -3857,13 +3912,14 @@ button {
 }
 
 .conflictNoticeActions button {
+  flex: 1 1 auto;
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--control-boundary);
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink);
-  font-size: 0.8125rem;
+  font-size: 0.78125rem;
   font-weight: 600;
 }
 
@@ -3879,6 +3935,14 @@ button {
 
 .conflictNoticeActions .conflictNoticePrimary:hover {
   background: color-mix(in srgb, var(--accent) 86%, var(--accent-strong));
+}
+
+@media (max-width: 720px) {
+  .conflictNotice {
+    top: 66px;
+    right: 12px;
+    width: calc(100% - 24px);
+  }
 }
 
 .billingNotice {
@@ -4887,8 +4951,21 @@ button {
 
   .workspaceHero > p:last-of-type,
   .workspacePageHeader > p:last-child,
-  .workspaceCollectionHeader > p {
+  .workspaceCollectionHeaderText > p {
     font-size: 0.98rem;
+  }
+
+  /* The header is a title/actions row on desktop. On a phone there is no room
+     for two columns, so it stacks and the actions sit under the title rather
+     than squeezing it into a third of the width. */
+  .workspaceCollectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .workspaceCollectionHeaderText {
+    max-width: none;
   }
 
   .workspaceHeroActions {
@@ -4933,7 +5010,6 @@ button {
   }
 
   .workspaceCollectionUtilityActions {
-    width: 100%;
     flex-wrap: wrap;
   }
 
@@ -4955,7 +5031,7 @@ button {
 
   .topBarCollectionSelect {
     min-width: 0;
-    max-width: 108px;
+    max-width: 136px;
     padding-right: 18px;
   }
 
@@ -4963,8 +5039,11 @@ button {
 
 @media (max-width: 360px) {
   /* The document view holds the only collection control, so it has to survive
-     the narrowest layout rather than be hidden. */
+     the narrowest layout rather than be hidden. Smaller type keeps a real
+     collection name readable instead of clipping it mid-word. */
   .topBarCollectionSelect {
-    max-width: 84px;
+    max-width: 104px;
+    padding-right: 16px;
+    font-size: 0.625rem;
   }
 }

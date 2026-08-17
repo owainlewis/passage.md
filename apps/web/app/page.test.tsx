@@ -969,6 +969,57 @@ describe("Write (editor)", () => {
     expect(patches).toHaveLength(1);
   });
 
+  it("keeps typing through an in-flight save without inventing a conflict", async () => {
+    const versions: (number | undefined)[] = [];
+    let releaseFirst: (() => void) | undefined;
+    let version = 2;
+    const baseFetch = stubSignedInFetch([{ id: "doc-shared", publicId: "shared", body: "# Shared", version: 2 }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-shared" && init?.method === "PATCH") {
+        const sent = JSON.parse(String(init?.body ?? "{}"));
+        versions.push(sent.version);
+        if (sent.version !== version) {
+          return Promise.resolve(new Response(JSON.stringify({
+            error: "document changed since it was loaded",
+            document: { id: "doc-shared", publicId: "shared", body: "# Shared", version, starred: false, collectionId: null, collectionSlug: null, updatedAt: "2026-08-17T12:00:00Z" }
+          }), { status: 409, headers: { "Content-Type": "application/json" } }));
+        }
+        version += 1;
+        const payload = new Response(JSON.stringify({
+          id: "doc-shared", publicId: "shared", body: sent.body, version,
+          starred: false, collectionId: null, collectionSlug: null, updatedAt: "2026-08-17T12:00:00Z"
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+        // Hold the first response open so the next keystroke lands while it is
+        // still in flight. That is the ordinary case: typing does not stop for
+        // the network.
+        if (!releaseFirst) {
+          return new Promise<Response>((resolve) => { releaseFirst = () => resolve(payload); });
+        }
+        return Promise.resolve(payload);
+      }
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+
+    fireEvent.change(editor, { target: { value: "# Shared\n\nfirst" } });
+    await waitFor(() => expect(releaseFirst).toBeDefined());
+
+    fireEvent.change(editor, { target: { value: "# Shared\n\nfirst second" } });
+    releaseFirst!();
+
+    await waitFor(() => expect(versions.length).toBeGreaterThanOrEqual(2), { timeout: 3000 });
+
+    // The second save must carry the version the first one produced. Sending
+    // the stale one turns ordinary typing into a conflict.
+    expect(versions[0]).toBe(2);
+    expect(versions[1]).toBe(3);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(editor).toHaveValue("# Shared\n\nfirst second");
+  });
+
   it("loads the newer version when the writer discards their draft", async () => {
     const baseFetch = stubSignedInFetch([{ id: "doc-shared", publicId: "shared", body: "# Shared", version: 2 }]);
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {

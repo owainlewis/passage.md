@@ -85,11 +85,34 @@ it("keeps every home section on one left edge with the sidebar open or closed", 
     "workspaceSection",
     "workspaceSection"
   ]);
-  expect(declarationsFor(".workspaceHome > *")).toContain("margin-left: 0;");
+  // Every child of the hub takes the same measure, so no element can drift
+  // onto its own grid. The misalignment this guards against came from headers
+  // using a different width and a different alignment to their own content.
+  const column = declarationsFor(".workspaceHub > *");
+  expect(column).toContain("max-width: var(--workspace-measure);");
+  expect(column).toContain("margin-left: auto;");
+  expect(column).toContain("margin-right: auto;");
 
   view.rerender(workspaceShell(false, content));
   expect(screen.getByLabelText("Workspace home")).toHaveClass("workspaceHome");
   expect(document.querySelector(".workspace")).not.toHaveClass("withSidebar");
+});
+
+it("puts every page header on the same column as the content it introduces", () => {
+  // These three headers used to cap at 760px and left-align while their
+  // sections centred at 1080px, so each title sat on a different grid to its
+  // own list.
+  const headers = declarationsFor(".workspaceHero,\n.workspacePageHeader,\n.workspaceCollectionHeader");
+  expect(headers).not.toContain("max-width: 760px");
+  expect(headers).not.toContain("margin-left: 0");
+
+  // Only the collection header carries actions, so only it is a row. A flex
+  // hero would lay the title, description and search box out side by side.
+  // Matched off the stylesheet directly: declarationsFor would find the
+  // grouped rule above, where this selector is the last of three.
+  expect(stylesheet).toMatch(/\n\.workspaceCollectionHeader \{[^}]*display: flex;/);
+  expect(declarationsFor(".workspaceHero")).not.toContain("display: flex");
+  expect(declarationsFor(".workspacePageHeader")).not.toContain("display: flex");
 });
 
 it("keeps list rows to opening and starring, with no per-row collection picker", () => {
@@ -132,6 +155,32 @@ it("keeps collection modal surfaces fixed to the full viewport", () => {
     .toContain("background: #a04a3e;");
 });
 
+it("stacks the collection header on a phone instead of squeezing the title", () => {
+  // The header is a title/actions row on desktop. Left as a row on a phone it
+  // crushed the title into a third of the width with the actions stranded in
+  // the space beside it.
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeader\s*\{[^}]*flex-direction: column;/
+  );
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeaderText\s*\{[^}]*max-width: none;/
+  );
+  // The mobile type rule has to follow the element it styles: the description
+  // moved inside the text wrapper and this selector silently stopped matching.
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeaderText > p\s*\{[^}]*font-size:/
+  );
+  expect(stylesheet).not.toMatch(/\.workspaceCollectionHeader > p\s*\{/);
+});
+
+it("hides the browser ring on programmatic focus targets", () => {
+  // These carry tabindex="-1" so focus can be moved to them after a navigation
+  // or a dialog closes. They are not interactive, so the default ring reads as
+  // a stray blue box drawn around the page.
+  const rule = declarationsFor(".writingPane:focus,\n.workspaceHub:focus,\n.workspaceCollectionDialog:focus,\n.workspaceCollectionHeader h1:focus");
+  expect(rule).toContain("outline: none;");
+});
+
 it("keeps narrow editor chrome compact and unobstructed", () => {
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.statusDock\s*\{[^}]*grid-template-columns: auto minmax\(0, 1fr\);/
@@ -145,7 +194,7 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   // The open document holds the only collection control, so it must survive the
   // narrowest layout rather than be hidden.
   expect(stylesheet).toMatch(
-    /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*max-width: 84px;/
+    /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*max-width: 104px;/
   );
   expect(stylesheet).not.toMatch(
     /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
