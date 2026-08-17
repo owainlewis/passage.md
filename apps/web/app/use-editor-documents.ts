@@ -197,24 +197,33 @@ export function useEditorDocuments({
         try {
           const loadedVersion = docsRef.current.find((doc) => doc.id === pendingSave.id)?.version;
           const saved = await apiUpdateDoc(pendingSave.id, pendingSave.body, loadedVersion);
-          if (cancelled) return;
+          // Record what the server now holds even when more typing has already
+          // superseded this save. Dropping the new version here left the next
+          // save carrying a stale one, so ordinary typing through an in-flight
+          // request answered itself with a conflict.
           setDocs((prev) =>
             prev.map((doc) =>
               doc.id === saved.id
                 ? {
-                    ...saved,
-                    collectionId: doc.collectionId,
-                    collectionSlug: doc.collectionSlug,
-                    starred: doc.starred,
-                    pinned: doc.pinned,
+                    ...doc,
+                    publicId: saved.publicId ?? doc.publicId,
+                    title: saved.title,
+                    version: saved.version,
+                    bodyLoaded: true,
+                    // Keep the newer local draft when this save is stale.
+                    body: cancelled ? doc.body : saved.body,
                     updatedAt: newestTimestamp(doc.updatedAt, saved.updatedAt)
                   }
                 : doc
             )
           );
+          if (cancelled) return;
           setSaveState("saved");
           setPendingSave(null);
         } catch (error) {
+          // A superseded save leaves the version alone on purpose. Adopting the
+          // server's version here would let the next autosave overwrite the
+          // other writer without ever asking.
           if (cancelled) return;
           if (error instanceof DocumentConflictError) {
             // Stop retrying. The draft stays in pendingSave and in the editor

@@ -1877,6 +1877,7 @@ button {
 /* -------------------------------------------------------------------- main */
 
 .main {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -3852,38 +3853,55 @@ button {
 
 /* --------------------------------------------------------------- account */
 
-/* Save conflict. Louder than the billing notice because it is blocking work
-   and needs a decision, but it never acts on its own. */
+/* Save conflict. A compact card docked to the writing pane rather than a
+   full-width bar: it needs a decision, but it should not shove the document
+   down the page or strand its buttons at the far edge of a wide display. */
+/* Programmatic focus targets. These carry tabindex="-1" so code can move
+   focus to them for screen readers after a navigation or a dialog closes.
+   They are not keyboard-reachable and not interactive, so the browser's
+   default ring reads as a stray blue box drawn around the page. */
+.writingPane:focus,
+.workspaceHub:focus,
+.workspaceCollectionDialog:focus,
+.workspaceCollectionHeader h1:focus {
+  outline: none;
+}
+
 .conflictNotice {
+  position: absolute;
+  z-index: 4;
+  /* Below the 56px top bar row, not over its controls. */
+  top: 70px;
+  right: 18px;
+  left: auto;
+  width: min(360px, calc(100% - 36px));
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 18px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--hairline);
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
   background: var(--elevated);
-  box-shadow: inset 3px 0 0 #a04a3e;
+  box-shadow: 0 12px 32px rgba(15, 15, 20, 0.16);
   color: var(--ink-soft);
-  font-size: 0.9rem;
 }
 
 .conflictNoticeText {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .conflictNoticeText strong {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.8125rem;
   font-weight: 650;
 }
 
 .conflictNoticeText span {
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: 0.78125rem;
   line-height: 1.5;
 }
 
@@ -3894,13 +3912,14 @@ button {
 }
 
 .conflictNoticeActions button {
+  flex: 1 1 auto;
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--control-boundary);
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink);
-  font-size: 0.8125rem;
+  font-size: 0.78125rem;
   font-weight: 600;
 }
 
@@ -3916,6 +3935,14 @@ button {
 
 .conflictNoticeActions .conflictNoticePrimary:hover {
   background: color-mix(in srgb, var(--accent) 86%, var(--accent-strong));
+}
+
+@media (max-width: 720px) {
+  .conflictNotice {
+    top: 66px;
+    right: 12px;
+    width: calc(100% - 24px);
+  }
 }
 
 .billingNotice {

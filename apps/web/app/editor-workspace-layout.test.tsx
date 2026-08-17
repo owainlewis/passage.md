@@ -173,6 +173,14 @@ it("stacks the collection header on a phone instead of squeezing the title", () 
   expect(stylesheet).not.toMatch(/\.workspaceCollectionHeader > p\s*\{/);
 });
 
+it("hides the browser ring on programmatic focus targets", () => {
+  // These carry tabindex="-1" so focus can be moved to them after a navigation
+  // or a dialog closes. They are not interactive, so the default ring reads as
+  // a stray blue box drawn around the page.
+  const rule = declarationsFor(".writingPane:focus,\n.workspaceHub:focus,\n.workspaceCollectionDialog:focus,\n.workspaceCollectionHeader h1:focus");
+  expect(rule).toContain("outline: none;");
+});
+
 it("keeps narrow editor chrome compact and unobstructed", () => {
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.statusDock\s*\{[^}]*grid-template-columns: auto minmax\(0, 1fr\);/
