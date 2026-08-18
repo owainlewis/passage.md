@@ -185,7 +185,7 @@ it("lets notices take their own height instead of the content's", () => {
 
   // Which element grows is stated, not inferred from position.
   expect(declarationsFor(".main > *")).toContain("flex: 0 0 auto;");
-  const panes = declarationsFor(".main > .writingPane,\n.main > .templateLibrary,\n.main > .workspaceHub");
+  const panes = declarationsFor(".main > .writingPane,\n.main > .templateLibrary,\n.main > .templateEditor,\n.main > .workspaceHub");
   expect(panes).toContain("flex: 1 1 auto;");
   expect(panes).toContain("min-height: 0;");
 });

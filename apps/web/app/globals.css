@@ -1900,8 +1900,12 @@ button {
   min-height: 56px;
 }
 
+/* Every pane that fills the space under the chrome. templateEditor belongs
+   here too: it is the sibling alternative to templateLibrary and its internal
+   grid needs a constrained, viewport-filling height. */
 .main > .writingPane,
 .main > .templateLibrary,
+.main > .templateEditor,
 .main > .workspaceHub {
   flex: 1 1 auto;
   min-height: 0;
