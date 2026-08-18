@@ -1876,14 +1876,35 @@ button {
 
 /* -------------------------------------------------------------------- main */
 
+/* A column, not a fixed set of rows. The grid this replaced declared three
+   rows and assumed exactly three children, so a notice took the flexible row
+   and pushed the content into the auto one: the banner filled the window and
+   the document collapsed under it. The number of children varies with
+   notices, the load-more control and the status bar, so which element grows
+   has to be stated rather than inferred from position. */
 .main {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
+}
+
+.main > * {
+  flex: 0 0 auto;
+}
+
+.main > .topBar {
+  min-height: 56px;
+}
+
+.main > .writingPane,
+.main > .templateLibrary,
+.main > .workspaceHub {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .topBar {

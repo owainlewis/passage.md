@@ -173,6 +173,23 @@ it("stacks the collection header on a phone instead of squeezing the title", () 
   expect(stylesheet).not.toMatch(/\.workspaceCollectionHeader > p\s*\{/);
 });
 
+it("lets notices take their own height instead of the content's", () => {
+  // .main used to be grid-template-rows: 56px minmax(0,1fr) auto, which
+  // assumed exactly three children. The child count varies with notices, the
+  // load-more control and the status bar, so a notice landed in the flexible
+  // row and filled the window while the document collapsed beneath it.
+  const main = declarationsFor(".main");
+  expect(main).toContain("display: flex;");
+  expect(main).toContain("flex-direction: column;");
+  expect(main).not.toContain("grid-template-rows");
+
+  // Which element grows is stated, not inferred from position.
+  expect(declarationsFor(".main > *")).toContain("flex: 0 0 auto;");
+  const panes = declarationsFor(".main > .writingPane,\n.main > .templateLibrary,\n.main > .workspaceHub");
+  expect(panes).toContain("flex: 1 1 auto;");
+  expect(panes).toContain("min-height: 0;");
+});
+
 it("hides the browser ring on programmatic focus targets", () => {
   // These carry tabindex="-1" so focus can be moved to them after a navigation
   // or a dialog closes. They are not interactive, so the default ring reads as
