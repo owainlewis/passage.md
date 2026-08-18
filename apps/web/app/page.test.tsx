@@ -248,9 +248,11 @@ async function openDocumentNamed(title: string) {
   await screen.findByRole("region", { name: "Markdown editor" });
 }
 
+// The new-document control creates a blank page directly. Callers that expect
+// it to succeed wait for the editor themselves; creation can also be refused,
+// for example at a saved-document limit.
 async function createBlankDocument() {
   fireEvent.click(screen.getByRole("button", { name: "New document" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
 }
 
 function openWorkspaceSearch() {
@@ -1208,6 +1210,25 @@ describe("Write (editor)", () => {
     expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("This document changed somewhere else");
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(await screen.findByRole("textbox", { name: "Markdown editor" })).toHaveValue("# One\n\nmy words");
+  });
+
+  it("creates a blank document straight into the editor, without the template picker", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
+    await renderWrite();
+
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+
+    // Straight into an empty editable document.
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    expect(editor).toHaveValue("");
+    // Ready to type into. The editor only mounts once the mode switches, so
+    // focusing at creation time silently did nothing.
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(screen.queryByRole("heading", { name: "What are we working on today?" })).not.toBeInTheDocument();
+
+    // Templates are still one click away for the times you want one.
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
   });
 
   it("creates a document, updates its title, and renders Markdown preview", async () => {
@@ -2171,11 +2192,14 @@ describe("Write (editor)", () => {
     await renderWrite();
     openWorkspaceHome();
     openSidebarCollection("Research");
+    // Creating from inside a collection files the document there, without a
+    // stop at the template picker.
     fireEvent.click(screen.getByRole("button", { name: "New document" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
     await screen.findByRole("region", { name: "Markdown editor" });
 
-    expect(screen.getByRole("combobox", { name: "Collection for Untitled" })).toHaveValue("research");
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Collection for Untitled" })).toHaveValue("research")
+    );
     openSidebarCollection("Research");
     expect(screen.getByLabelText("Research")).toHaveTextContent("Untitled");
   });

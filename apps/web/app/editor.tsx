@@ -40,6 +40,7 @@ export default function Editor() {
   const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
+  const focusNewDocument = useRef(false);
   const workspaceViewRef = useRef(workspaceView);
   workspaceViewRef.current = workspaceView;
 
@@ -125,6 +126,17 @@ export default function Editor() {
     }
   }, []);
 
+  // A document created from the New document control should be ready to type
+  // into. This runs after the editor has actually mounted, which is why it is
+  // an effect rather than a call at creation time.
+  useEffect(() => {
+    if (!focusNewDocument.current || mode !== "edit") return;
+    const element = textareaRef.current;
+    if (!element) return;
+    focusNewDocument.current = false;
+    element.focus();
+  }, [mode, activeId, active?.bodyLoaded]);
+
   useEffect(() => {
     const element = textareaRef.current;
     if (!element || mode !== "edit") return;
@@ -178,16 +190,20 @@ export default function Editor() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  async function createDoc(body = "") {
+  async function createDoc(body = "", collection: string | null = newDocumentCollection) {
     const created = await createDocument(body);
     if (!created) return false;
-    if (newDocumentCollection) {
-      await collectionState.assignCollection(created.id, newDocumentCollection);
+    if (collection) {
+      await collectionState.assignCollection(created.id, collection);
     }
     setNewDocumentCollection(null);
     setActiveTemplateId("");
     setMode("edit");
     setWorkspaceView({ type: "document" });
+    // Ask for focus rather than reaching for the textarea here: at this point
+    // the mode is still preview, so it is not mounted, and the document body
+    // load remounts it shortly after.
+    focusNewDocument.current = true;
     return true;
   }
 
@@ -205,6 +221,15 @@ export default function Editor() {
       return;
     }
     openWorkspaceView({ type: "home" }, "replace");
+  }
+
+  // Writing is the common case. Templates are the exception, and they have
+  // their own destination in the sidebar, so the new-document control creates
+  // a blank page and puts the cursor in it rather than asking a question first.
+  // The collection is passed explicitly because the state set here would not
+  // be readable until the next render.
+  function createBlankDocument() {
+    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null);
   }
 
   function openTemplates() {
@@ -416,7 +441,7 @@ export default function Editor() {
               className="iconButton"
               aria-label="New document"
               disabled={!docsReady}
-              onClick={openTemplates}
+              onClick={createBlankDocument}
             >
               <PlusIcon />
             </button>
