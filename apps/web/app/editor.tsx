@@ -38,6 +38,7 @@ export default function Editor() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchScope, setSearchScope] = useState("all");
   const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
+  const [documentCopied, setDocumentCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
   const focusNewDocument = useRef(false);
@@ -100,6 +101,7 @@ export default function Editor() {
   const activeShared = active ? isShared(active) : false;
   const shareDialogOpen = Boolean(active && shareDialogDocId === active.id);
   const {
+    copyShareLink,
     exportDoc,
     publicDocPath,
     shareButtonLabel,
@@ -230,6 +232,20 @@ export default function Editor() {
   // be readable until the next render.
   function createBlankDocument() {
     void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null);
+  }
+
+  // Copies the Markdown itself, which is the form the document is written and
+  // stored in and the form another tool expects.
+  async function copyDocument() {
+    if (!active?.bodyLoaded) return;
+    try {
+      await navigator.clipboard.writeText(active.body);
+    } catch {
+      window.prompt("Copy this document", active.body);
+      return;
+    }
+    setDocumentCopied(true);
+    window.setTimeout(() => setDocumentCopied(false), 1800);
   }
 
   function openTemplates() {
@@ -635,6 +651,11 @@ export default function Editor() {
         {showResolvedDocument && docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
+            documentCopied={documentCopied}
+            onCopyDocument={() => void copyDocument()}
+            onCopyShareLink={() => void copyShareLink()}
+            publicDocPath={publicDocPath}
+            shareLinkCopied={shareState === "copied"}
             mode={mode}
             onExport={exportDoc}
             onModeChange={setMode}
@@ -713,13 +734,18 @@ function DocumentShareDialog({
   onUnshare: () => Promise<boolean>;
 }) {
   const cancelButton = useRef<HTMLButtonElement>(null);
+  const shareURL = publicDocPath
+    ? new URL(publicDocPath, typeof window === "undefined" ? "https://passage.md" : window.location.origin).toString()
+    : "";
 
   return (
     <WorkspaceModal ariaLabel="Share document" initialFocus={cancelButton} onClose={onClose}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          onClose();
+          // Publishing keeps the dialog open so the link is actually shown.
+          // Closing first copied a URL the writer never saw and gave them no
+          // way back to it.
           void (activeShared ? onCopy() : onPublish());
         }}
       >
@@ -732,9 +758,12 @@ function DocumentShareDialog({
           </p>
         </header>
         {activeShared && publicDocPath && (
-          <Link className="workspaceDialogPublicLink" href={publicDocPath} target="_blank" rel="noreferrer">
-            View public document
-          </Link>
+          <div className="workspaceDialogShareLink">
+            <code>{shareURL}</code>
+            <Link className="workspaceDialogPublicLink" href={publicDocPath} target="_blank" rel="noreferrer">
+              Open
+            </Link>
+          </div>
         )}
         <footer>
           <button ref={cancelButton} type="button" onClick={onClose}>Close</button>

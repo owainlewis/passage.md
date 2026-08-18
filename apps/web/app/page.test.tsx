@@ -290,7 +290,7 @@ function publishActiveDocument() {
 }
 
 function makeActiveDocumentPrivate() {
-  fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+  fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
   fireEvent.click(screen.getByRole("button", { name: "Make private" }));
 }
 
@@ -2421,7 +2421,7 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("dialog", { name: "Delete document" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).startsWith("/api/v1/docs/") && init?.method === "DELETE")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
     act(() => {
       window.history.pushState(null, "", "/write/first");
@@ -2649,7 +2649,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Publish and copy link" }));
 
-    await screen.findByRole("button", { name: "Shared" });
+    await screen.findByRole("button", { name: "Unshare" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -2670,7 +2670,7 @@ describe("Write (editor)", () => {
     fireEvent.change(collection, { target: { value: "research" } });
     publishActiveDocument();
 
-    await screen.findByRole("button", { name: "Shared" });
+    await screen.findByRole("button", { name: "Unshare" });
     expect(collection).toHaveValue("research");
   });
 
@@ -2678,7 +2678,7 @@ describe("Write (editor)", () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-shared", body: "# Shared draft", shareToken: "share-token", sharedAt: "2026-07-09T08:00:00Z" }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-shared/share",
@@ -2755,6 +2755,19 @@ describe("Write (editor)", () => {
     getItem.mockRestore();
   });
 
+  it("copies the document Markdown from the editor", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Notes\n\nExact Markdown." }]);
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    // The Markdown itself, byte for byte, not a rendered version of it.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("# Notes\n\nExact Markdown."));
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+  });
+
   it("copies a server share link for the active document", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -2774,10 +2787,19 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
-    await screen.findByRole("button", { name: "Shared" });
-    expect(screen.queryByText("Public link")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
-    expect(screen.getByRole("link", { name: "View public document" })).toHaveAttribute("href", "/d/public-2");
+    // The dock keeps the link reachable and names the action that undoes it.
+    await screen.findByRole("button", { name: "Unshare" });
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+
+    // Copying from the dock needs no dialog and no republishing.
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(writeText.mock.calls[1][0]).toBe("http://localhost:3000/d/public-2");
+
+    // The dialog shows the URL rather than only linking to it.
+    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
+    expect(await screen.findByText("http://localhost:3000/d/public-2")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/d/public-2");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
 
@@ -3746,7 +3768,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByRole("button", { name: "Shared" })).not.toHaveAttribute("aria-pressed");
+    expect(await screen.findByRole("button", { name: "Unshare" })).not.toHaveAttribute("aria-pressed");
   });
 
   it("unshares a signed-in document", async () => {
@@ -3774,7 +3796,7 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    const shared = await screen.findByRole("button", { name: "Shared" });
+    const shared = await screen.findByRole("button", { name: "Unshare" });
     expect(shared).not.toHaveAttribute("aria-pressed");
     fireEvent.click(shared);
     fireEvent.click(screen.getByRole("button", { name: "Make private" }));

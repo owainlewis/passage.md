@@ -77,6 +77,11 @@ function LandingContent() {
           ? "Get started"
           : "Sign in";
 
+  // When public signup is open the call to action is "Create free account", so
+  // a returning reader has nowhere to sign in. When signup is closed the call
+  // to action is already "Sign in", and a second link would just repeat it.
+  const showSignIn = sessionReady && !signedIn && publicSignup;
+
   const statusMessage = !sessionReady
     ? ""
     : isPro
@@ -94,6 +99,7 @@ function LandingContent() {
         <nav className={styles.navLinks} aria-label="Main navigation">
           <Link href="/cli">CLI</Link>
           {isPro ? <Link href="/account">Account</Link> : <a href="#pricing">Go Pro</a>}
+          {showSignIn && <Link href="/login">Sign in</Link>}
           <Link className={styles.navCta} href={primaryHref}>
             {primaryLabel}
           </Link>
@@ -266,6 +272,7 @@ function LandingContent() {
         </div>
         <nav className={styles.footerLinks} aria-label="Footer links">
           <Link href={primaryHref}>{primaryLabel}</Link>
+          {showSignIn && <Link href="/login">Sign in</Link>}
           <Link href="/cli">CLI</Link>
           <a href="#pricing">Pricing</a>
           <Link href="/terms">Terms</Link>

@@ -35,13 +35,15 @@ export function useEditorSharing({
   const copyTimer = useRef<number | undefined>(undefined);
 
   const publicDocPath = activeShared && active?.publicId ? `/d/${active.publicId}` : "";
+  // The label names what the button does. "Shared" described a state, which
+  // left no visible way to stop sharing and no route back to the link.
   const shareButtonLabel =
     shareState === "toolong"
       ? "Too long"
       : shareState === "error"
         ? "Share failed"
         : activeShared
-          ? "Shared"
+          ? "Unshare"
           : shareState === "copied"
             ? "Copied"
             : "Share";
@@ -116,6 +118,17 @@ export function useEditorSharing({
     }
   }
 
+  // Copying the link of an already shared document. Separate from shareDoc so
+  // the link stays reachable without republishing or reopening the dialog.
+  async function copyShareLink() {
+    if (!publicDocPath) return false;
+    window.clearTimeout(copyTimer.current);
+    await copyURL(new URL(publicDocPath, window.location.origin).toString());
+    setShareState("copied");
+    copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
+    return true;
+  }
+
   async function copyURL(url: string) {
     try {
       await navigator.clipboard.writeText(url);
@@ -146,6 +159,7 @@ export function useEditorSharing({
 
   return {
     exportDoc,
+    copyShareLink,
     publicDocPath,
     shareButtonLabel,
     shareDoc,

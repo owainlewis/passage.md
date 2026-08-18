@@ -1,10 +1,15 @@
 "use client";
 
 import { Mode, saveLabel, SaveState, ShareState } from "./editor-model";
-import { DownloadIcon, EyeIcon, PencilIcon, SaveStatusIcon, ShareIcon } from "./icons";
+import { CopyIcon, DownloadIcon, EyeIcon, LinkIcon, PencilIcon, SaveStatusIcon, ShareIcon } from "./icons";
 
 type EditorStatusBarProps = {
   activeShared: boolean;
+  documentCopied: boolean;
+  onCopyDocument: () => void;
+  onCopyShareLink: () => void;
+  publicDocPath: string;
+  shareLinkCopied: boolean;
   mode: Mode;
   onExport: () => void;
   onModeChange: (mode: Mode) => void;
@@ -19,6 +24,11 @@ type EditorStatusBarProps = {
 
 export function EditorStatusBar({
   activeShared,
+  documentCopied,
+  onCopyDocument,
+  onCopyShareLink,
+  publicDocPath,
+  shareLinkCopied,
   mode,
   onExport,
   onModeChange,
@@ -65,6 +75,14 @@ export function EditorStatusBar({
           <span className="statusPill">{words === 1 ? "1 word" : `${words} words`}</span>
         </div>
         <div className="dockGroup dockGroupActions">
+          {activeShared && publicDocPath && (
+            // A shared document needs its link reachable at any time, not only
+            // in the moment it was published.
+            <button type="button" className="dockButton" onClick={onCopyShareLink}>
+              <LinkIcon />
+              <span>{shareLinkCopied ? "Copied" : "Copy link"}</span>
+            </button>
+          )}
           <button
             type="button"
             className="dockButton shareToggle"
@@ -76,6 +94,10 @@ export function EditorStatusBar({
           >
             <ShareIcon />
             <span>{shareButtonLabel}</span>
+          </button>
+          <button type="button" className="dockButton" onClick={onCopyDocument}>
+            <CopyIcon />
+            <span>{documentCopied ? "Copied" : "Copy"}</span>
           </button>
           <button type="button" className="dockButton" onClick={onExport}>
             <DownloadIcon />
