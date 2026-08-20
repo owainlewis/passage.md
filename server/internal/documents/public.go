@@ -126,25 +126,35 @@ var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!docty
       color: var(--ink);
     }
     h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
+    /* Only the opening heading is the document title. Everything after it is a
+       section heading inside the document and needs ordinary rhythm: room
+       above, no width clamp, and no display size. Styling every h1 as a title
+       gave a document with many headings a 14ch wrapping column, no space
+       above each one, and a standfirst after each one. */
     h1 {
+      margin: 2.6rem 0 0.6rem;
+      font-family: var(--serif);
+      font-size: clamp(1.9rem, 3.4vw, 2.4rem);
+      font-weight: 400;
+      line-height: 1.15;
+      letter-spacing: -0.028em;
+    }
+    h1:first-child {
       max-width: 14ch;
       margin: 0 0 0.65em;
-      font-family: var(--serif);
       font-size: clamp(2.75rem, 6vw, 4rem);
-      font-weight: 400;
       line-height: 1.03;
       letter-spacing: -0.035em;
     }
     h2 {
-      max-width: 22ch;
-      margin: 4rem 0 0.7rem;
+      margin: 2.8rem 0 0.7rem;
       font-family: var(--serif);
-      font-size: clamp(1.65rem, 3vw, 2.15rem);
+      font-size: clamp(1.5rem, 2.6vw, 1.85rem);
       font-weight: 400;
-      line-height: 1.16;
-      letter-spacing: -0.025em;
+      line-height: 1.2;
+      letter-spacing: -0.022em;
     }
-    h1 + h2 { margin-top: 3.2rem; }
+    h1 + h2, h1 + h3 { margin-top: 1.4rem; }
     h3 {
       margin: 2.6rem 0 0.55rem;
       font-size: 1.21rem;
@@ -157,7 +167,8 @@ var publicTemplate = htmltemplate.Must(htmltemplate.New("public").Parse(`<!docty
       line-height: 1.4;
     }
     p, ul, ol, blockquote, pre, table { margin: 0 0 1.25em; }
-    h1 + p {
+    /* The standfirst belongs to the title, not to every heading in the file. */
+    h1:first-child + p {
       max-width: 34rem;
       margin-bottom: 3.4rem;
       color: var(--muted);
