@@ -1630,6 +1630,27 @@ button {
   opacity: 0.45;
 }
 
+/* The share URL, shown rather than hidden behind a link. It is the thing the
+   writer came for, so it is selectable text with the destination beside it. */
+.workspaceDialogShareLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--elevated);
+}
+
+.workspaceDialogShareLink code {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  color: var(--ink-soft);
+  font: 0.75rem/1.4 var(--mono);
+  white-space: nowrap;
+}
+
 .workspaceDialogPublicLink {
   width: fit-content;
   color: var(--accent);

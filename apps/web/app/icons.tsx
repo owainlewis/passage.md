@@ -102,6 +102,24 @@ export function EyeIcon() {
   );
 }
 
+export function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M15 6.2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <path d="M10.5 13.5a3.6 3.6 0 0 0 5.1 0l2.6-2.6a3.6 3.6 0 0 0-5.1-5.1l-1.3 1.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M13.5 10.5a3.6 3.6 0 0 0-5.1 0l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1l1.3-1.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function ShareIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">

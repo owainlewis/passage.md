@@ -502,11 +502,21 @@ func TestPublicRendersHTMLAndRawMarkdown(t *testing.T) {
 	if !strings.Contains(html.Body.String(), "<h1>Shared</h1>") {
 		t.Fatalf("html body = %s", html.Body.String())
 	}
-	if !regexp.MustCompile(`(?s)h1\s*\{[^}]*font-family:\s*var\(--serif\)[^}]*font-size:\s*clamp\(2\.75rem,\s*6vw,\s*4rem\)`).MatchString(html.Body.String()) {
+	// The display treatment belongs to the opening heading alone. Applied to
+	// every h1 it wrapped each one at 14ch, removed the space above it, and
+	// turned the paragraph after each into a standfirst.
+	if !regexp.MustCompile(`(?s)h1:first-child\s*\{[^}]*font-size:\s*clamp\(2\.75rem,\s*6vw,\s*4rem\)`).MatchString(html.Body.String()) {
 		t.Fatalf("html does not use the editorial document title: %s", html.Body.String())
 	}
-	if !regexp.MustCompile(`(?s)h1\s*\+\s*p\s*\{[^}]*font-size:\s*clamp\(1\.1rem,\s*0\.35vw\s*\+\s*1rem,\s*1\.2rem\)`).MatchString(html.Body.String()) {
+	if !regexp.MustCompile(`(?s)h1:first-child\s*\+\s*p\s*\{[^}]*font-size:\s*clamp\(1\.1rem,\s*0\.35vw\s*\+\s*1rem,\s*1\.2rem\)`).MatchString(html.Body.String()) {
 		t.Fatalf("html does not use the document standfirst: %s", html.Body.String())
+	}
+	// A repeated heading gets room above it and no width clamp.
+	if !regexp.MustCompile(`(?s)\n    h1\s*\{[^}]*margin:\s*2\.6rem`).MatchString(html.Body.String()) {
+		t.Fatalf("repeated headings have no space above them: %s", html.Body.String())
+	}
+	if regexp.MustCompile(`(?s)\n    h1\s*\{[^}]*max-width`).MatchString(html.Body.String()) {
+		t.Fatalf("every heading is clamped to a title measure: %s", html.Body.String())
 	}
 	if !strings.Contains(html.Body.String(), `class="themeToggle"`) ||
 		!strings.Contains(html.Body.String(), `aria-label="Use dark theme"`) ||

@@ -38,8 +38,11 @@ export default function Editor() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchScope, setSearchScope] = useState("all");
   const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
+  const [documentCopied, setDocumentCopied] = useState(false);
+  const [creatingDocument, setCreatingDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
+  const focusNewDocument = useRef(false);
   const workspaceViewRef = useRef(workspaceView);
   workspaceViewRef.current = workspaceView;
 
@@ -99,6 +102,7 @@ export default function Editor() {
   const activeShared = active ? isShared(active) : false;
   const shareDialogOpen = Boolean(active && shareDialogDocId === active.id);
   const {
+    copyShareLink,
     exportDoc,
     publicDocPath,
     shareButtonLabel,
@@ -124,6 +128,17 @@ export default function Editor() {
       setSidebarOpen(false);
     }
   }, []);
+
+  // A document created from the New document control should be ready to type
+  // into. This runs after the editor has actually mounted, which is why it is
+  // an effect rather than a call at creation time.
+  useEffect(() => {
+    if (!focusNewDocument.current || mode !== "edit") return;
+    const element = textareaRef.current;
+    if (!element) return;
+    focusNewDocument.current = false;
+    element.focus();
+  }, [mode, activeId, active?.bodyLoaded]);
 
   useEffect(() => {
     const element = textareaRef.current;
@@ -178,16 +193,20 @@ export default function Editor() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  async function createDoc(body = "") {
+  async function createDoc(body = "", collection: string | null = newDocumentCollection) {
     const created = await createDocument(body);
     if (!created) return false;
-    if (newDocumentCollection) {
-      await collectionState.assignCollection(created.id, newDocumentCollection);
+    if (collection) {
+      await collectionState.assignCollection(created.id, collection);
     }
     setNewDocumentCollection(null);
     setActiveTemplateId("");
     setMode("edit");
     setWorkspaceView({ type: "document" });
+    // Ask for focus rather than reaching for the textarea here: at this point
+    // the mode is still preview, so it is not mounted, and the document body
+    // load remounts it shortly after.
+    focusNewDocument.current = true;
     return true;
   }
 
@@ -205,6 +224,35 @@ export default function Editor() {
       return;
     }
     openWorkspaceView({ type: "home" }, "replace");
+  }
+
+  // Writing is the common case. Templates are the exception, and they have
+  // their own destination in the sidebar, so the new-document control creates
+  // a blank page and puts the cursor in it rather than asking a question first.
+  // The collection is passed explicitly because the state set here would not
+  // be readable until the next render.
+  function createBlankDocument() {
+    // The control used to open a dialog, so pressing it twice was harmless.
+    // Now it writes, and each press would create its own document and take
+    // over the active document and history.
+    if (creatingDocument) return;
+    setCreatingDocument(true);
+    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null)
+      .finally(() => setCreatingDocument(false));
+  }
+
+  // Copies the Markdown itself, which is the form the document is written and
+  // stored in and the form another tool expects.
+  async function copyDocument() {
+    if (!active?.bodyLoaded) return;
+    try {
+      await navigator.clipboard.writeText(active.body);
+    } catch {
+      window.prompt("Copy this document", active.body);
+      return;
+    }
+    setDocumentCopied(true);
+    window.setTimeout(() => setDocumentCopied(false), 1800);
   }
 
   function openTemplates() {
@@ -415,8 +463,8 @@ export default function Editor() {
               type="button"
               className="iconButton"
               aria-label="New document"
-              disabled={!docsReady}
-              onClick={openTemplates}
+              disabled={!docsReady || creatingDocument}
+              onClick={createBlankDocument}
             >
               <PlusIcon />
             </button>
@@ -610,6 +658,11 @@ export default function Editor() {
         {showResolvedDocument && docsReady && active?.bodyLoaded && (
           <EditorStatusBar
             activeShared={activeShared}
+            documentCopied={documentCopied}
+            onCopyDocument={() => void copyDocument()}
+            onCopyShareLink={() => void copyShareLink()}
+            publicDocPath={publicDocPath}
+            shareLinkCopied={shareState === "copied"}
             mode={mode}
             onExport={exportDoc}
             onModeChange={setMode}
@@ -688,13 +741,18 @@ function DocumentShareDialog({
   onUnshare: () => Promise<boolean>;
 }) {
   const cancelButton = useRef<HTMLButtonElement>(null);
+  const shareURL = publicDocPath
+    ? new URL(publicDocPath, typeof window === "undefined" ? "https://passage.md" : window.location.origin).toString()
+    : "";
 
   return (
     <WorkspaceModal ariaLabel="Share document" initialFocus={cancelButton} onClose={onClose}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          onClose();
+          // Publishing keeps the dialog open so the link is actually shown.
+          // Closing first copied a URL the writer never saw and gave them no
+          // way back to it.
           void (activeShared ? onCopy() : onPublish());
         }}
       >
@@ -707,9 +765,12 @@ function DocumentShareDialog({
           </p>
         </header>
         {activeShared && publicDocPath && (
-          <Link className="workspaceDialogPublicLink" href={publicDocPath} target="_blank" rel="noreferrer">
-            View public document
-          </Link>
+          <div className="workspaceDialogShareLink">
+            <code>{shareURL}</code>
+            <Link className="workspaceDialogPublicLink" href={publicDocPath} target="_blank" rel="noreferrer">
+              Open
+            </Link>
+          </div>
         )}
         <footer>
           <button ref={cancelButton} type="button" onClick={onClose}>Close</button>

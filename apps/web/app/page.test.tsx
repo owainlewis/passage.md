@@ -248,9 +248,11 @@ async function openDocumentNamed(title: string) {
   await screen.findByRole("region", { name: "Markdown editor" });
 }
 
+// The new-document control creates a blank page directly. Callers that expect
+// it to succeed wait for the editor themselves; creation can also be refused,
+// for example at a saved-document limit.
 async function createBlankDocument() {
   fireEvent.click(screen.getByRole("button", { name: "New document" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
 }
 
 function openWorkspaceSearch() {
@@ -288,7 +290,7 @@ function publishActiveDocument() {
 }
 
 function makeActiveDocumentPrivate() {
-  fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+  fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
   fireEvent.click(screen.getByRole("button", { name: "Make private" }));
 }
 
@@ -1208,6 +1210,25 @@ describe("Write (editor)", () => {
     expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("This document changed somewhere else");
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(await screen.findByRole("textbox", { name: "Markdown editor" })).toHaveValue("# One\n\nmy words");
+  });
+
+  it("creates a blank document straight into the editor, without the template picker", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
+    await renderWrite();
+
+    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+
+    // Straight into an empty editable document.
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    expect(editor).toHaveValue("");
+    // Ready to type into. The editor only mounts once the mode switches, so
+    // focusing at creation time silently did nothing.
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(screen.queryByRole("heading", { name: "What are we working on today?" })).not.toBeInTheDocument();
+
+    // Templates are still one click away for the times you want one.
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
   });
 
   it("creates a document, updates its title, and renders Markdown preview", async () => {
@@ -2171,11 +2192,14 @@ describe("Write (editor)", () => {
     await renderWrite();
     openWorkspaceHome();
     openSidebarCollection("Research");
+    // Creating from inside a collection files the document there, without a
+    // stop at the template picker.
     fireEvent.click(screen.getByRole("button", { name: "New document" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Create blank document" }));
     await screen.findByRole("region", { name: "Markdown editor" });
 
-    expect(screen.getByRole("combobox", { name: "Collection for Untitled" })).toHaveValue("research");
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Collection for Untitled" })).toHaveValue("research")
+    );
     openSidebarCollection("Research");
     expect(screen.getByLabelText("Research")).toHaveTextContent("Untitled");
   });
@@ -2397,7 +2421,7 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("dialog", { name: "Delete document" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).startsWith("/api/v1/docs/") && init?.method === "DELETE")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
     act(() => {
       window.history.pushState(null, "", "/write/first");
@@ -2625,7 +2649,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Publish and copy link" }));
 
-    await screen.findByRole("button", { name: "Shared" });
+    await screen.findByRole("button", { name: "Unshare" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -2646,7 +2670,7 @@ describe("Write (editor)", () => {
     fireEvent.change(collection, { target: { value: "research" } });
     publishActiveDocument();
 
-    await screen.findByRole("button", { name: "Shared" });
+    await screen.findByRole("button", { name: "Unshare" });
     expect(collection).toHaveValue("research");
   });
 
@@ -2654,7 +2678,7 @@ describe("Write (editor)", () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-shared", body: "# Shared draft", shareToken: "share-token", sharedAt: "2026-07-09T08:00:00Z" }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-shared/share",
@@ -2731,6 +2755,38 @@ describe("Write (editor)", () => {
     getItem.mockRestore();
   });
 
+  it("creates one document however fast the control is pressed", async () => {
+    let creates = 0;
+    const baseFetch = stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs" && init?.method === "POST") creates += 1;
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    const button = screen.getByRole("button", { name: "New document" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await screen.findByRole("textbox", { name: "Markdown editor" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "New document" })).toBeEnabled());
+    expect(creates).toBe(1);
+  });
+
+  it("copies the document Markdown from the editor", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Notes\n\nExact Markdown." }]);
+
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    // The Markdown itself, byte for byte, not a rendered version of it.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("# Notes\n\nExact Markdown."));
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+  });
+
   it("copies a server share link for the active document", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -2750,10 +2806,19 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
-    await screen.findByRole("button", { name: "Shared" });
-    expect(screen.queryByText("Public link")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Shared" }));
-    expect(screen.getByRole("link", { name: "View public document" })).toHaveAttribute("href", "/d/public-2");
+    // The dock keeps the link reachable and names the action that undoes it.
+    await screen.findByRole("button", { name: "Unshare" });
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+
+    // Copying from the dock needs no dialog and no republishing.
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(writeText.mock.calls[1][0]).toBe("http://localhost:3000/d/public-2");
+
+    // The dialog shows the URL rather than only linking to it.
+    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
+    expect(await screen.findByText("http://localhost:3000/d/public-2")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/d/public-2");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
 
@@ -3722,7 +3787,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByRole("button", { name: "Shared" })).not.toHaveAttribute("aria-pressed");
+    expect(await screen.findByRole("button", { name: "Unshare" })).not.toHaveAttribute("aria-pressed");
   });
 
   it("unshares a signed-in document", async () => {
@@ -3750,7 +3815,7 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    const shared = await screen.findByRole("button", { name: "Shared" });
+    const shared = await screen.findByRole("button", { name: "Unshare" });
     expect(shared).not.toHaveAttribute("aria-pressed");
     fireEvent.click(shared);
     fireEvent.click(screen.getByRole("button", { name: "Make private" }));
