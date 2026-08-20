@@ -2755,6 +2755,25 @@ describe("Write (editor)", () => {
     getItem.mockRestore();
   });
 
+  it("creates one document however fast the control is pressed", async () => {
+    let creates = 0;
+    const baseFetch = stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs" && init?.method === "POST") creates += 1;
+      return baseFetch(input, init);
+    }));
+
+    await renderWrite();
+    const button = screen.getByRole("button", { name: "New document" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await screen.findByRole("textbox", { name: "Markdown editor" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "New document" })).toBeEnabled());
+    expect(creates).toBe(1);
+  });
+
   it("copies the document Markdown from the editor", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

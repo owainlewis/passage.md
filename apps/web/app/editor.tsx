@@ -39,6 +39,7 @@ export default function Editor() {
   const [searchScope, setSearchScope] = useState("all");
   const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
   const [documentCopied, setDocumentCopied] = useState(false);
+  const [creatingDocument, setCreatingDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
   const focusNewDocument = useRef(false);
@@ -231,7 +232,13 @@ export default function Editor() {
   // The collection is passed explicitly because the state set here would not
   // be readable until the next render.
   function createBlankDocument() {
-    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null);
+    // The control used to open a dialog, so pressing it twice was harmless.
+    // Now it writes, and each press would create its own document and take
+    // over the active document and history.
+    if (creatingDocument) return;
+    setCreatingDocument(true);
+    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null)
+      .finally(() => setCreatingDocument(false));
   }
 
   // Copies the Markdown itself, which is the form the document is written and
@@ -456,7 +463,7 @@ export default function Editor() {
               type="button"
               className="iconButton"
               aria-label="New document"
-              disabled={!docsReady}
+              disabled={!docsReady || creatingDocument}
               onClick={createBlankDocument}
             >
               <PlusIcon />
