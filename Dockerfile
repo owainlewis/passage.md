@@ -10,7 +10,7 @@ RUN npm ci
 COPY apps/web apps/web
 RUN npm run build:web
 
-FROM golang:1.26-bookworm AS server
+FROM golang:1.27-bookworm AS server
 
 WORKDIR /src
 
