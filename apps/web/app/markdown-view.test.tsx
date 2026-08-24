@@ -8,6 +8,7 @@ describe("MarkdownView", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Safe document" })).toBeInTheDocument();
+    expect(container.querySelector("article")).toHaveClass("markdown", "markdownView");
     expect(container.querySelector("script")).not.toBeInTheDocument();
     expect(container.innerHTML).not.toContain("onerror");
   });

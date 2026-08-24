@@ -88,7 +88,7 @@ export function MarkdownView({ source, theme = "light" }: { source: string; them
     };
   }, [html, theme]);
 
-  return <article ref={ref} className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <article ref={ref} className="markdown markdownView" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function replaceWithError(pre: Element, message: string) {
