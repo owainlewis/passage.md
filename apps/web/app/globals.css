@@ -34,9 +34,9 @@
   --text-body: 1rem; /* 16px */
   --text-h1: 2.125rem; /* 34px */
   --text-h2: 1.5rem; /* 24px */
-  --text-h3: 1.25rem; /* 20px */
-  --text-h4: 1.1rem; /* ~17.6px */
-  --lh-body: 1.75;
+  --text-h3: 1.21rem; /* ~19.4px */
+  --text-h4: 1.0625rem; /* 17px */
+  --lh-body: 1.7; /* close to the golden ratio, opened slightly for screens */
 }
 
 :root[data-theme="dark"] {
@@ -2712,7 +2712,7 @@ button {
   font-size: var(--text-h1);
   line-height: 1.15;
   letter-spacing: -0.022em;
-  margin: 3.2rem 0 0.7em;
+  margin: 0 0 0.5em;
 }
 
 .markdown h2 {
@@ -2720,15 +2720,15 @@ button {
   line-height: 1.25;
   letter-spacing: -0.015em;
   font-weight: 680;
-  margin: 3rem 0 0.85rem;
+  margin: 2.6rem 0 0.7rem;
 }
 
 .markdown h3 {
   font-size: var(--text-h3);
   line-height: 1.35;
   letter-spacing: -0.011em;
-  font-weight: 680;
-  margin: 2.4rem 0 0.75rem;
+  font-weight: 650;
+  margin: 2rem 0 0.55rem;
 }
 
 .markdown h4 {
@@ -2736,11 +2736,11 @@ button {
   line-height: 1.4;
   letter-spacing: -0.006em;
   font-weight: 650;
-  margin: 2rem 0 0.6rem;
+  margin: 1.6rem 0 0.45rem;
 }
 
 .markdown p {
-  margin: 0 0 1.4em;
+  margin: 0 0 1.15em;
 }
 
 .markdown strong {
@@ -2767,13 +2767,48 @@ button {
 
 .markdown ul,
 .markdown ol {
-  margin: 0 0 1.4em;
+  margin: 0 0 1.15em;
   padding-left: 1.4em;
 }
 
 .markdown li {
-  margin: 0.45em 0;
+  margin: 0.35em 0;
   padding-left: 0.2em;
+}
+
+/* MarkdownView is the full reading surface used by document and template
+   previews. The landing-page mock document keeps the tighter base rhythm. */
+.markdownView {
+  --text-h3: 1.25rem;
+  --text-h4: 1.1rem;
+  --lh-body: 1.75;
+}
+
+.markdownView h1 {
+  margin: 3.2rem 0 0.7em;
+}
+
+.markdownView h2 {
+  margin: 3rem 0 0.85rem;
+}
+
+.markdownView h3 {
+  font-weight: 680;
+  margin: 2.4rem 0 0.75rem;
+}
+
+.markdownView h4 {
+  margin: 2rem 0 0.6rem;
+}
+
+.markdownView p,
+.markdownView ul,
+.markdownView ol {
+  margin-bottom: 1.4em;
+}
+
+.markdownView li {
+  margin: 0.45em 0;
 }
 
 .markdown li::marker {
