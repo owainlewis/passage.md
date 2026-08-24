@@ -34,9 +34,9 @@
   --text-body: 1rem; /* 16px */
   --text-h1: 2.125rem; /* 34px */
   --text-h2: 1.5rem; /* 24px */
-  --text-h3: 1.21rem; /* ~19.4px */
-  --text-h4: 1.0625rem; /* 17px */
-  --lh-body: 1.7; /* close to the golden ratio, opened slightly for screens */
+  --text-h3: 1.25rem; /* 20px */
+  --text-h4: 1.1rem; /* ~17.6px */
+  --lh-body: 1.75;
 }
 
 :root[data-theme="dark"] {
@@ -2712,7 +2712,7 @@ button {
   font-size: var(--text-h1);
   line-height: 1.15;
   letter-spacing: -0.022em;
-  margin: 0 0 0.5em;
+  margin: 3.2rem 0 0.7em;
 }
 
 .markdown h2 {
@@ -2720,15 +2720,15 @@ button {
   line-height: 1.25;
   letter-spacing: -0.015em;
   font-weight: 680;
-  margin: 2.6rem 0 0.7rem;
+  margin: 3rem 0 0.85rem;
 }
 
 .markdown h3 {
   font-size: var(--text-h3);
   line-height: 1.35;
   letter-spacing: -0.011em;
-  font-weight: 650;
-  margin: 2rem 0 0.55rem;
+  font-weight: 680;
+  margin: 2.4rem 0 0.75rem;
 }
 
 .markdown h4 {
@@ -2736,11 +2736,11 @@ button {
   line-height: 1.4;
   letter-spacing: -0.006em;
   font-weight: 650;
-  margin: 1.6rem 0 0.45rem;
+  margin: 2rem 0 0.6rem;
 }
 
 .markdown p {
-  margin: 0 0 1.15em;
+  margin: 0 0 1.4em;
 }
 
 .markdown strong {
@@ -2767,12 +2767,12 @@ button {
 
 .markdown ul,
 .markdown ol {
-  margin: 0 0 1.15em;
+  margin: 0 0 1.4em;
   padding-left: 1.4em;
 }
 
 .markdown li {
-  margin: 0.35em 0;
+  margin: 0.45em 0;
   padding-left: 0.2em;
 }
 
