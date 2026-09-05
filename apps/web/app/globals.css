@@ -995,9 +995,7 @@ button {
   line-height: 1.1;
 }
 
-.workspaceHero > p:last-of-type,
-.workspacePageHeader > p:last-child,
-.workspaceCollectionHeaderText > p {
+.workspaceHero > p:last-of-type {
   max-width: 650px;
   margin: 10px 0 0;
   color: var(--muted);
@@ -2437,12 +2435,8 @@ button {
   margin: 0 auto 28px;
 }
 
-.templateLibraryHead h2,
-.templateLibraryHead p {
-  margin: 0;
-}
-
 .templateLibraryHead h2 {
+  margin: 0;
   color: var(--ink-display);
   font-family: var(--sans);
   font-size: clamp(1.7rem, 4vw, 2.25rem);
@@ -2450,14 +2444,9 @@ button {
   letter-spacing: -0.02em;
 }
 
-.templateLibraryHead > div > p:last-child,
 .templateLibraryActions > span {
   color: var(--muted);
   font-size: 0.84rem;
-}
-
-.templateLibraryHead > div > p:last-child {
-  margin-top: 8px;
 }
 
 .templateLibraryActions {
@@ -5060,9 +5049,7 @@ button {
     font-size: 2.35rem;
   }
 
-  .workspaceHero > p:last-of-type,
-  .workspacePageHeader > p:last-child,
-  .workspaceCollectionHeaderText > p {
+  .workspaceHero > p:last-of-type {
     font-size: 0.98rem;
   }
 

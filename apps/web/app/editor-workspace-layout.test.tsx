@@ -169,12 +169,6 @@ it("stacks the collection header on a phone instead of squeezing the title", () 
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeaderText\s*\{[^}]*max-width: none;/
   );
-  // The mobile type rule has to follow the element it styles: the description
-  // moved inside the text wrapper and this selector silently stopped matching.
-  expect(stylesheet).toMatch(
-    /@media \(max-width: 720px\)[\s\S]*?\.workspaceCollectionHeaderText > p\s*\{[^}]*font-size:/
-  );
-  expect(stylesheet).not.toMatch(/\.workspaceCollectionHeader > p\s*\{/);
 });
 
 it("lets notices take their own height instead of the content's", () => {

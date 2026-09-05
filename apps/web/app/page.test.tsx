@@ -1831,7 +1831,8 @@ describe("Write (editor)", () => {
     openSidebarCollection("Research");
 
     expect(screen.getByLabelText("Research")).toHaveTextContent("Private note");
-    expect(screen.getByLabelText("Research")).toHaveTextContent("Research notes.");
+    openWorkspaceHome();
+    expect(screen.getByRole("button", { name: /Research.*Research notes/ })).toBeInTheDocument();
   });
 
   it("keeps a pending document save when navigation returns to the workspace", async () => {
@@ -2013,7 +2014,7 @@ describe("Write (editor)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Collection description" }), { target: { value: "Briefs and decisions." } });
     fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
 
-    expect(await screen.findByLabelText("Client Work")).toHaveTextContent("Briefs and decisions.");
+    expect(await screen.findByLabelText("Client Work")).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
     await waitFor(() => expect(screen.getByRole("heading", { name: "Client Work" })).toHaveFocus());
     openWorkspaceSearch();
@@ -2025,6 +2026,8 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).toHaveValue("client-work"));
     openSidebarCollection("Client Work");
     expect(screen.getByLabelText("Client Work")).toHaveTextContent("Private note");
+    openWorkspaceHome();
+    expect(screen.getByRole("button", { name: /Client Work.*Briefs and decisions/ })).toBeInTheDocument();
   });
 
   it("keeps a user-created Documents collection distinct from the fallback", async () => {

@@ -143,11 +143,6 @@ export function EditorWorkspace({
         docs={list}
         deletedCollections={deletedCollections}
         title={view.type === "starred" ? "Starred" : "Recent"}
-        description={
-          view.type === "starred"
-            ? "The documents you return to most often. Stars are personal and do not change agent access."
-            : "Your latest Markdown, ordered by its most recent saved update."
-        }
         empty={view.type === "starred" ? "Star a document to keep it close." : "No recent documents yet."}
         onOpenDocument={onOpenDocument}
         onToggleStar={onToggleStar}
@@ -200,7 +195,6 @@ function WorkspaceHome({
     <div className="workspaceHub workspaceHome" aria-label="Workspace home">
       <header className="workspaceHero">
         <h1>Documents</h1>
-        <p>Markdown, organised for writing and reuse.</p>
         <div className="workspaceHeroActions">
           <button type="button" className="workspaceCreateButton" disabled={creatingDocument} onClick={onCreateDocument}>
             <PlusIcon />{creatingDocument ? "Creating…" : "New document"}
@@ -265,7 +259,6 @@ function WorkspaceCollections({
           <h1>Collections</h1>
           <button data-collection-dialog-focus-fallback type="button" onClick={() => setCreating(true)}>New collection</button>
         </div>
-        <p>Related documents, kept together.</p>
       </header>
       <CollectionGrid assignments={assignments} collections={collections} docs={docs} deletedCollections={deletedCollections} onOpenCollection={onOpenCollection} />
       {creating && <CollectionDialog onClose={() => setCreating(false)} onSave={onCreateCollection} />}
@@ -344,7 +337,6 @@ function WorkspaceCollectionView({
       <header className="workspaceCollectionHeader">
         <div className="workspaceCollectionHeaderText">
           <h1 data-collection-dialog-focus-destination tabIndex={-1}>{collection.title}</h1>
-          <p>{collection.description}</p>
         </div>
         <div className="workspaceCollectionUtilityActions">
           <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>
@@ -412,7 +404,6 @@ function WorkspaceList({
   docs,
   deletedCollections,
   title,
-  description,
   empty,
   onOpenDocument,
   onToggleStar,
@@ -423,7 +414,6 @@ function WorkspaceList({
   docs: Doc[];
   deletedCollections: string[];
   title: string;
-  description: string;
   empty: string;
   onOpenDocument: (doc: Doc) => void;
   onToggleStar: (id: string) => Promise<boolean>;
@@ -433,7 +423,6 @@ function WorkspaceList({
     <div className="workspaceHub" aria-label={title}>
       <header className="workspacePageHeader">
         <h1>{title}</h1>
-        <p>{description}</p>
       </header>
       <WorkspaceDocumentRows
         assignments={assignments}
@@ -702,7 +691,6 @@ function CollectionDialog({
       <form onSubmit={submit}>
         <header>
           <h2>{collection ? "Edit collection" : "New collection"}</h2>
-          <p>Group related Markdown for you and your agents.</p>
         </header>
         <label>
           <span>Title</span>

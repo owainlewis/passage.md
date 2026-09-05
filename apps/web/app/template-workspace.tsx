@@ -119,7 +119,6 @@ export function TemplateWorkspace({
       <div className="templateLibraryHead">
         <div>
           <h2 id="templates-title">What are we working on today?</h2>
-          <p>Start from a blank page, or one of your own templates.</p>
         </div>
         <div className="templateLibraryActions">
           <span>{templates.length} of {MAX_TEMPLATES}</span>
