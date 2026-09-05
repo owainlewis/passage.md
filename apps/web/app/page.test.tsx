@@ -252,7 +252,7 @@ async function openDocumentNamed(title: string) {
 // it to succeed wait for the editor themselves; creation can also be refused,
 // for example at a saved-document limit.
 async function createBlankDocument() {
-  fireEvent.click(screen.getByRole("button", { name: "New document" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "New document" })[0]);
 }
 
 function openWorkspaceSearch() {
@@ -313,7 +313,7 @@ describe("Landing", () => {
     render(<Landing />);
 
     expect(screen.getByRole("heading", { name: "A writing app built for you and your agents." })).toBeInTheDocument();
-    expect(screen.getByText(/in a collection your agents can read/)).toBeInTheDocument();
+    expect(screen.getByText(/Your writing and agent context, together/)).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
@@ -332,7 +332,7 @@ describe("Landing", () => {
     expect(screen.getByRole("heading", { name: "Share deliberately" })).toBeInTheDocument();
     expect(screen.getByText(/one CLI your agents use to read and update the same Markdown/)).toBeInTheDocument();
     expect(screen.getByText(/A folder on one machine is a poor shared memory/)).toBeInTheDocument();
-    expect(screen.getAllByText("$ passage list").length).toBeGreaterThan(0);
+    expect(screen.getByRole("img", { name: /Passage workspace with a collection/ })).toHaveAttribute("src", "/workspace-preview.jpg");
     expect(screen.getAllByText("passage list --collection operating-context").length).toBeGreaterThan(0);
     expect(screen.getAllByText("passage share <doc-id>").length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
@@ -875,7 +875,7 @@ describe("Write (editor)", () => {
     render(<Write />);
 
     expect(await screen.findByRole("status", { name: "Loading saved docs" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "New document" })[0]).toBeDisabled();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
 
     await waitFor(() => expect(resolveDocs).toBeDefined());
@@ -1212,11 +1212,57 @@ describe("Write (editor)", () => {
     expect(await screen.findByRole("textbox", { name: "Markdown editor" })).toHaveValue("# One\n\nmy words");
   });
 
+  it("shows custom collection names on Home's Starred and Recent rows", async () => {
+    stubSignedInFetch([{ id: "doc-1", body: "# Project brief", pinned: true, collectionSlug: "operating-context", collectionId: "collection-context" }]);
+    await renderWrite();
+    openWorkspaceHome();
+    const home = screen.getByLabelText("Workspace home");
+    for (const title of ["Starred", "Recent"]) {
+      const section = within(home).getByRole("heading", { name: title }).closest("section")!;
+      expect(within(section).getByRole("button", { name: /Project brief/ })).toHaveTextContent("Operating Context");
+    }
+  });
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])("preserves browser reload with %j", async (modifier) => {
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    const reload = new KeyboardEvent("keydown", { key: "r", ...modifier, bubbles: true, cancelable: true });
+    fireEvent(editor, reload);
+    expect(reload.defaultPrevented).toBe(false);
+    expect(editor).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("button", { name: "Preview" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("creates and focuses a document from the labelled Home action", async () => {
+    stubSignedInFetch([]);
+    render(<Write />);
+    await screen.findByRole("heading", { name: "Documents" });
+    const home = await screen.findByLabelText("Workspace home");
+    fireEvent.click(within(home).getByRole("button", { name: "New document" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    expect(editor).toHaveValue("");
+    await waitFor(() => expect(editor).toHaveFocus());
+  });
+
+  it("creates a document in its empty collection from the inline action", async () => {
+    stubSignedInFetch([]);
+    render(<Write />);
+    await screen.findByRole("heading", { name: "Documents" });
+    openSidebarCollection("Operating Context");
+    const collection = await screen.findByLabelText("Operating Context", { selector: ".workspaceHub" });
+    fireEvent.click(within(collection).getByRole("button", { name: "New document" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(screen.getByRole("combobox", { name: /Collection/ })).toHaveValue("operating-context");
+  });
+
   it("creates a blank document straight into the editor, without the template picker", async () => {
     stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
     await renderWrite();
 
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New document" })[0]);
 
     // Straight into an empty editable document.
     const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
@@ -1785,7 +1831,8 @@ describe("Write (editor)", () => {
     openSidebarCollection("Research");
 
     expect(screen.getByLabelText("Research")).toHaveTextContent("Private note");
-    expect(screen.getByLabelText("Research")).toHaveTextContent("Research notes.");
+    openWorkspaceHome();
+    expect(screen.getByRole("button", { name: /Research.*Research notes/ })).toBeInTheDocument();
   });
 
   it("keeps a pending document save when navigation returns to the workspace", async () => {
@@ -1863,7 +1910,7 @@ describe("Write (editor)", () => {
     openWorkspaceHome();
     openSidebarCollection("Research");
 
-    expect(screen.getByText("No documents here yet. Use + in the top bar to add the first one.")).toBeInTheDocument();
+    expect(screen.getByText("No documents here yet.")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "New document" }).length).toBeGreaterThan(0);
   });
 
@@ -1967,7 +2014,7 @@ describe("Write (editor)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Collection description" }), { target: { value: "Briefs and decisions." } });
     fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
 
-    expect(await screen.findByLabelText("Client Work")).toHaveTextContent("Briefs and decisions.");
+    expect(await screen.findByLabelText("Client Work")).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
     await waitFor(() => expect(screen.getByRole("heading", { name: "Client Work" })).toHaveFocus());
     openWorkspaceSearch();
@@ -1979,6 +2026,8 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).toHaveValue("client-work"));
     openSidebarCollection("Client Work");
     expect(screen.getByLabelText("Client Work")).toHaveTextContent("Private note");
+    openWorkspaceHome();
+    expect(screen.getByRole("button", { name: /Client Work.*Briefs and decisions/ })).toBeInTheDocument();
   });
 
   it("keeps a user-created Documents collection distinct from the fallback", async () => {
@@ -2194,7 +2243,7 @@ describe("Write (editor)", () => {
     openSidebarCollection("Research");
     // Creating from inside a collection files the document there, without a
     // stop at the template picker.
-    fireEvent.click(screen.getByRole("button", { name: "New document" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "New document" })[0]);
     await screen.findByRole("region", { name: "Markdown editor" });
 
     await waitFor(() =>
@@ -2764,13 +2813,13 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    const button = screen.getByRole("button", { name: "New document" });
+    const button = screen.getAllByRole("button", { name: "New document" })[0];
     fireEvent.click(button);
     fireEvent.click(button);
     fireEvent.click(button);
 
     await screen.findByRole("textbox", { name: "Markdown editor" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "New document" })).toBeEnabled());
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "New document" })[0]).toBeEnabled());
     expect(creates).toBe(1);
   });
 

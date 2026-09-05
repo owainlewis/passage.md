@@ -16,7 +16,7 @@ import {
   WorkspaceView,
   workspaceDocSummary
 } from "./editor-workspace-model";
-import { DocIcon, SearchIcon, StarIcon } from "./icons";
+import { DocIcon, PlusIcon, SearchIcon, StarIcon } from "./icons";
 import { useEditorSearch } from "./use-editor-search";
 
 type EditorWorkspaceProps = {
@@ -27,6 +27,8 @@ type EditorWorkspaceProps = {
   deletedCollections: string[];
   saveState: SaveState;
   view: WorkspaceView;
+  onCreateDocument: () => void;
+  creatingDocument: boolean;
   onCreateCollection: (title: string, description: string) => Promise<string | null>;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenCollection: (slug: string) => void;
@@ -50,6 +52,8 @@ export function EditorWorkspace({
   deletedCollections,
   saveState,
   view,
+  onCreateDocument,
+  creatingDocument,
   onCreateCollection,
   onDeleteCollection,
   onOpenCollection,
@@ -79,6 +83,8 @@ export function EditorWorkspace({
         collections={collections}
         docs={docs}
         deletedCollections={deletedCollections}
+        onCreateDocument={onCreateDocument}
+        creatingDocument={creatingDocument}
         onOpenCollection={onOpenCollection}
         onOpenDocument={onOpenDocument}
         onOpenSearch={onOpenSearch}
@@ -104,6 +110,8 @@ export function EditorWorkspace({
       <WorkspaceCollectionView
         assignments={assignments}
         collection={collection}
+        onCreateDocument={onCreateDocument}
+        creatingDocument={creatingDocument}
         docs={docsInCollection(docs, collection.slug, assignments, deletedCollections)}
         onDeleteCollection={onDeleteCollection}
         onOpenDocument={onOpenDocument}
@@ -135,11 +143,6 @@ export function EditorWorkspace({
         docs={list}
         deletedCollections={deletedCollections}
         title={view.type === "starred" ? "Starred" : "Recent"}
-        description={
-          view.type === "starred"
-            ? "The documents you return to most often. Stars are personal and do not change agent access."
-            : "Your latest Markdown, ordered by its most recent saved update."
-        }
         empty={view.type === "starred" ? "Star a document to keep it close." : "No recent documents yet."}
         onOpenDocument={onOpenDocument}
         onToggleStar={onToggleStar}
@@ -167,6 +170,8 @@ function WorkspaceHome({
   collections,
   docs,
   deletedCollections,
+  onCreateDocument,
+  creatingDocument,
   onOpenCollection,
   onOpenDocument,
   onOpenSearch,
@@ -176,6 +181,8 @@ function WorkspaceHome({
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
+  onCreateDocument: () => void;
+  creatingDocument: boolean;
   onOpenCollection: (slug: string) => void;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
@@ -188,8 +195,10 @@ function WorkspaceHome({
     <div className="workspaceHub workspaceHome" aria-label="Workspace home">
       <header className="workspaceHero">
         <h1>Documents</h1>
-        <p>Markdown, organised for writing and reuse.</p>
         <div className="workspaceHeroActions">
+          <button type="button" className="workspaceCreateButton" disabled={creatingDocument} onClick={onCreateDocument}>
+            <PlusIcon />{creatingDocument ? "Creating…" : "New document"}
+          </button>
           <button type="button" className="workspaceSearchButton" onClick={onOpenSearch}>
             <SearchIcon />
             <span>Search {docs.length} {docs.length === 1 ? "document" : "documents"}</span>
@@ -201,7 +210,7 @@ function WorkspaceHome({
       {starred.length > 0 && (
         <section className="workspaceSection">
           <WorkspaceSectionHeading title="Starred" action="View all" onAction={() => onOpenView({ type: "starred" })} />
-          <WorkspaceDocumentRows assignments={assignments} docs={starred} deletedCollections={deletedCollections} onOpenDocument={onOpenDocument} />
+          <WorkspaceDocumentRows collections={collections} assignments={assignments} docs={starred} deletedCollections={deletedCollections} onOpenDocument={onOpenDocument} />
         </section>
       )}
 
@@ -214,6 +223,7 @@ function WorkspaceHome({
         <WorkspaceSectionHeading title="Recent" action="View all" onAction={() => onOpenView({ type: "recent" })} />
         <WorkspaceDocumentRows
           assignments={assignments}
+          collections={collections}
           docs={recent}
           deletedCollections={deletedCollections}
           onOpenDocument={onOpenDocument}
@@ -249,7 +259,6 @@ function WorkspaceCollections({
           <h1>Collections</h1>
           <button data-collection-dialog-focus-fallback type="button" onClick={() => setCreating(true)}>New collection</button>
         </div>
-        <p>Related documents, kept together.</p>
       </header>
       <CollectionGrid assignments={assignments} collections={collections} docs={docs} deletedCollections={deletedCollections} onOpenCollection={onOpenCollection} />
       {creating && <CollectionDialog onClose={() => setCreating(false)} onSave={onCreateCollection} />}
@@ -293,6 +302,8 @@ function WorkspaceCollectionView({
   collections,
   docs,
   deletedCollections,
+  onCreateDocument,
+  creatingDocument,
   onDeleteCollection,
   onOpenDocument,
   onOpenSearch,
@@ -307,6 +318,8 @@ function WorkspaceCollectionView({
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
+  onCreateDocument: () => void;
+  creatingDocument: boolean;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
@@ -324,7 +337,6 @@ function WorkspaceCollectionView({
       <header className="workspaceCollectionHeader">
         <div className="workspaceCollectionHeaderText">
           <h1 data-collection-dialog-focus-destination tabIndex={-1}>{collection.title}</h1>
-          <p>{collection.description}</p>
         </div>
         <div className="workspaceCollectionUtilityActions">
           <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>
@@ -352,7 +364,7 @@ function WorkspaceCollectionView({
           assignments={assignments}
             docs={docs}
           deletedCollections={deletedCollections}
-          empty="No documents here yet. Use + in the top bar to add the first one."
+          empty="No documents here yet."
           showActions
           showCollectionLabel={false}
             onOpenDocument={onOpenDocument}
@@ -360,6 +372,11 @@ function WorkspaceCollectionView({
           collections={collections}
           pendingDocIds={pendingDocIds}
         />
+        {docs.length === 0 && (
+          <button type="button" className="workspaceCreateButton" disabled={creatingDocument} onClick={onCreateDocument}>
+            <PlusIcon />{creatingDocument ? "Creating…" : "New document"}
+          </button>
+        )}
       </section>
       {editing && (
         <CollectionDialog
@@ -387,7 +404,6 @@ function WorkspaceList({
   docs,
   deletedCollections,
   title,
-  description,
   empty,
   onOpenDocument,
   onToggleStar,
@@ -398,7 +414,6 @@ function WorkspaceList({
   docs: Doc[];
   deletedCollections: string[];
   title: string;
-  description: string;
   empty: string;
   onOpenDocument: (doc: Doc) => void;
   onToggleStar: (id: string) => Promise<boolean>;
@@ -408,7 +423,6 @@ function WorkspaceList({
     <div className="workspaceHub" aria-label={title}>
       <header className="workspacePageHeader">
         <h1>{title}</h1>
-        <p>{description}</p>
       </header>
       <WorkspaceDocumentRows
         assignments={assignments}
@@ -677,7 +691,6 @@ function CollectionDialog({
       <form onSubmit={submit}>
         <header>
           <h2>{collection ? "Edit collection" : "New collection"}</h2>
-          <p>Group related Markdown for you and your agents.</p>
         </header>
         <label>
           <span>Title</span>
