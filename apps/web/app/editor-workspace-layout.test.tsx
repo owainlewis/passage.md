@@ -25,6 +25,8 @@ function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[]) {
       deletedCollections={[]}
       saveState="saved"
       view={{ type: "home" }}
+      onCreateDocument={vi.fn()}
+      creatingDocument={false}
       onCreateCollection={vi.fn()}
       onDeleteCollection={vi.fn()}
       onOpenCollection={vi.fn()}
@@ -53,6 +55,8 @@ function listWorkspace(docs: Doc[]) {
       deletedCollections={[]}
       saveState="saved"
       view={{ type: "recent" }}
+      onCreateDocument={vi.fn()}
+      creatingDocument={false}
       onCreateCollection={vi.fn()}
       onDeleteCollection={vi.fn()}
       onOpenCollection={vi.fn()}
@@ -198,6 +202,12 @@ it("hides the browser ring on programmatic focus targets", () => {
   expect(rule).toContain("outline: none;");
 });
 
+it("keeps the mobile search action at control height when its parent stacks", () => {
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspaceSearchButton\s*\{[^}]*flex: none;/
+  );
+});
+
 it("keeps narrow editor chrome compact and unobstructed", () => {
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.statusDock\s*\{[^}]*grid-template-columns: auto minmax\(0, 1fr\);/
@@ -233,7 +243,7 @@ it("wraps long collection copy while preserving a large count", () => {
 
   render(homeWorkspace([...WORKSPACE_COLLECTIONS, collection], docs));
 
-  const card = screen.getByText(longTitle).closest("button")!;
+  const card = screen.getByText(longTitle, { selector: "strong" }).closest("button")!;
   expect(card).toHaveTextContent("1234 files");
   expect(card).toHaveTextContent(longDescription);
   expect(declarationsFor(".workspaceCollectionTitle strong")).toMatch(/min-width: 0;.*overflow-wrap: anywhere;/);

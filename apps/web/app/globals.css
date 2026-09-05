@@ -21,7 +21,6 @@
   --hover-strong: rgba(20, 20, 32, 0.085);
   --sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
-  --serif: var(--font-serif), Georgia, "Times New Roman", serif;
 
   /* Reading measure tuned for dense long-form text. */
   --measure: 40rem;
@@ -176,9 +175,9 @@ button {
 }
 
 .brandName {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 1.1rem;
-  font-weight: 400;
+  font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1;
   color: var(--ink);
@@ -979,8 +978,8 @@ button {
 .workspaceCollectionHeader h1 {
   margin: 0;
   color: var(--ink-display);
-  font-family: var(--serif);
-  font-weight: 400;
+  font-family: var(--sans);
+  font-weight: 600;
   letter-spacing: -0.025em;
 }
 
@@ -1002,7 +1001,7 @@ button {
   max-width: 650px;
   margin: 10px 0 0;
   color: var(--muted);
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 0.95rem;
   line-height: 1.55;
 }
@@ -1037,13 +1036,44 @@ button {
 
 .workspaceHeroActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 9px;
   margin-top: 24px;
 }
 
+.workspaceCreateButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.workspaceCreateButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.workspaceCreateButton:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.workspaceCreateButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .workspaceSearchButton {
   width: min(100%, 580px);
+  flex: 1 1 220px;
   min-height: 44px;
   display: flex;
   align-items: center;
@@ -1202,11 +1232,12 @@ button {
 
 .workspaceSectionHeading button,
 .workspaceSectionHeading span {
-  padding: 0;
+  padding: 6px 8px;
+  min-height: 32px;
   border: 0;
   background: transparent;
-  color: var(--faint);
-  font-size: 0.6875rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
 }
 
 /* The arrow only leans out on hover, so the resting state stays quiet. */
@@ -1297,7 +1328,7 @@ button {
   flex-direction: column;
   gap: 5px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -1310,8 +1341,7 @@ button {
   color: var(--ink);
 }
 
-/* List rows are interface, not prose. The serif is reserved for page titles
-   and document content, where it reads as editorial rather than decorative. */
+/* Use the same sans serif hierarchy throughout the workspace. */
 .workspaceCollectionTitle strong {
   min-width: 0;
   flex: 0 1 auto;
@@ -1323,8 +1353,8 @@ button {
 
 .workspaceCollectionTitle small {
   flex: 0 0 auto;
-  color: var(--faint);
-  font-size: 0.6875rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
   white-space: nowrap;
 }
 
@@ -1402,8 +1432,8 @@ button {
 }
 
 .workspaceDocumentText small {
-  color: var(--faint);
-  font-size: 0.625rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
 }
 
 .workspaceDocumentMeta {
@@ -1417,8 +1447,8 @@ button {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  color: var(--faint);
-  font-size: 0.7rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1540,7 +1570,7 @@ button {
 .workspaceCollectionDialog header h2 {
   margin: 0;
   color: var(--ink-display);
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 1.4rem;
   font-weight: 400;
 }
@@ -2414,7 +2444,7 @@ button {
 
 .templateLibraryHead h2 {
   color: var(--ink-display);
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: clamp(1.7rem, 4vw, 2.25rem);
   font-weight: 400;
   letter-spacing: -0.02em;
@@ -2491,7 +2521,7 @@ button {
 }
 
 .templateCard h3 {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 1.3rem;
   font-weight: 400;
   letter-spacing: -0.015em;
@@ -3150,7 +3180,7 @@ button {
 
 .heroTitle {
   margin: 0 0 0.45em;
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: clamp(2.3rem, 4.6vw, 3.5rem);
   line-height: 1.08;
   letter-spacing: -0.012em;
@@ -3338,7 +3368,7 @@ button {
 }
 
 .sectionTitle {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: clamp(1.7rem, 3.4vw, 2.3rem);
   line-height: 1.15;
   letter-spacing: -0.01em;
@@ -3355,7 +3385,7 @@ button {
 }
 
 .storyBody {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: 1.22rem;
   line-height: 1.72;
   color: var(--ink-soft);
@@ -4984,7 +5014,7 @@ button {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    font-size: 0.625rem;
+    font-size: 0.75rem;
   }
 
   .workspaceMobileNav button[data-active="true"] {
@@ -5055,6 +5085,7 @@ button {
   }
 
   .workspaceSearchButton {
+    flex: none;
     width: 100%;
   }
 

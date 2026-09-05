@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { AuthBoundary, useAuth } from "./auth";
 import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
@@ -111,8 +112,7 @@ function LandingContent() {
           <div className={styles.heroCopy}>
             <h1 className={styles.heroTitle}>A writing app built for you and your agents.</h1>
             <p className={styles.heroSub}>
-              Keep your goals, priorities, and business context in a collection your agents can read, and your everyday
-              writing alongside it. No local Markdown files spread across machines, and nothing to sync.
+              Your writing and agent context, together in one Markdown workspace. Private by default, with nothing to sync.
             </p>
             <div className={styles.heroActions}>
               <Link className={styles.primaryButton} href={primaryHref}>
@@ -125,39 +125,17 @@ function LandingContent() {
             {statusMessage && <p className={styles.heroNote}>{statusMessage}</p>}
           </div>
 
-          <div className={styles.heroPreview} aria-hidden="true">
-            <div className={styles.heroDoc}>
-              <div className={styles.docChrome}>
-                <span className={styles.docDots}>
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className={styles.docUrl}>Operating Context / goals.md</span>
-                <span className={styles.docStatus}>Private</span>
-              </div>
-              <div className={styles.docCanvas}>
-                <div className={styles.lineNumbers}>
-                  {Array.from({ length: 8 }, (_, index) => (
-                    <span key={index}>{String(index + 1).padStart(2, "0")}</span>
-                  ))}
-                </div>
-                <div className={`markdown ${styles.heroDocBody}`}>
-                  <h1>Operating context</h1>
-                  <p>Stable context for every agent I work with.</p>
-                  <ul>
-                    <li>Goal: ship the Passage workspace</li>
-                    <li>Product: shared Markdown for people and agents</li>
-                    <li>Preference: concise, direct writing</li>
-                  </ul>
-                  <blockquote>
-                    <p>Update this document when the plan changes.</p>
-                  </blockquote>
-                </div>
-              </div>
-              <div className={styles.terminalStrip}>$ passage list</div>
-            </div>
-          </div>
+          <figure className={styles.heroPreview}>
+            <Image
+              className={styles.workspacePreview}
+              src="/workspace-preview.png"
+              alt="Passage workspace with a collection of project notes and a Markdown document open for reading."
+              width={1280}
+              height={800}
+              priority
+              unoptimized
+            />
+          </figure>
         </section>
 
         <section className={styles.features} id="workflow">
