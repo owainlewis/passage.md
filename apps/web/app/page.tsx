@@ -128,7 +128,7 @@ function LandingContent() {
           <figure className={styles.heroPreview}>
             <Image
               className={styles.workspacePreview}
-              src="/workspace-preview.png"
+              src="/workspace-preview.jpg"
               alt="Passage workspace with a collection of project notes and a Markdown document open for reading."
               width={1280}
               height={800}

@@ -332,7 +332,7 @@ describe("Landing", () => {
     expect(screen.getByRole("heading", { name: "Share deliberately" })).toBeInTheDocument();
     expect(screen.getByText(/one CLI your agents use to read and update the same Markdown/)).toBeInTheDocument();
     expect(screen.getByText(/A folder on one machine is a poor shared memory/)).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /Passage workspace with a collection/ })).toHaveAttribute("src", "/workspace-preview.png");
+    expect(screen.getByRole("img", { name: /Passage workspace with a collection/ })).toHaveAttribute("src", "/workspace-preview.jpg");
     expect(screen.getAllByText("passage list --collection operating-context").length).toBeGreaterThan(0);
     expect(screen.getAllByText("passage share <doc-id>").length).toBeGreaterThan(0);
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
