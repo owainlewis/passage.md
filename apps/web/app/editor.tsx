@@ -148,10 +148,6 @@ export default function Editor() {
     element.style.height = `${element.scrollHeight}px`;
   }, [active?.body, mode, activeId]);
 
-  const toggleMode = useCallback(() => {
-    setMode((current) => (current === "edit" ? "preview" : "edit"));
-  }, []);
-
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -165,14 +161,10 @@ export default function Editor() {
         setSearchOpen(true);
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
-        event.preventDefault();
-        toggleMode();
-      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, toggleMode]);
+  }, [searchOpen]);
 
   useEffect(() => {
     function onPopState() {
@@ -639,6 +631,8 @@ export default function Editor() {
             docs={docs}
             saveState={collectionState.loading ? "loading" : saveState}
             view={workspaceView}
+            onCreateDocument={createBlankDocument}
+            creatingDocument={!docsReady || creatingDocument}
             onCreateCollection={createCollection}
             onDeleteCollection={deleteCollection}
             onOpenCollection={openCollection}

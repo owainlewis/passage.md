@@ -128,10 +128,6 @@ describe("light workspace contrast", () => {
     for (const selector of [
       ".workspaceDestination small,\n.workspaceSidebarCollection small",
       ".workspaceSidebarLabel",
-      ".workspaceSectionHeading button,\n.workspaceSectionHeading span",
-      ".workspaceCollectionTitle small",
-      ".workspaceDocumentText small",
-      ".workspaceDocumentSummary",
       ".workspaceStarButton",
       ':root:not([data-theme="dark"]) .workspace .workspaceSearchInput input::placeholder',
       ".workspaceSearchResults > p",
@@ -140,6 +136,18 @@ describe("light workspace contrast", () => {
     ]) {
       expect(declarationsFor(selector)).toContain("color: var(--faint)");
     }
+  });
+
+  it("uses the stronger text token for secondary actions and document metadata", () => {
+    for (const selector of [
+      ".workspaceSectionHeading button,\n.workspaceSectionHeading span",
+      ".workspaceCollectionTitle small",
+      ".workspaceDocumentText small",
+      ".workspaceDocumentSummary"
+    ]) {
+      expect(declarationsFor(selector)).toContain("color: var(--muted)");
+    }
+    expect(contrast(light["--muted"], light["--bg"])).toBeGreaterThanOrEqual(4.5);
   });
 
   it("provides a three-to-one focus indicator without changing dark theme tokens", () => {

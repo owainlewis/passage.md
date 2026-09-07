@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Castoro, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Inter, IBM_Plex_Mono } from "next/font/google";
 import { AppProviders } from "./app-providers";
 import { THEME_BOOT_SCRIPT } from "./theme";
 import "./globals.css";
@@ -7,14 +7,6 @@ import "./globals.css";
 const sans = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
-  display: "swap"
-});
-
-const serif = Castoro({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-serif",
   display: "swap"
 });
 
@@ -58,7 +50,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <head>
         {/* Applies the saved theme before the first paint, so a dark-theme
             reader never sees a light flash while React hydrates. */}
