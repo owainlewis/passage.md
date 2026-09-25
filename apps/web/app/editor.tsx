@@ -499,6 +499,10 @@ export default function Editor() {
       {collectionListVisible && (
         <div className="collectionListPane" aria-hidden={searchOpen ? true : undefined} inert={searchOpen ? true : undefined}>
           <CollectionDocumentList
+            key={listedCollection}
+            collection={collections.find((collection) => collection.slug === listedCollection)}
+            onDeleteCollection={deleteCollection}
+            deleteDisabled={collectionState.pendingCollectionSlugs.has(listedCollection)}
             title={collectionLabel(listedCollection, collections)}
             docs={docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === listedCollection)}
             activeId={showResolvedDocument ? active?.id ?? "" : ""}
