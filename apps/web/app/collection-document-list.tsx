@@ -30,6 +30,7 @@ export function CollectionDocumentList({
         <button className="iconButton" type="button" aria-label={`New document in ${title}`} onClick={onNew}><PlusIcon /></button>
       </header>
       <div className="collectionListScroll">
+        {docs.length === 0 && !hasMore && !loadError && <p role="status">No documents yet.</p>}
         {docs.map((doc) => (
           <button className="collectionListDocument" type="button" key={doc.id} aria-current={doc.id === activeId ? "page" : undefined} onClick={() => onOpen(doc)}>
             <strong>{editorDocTitle(doc)}</strong>

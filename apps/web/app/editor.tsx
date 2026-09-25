@@ -296,6 +296,7 @@ export default function Editor() {
     if (view.type === "document") return;
     setActiveTemplateId("");
     setWorkspaceView(view);
+    setDocumentListOpen(view.type === "collection");
     const nextPath = workspacePath(view);
     if (`${window.location.pathname}${window.location.search}` !== nextPath) {
       window.history[history === "push" ? "pushState" : "replaceState"](null, "", nextPath);
@@ -414,6 +415,7 @@ export default function Editor() {
   }, [collectionState.available, collections, setBillingNotice, workspaceView]);
 
   const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
+  const listedCollection = workspaceView.type === "collection" ? workspaceView.slug : activeCollection;
   const templatesOpen = workspaceView.type === "templates";
   const hasDocumentRoute = workspaceView.type === "document"
     && typeof window !== "undefined"
@@ -434,6 +436,8 @@ export default function Editor() {
   const showDocument = !templatesOpen && workspaceView.type === "document";
   const showResolvedDocument = showDocument && documentRouteResolved;
   const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
+  const hasCollectionList = (workspaceView.type === "collection" && collections.some((collection) => collection.slug === workspaceView.slug))
+    || (showResolvedDocument && Boolean(active));
   const canDeleteActive = Boolean(active && !isShared(active));
 
   return (
@@ -455,20 +459,20 @@ export default function Editor() {
         view={workspaceView}
       />
 
-      {showResolvedDocument && active && (sidebarOpen || documentListOpen) && (
+      {hasCollectionList && (sidebarOpen || documentListOpen) && (
         <div className="collectionListPane" aria-hidden={searchOpen ? true : undefined} inert={searchOpen ? true : undefined}>
           <CollectionDocumentList
-            title={collectionLabel(activeCollection, collections)}
-            docs={docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === activeCollection)}
-            activeId={active.id}
+            title={collectionLabel(listedCollection, collections)}
+            docs={docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === listedCollection)}
+            activeId={showResolvedDocument ? active?.id ?? "" : ""}
             mobileOpen={documentListOpen}
             hasMore={hasMoreDocs}
             loadingMore={loadingMore}
             loadError={documentIndexError}
             onOpen={(doc) => { selectDocument(doc); setDocumentListOpen(false); }}
-            onOverview={() => { openCollection(activeCollection); setDocumentListOpen(false); }}
+            onOverview={() => { openCollection(listedCollection); setDocumentListOpen(false); }}
             onNew={() => { createBlankDocument(); setDocumentListOpen(false); }}
-            onSearch={() => openSearch(activeCollection)}
+            onSearch={() => openSearch(listedCollection)}
             onLoadMore={() => void loadMoreDocs()}
           />
         </div>
@@ -501,9 +505,11 @@ export default function Editor() {
             : <span className="docTitle" aria-hidden="true" />}
 
           <div className="topCluster end">
+            {hasCollectionList && (
+              <button type="button" className="collectionListToggle" aria-label="Document list" aria-expanded={documentListOpen} aria-controls="collection-document-list" onClick={() => setDocumentListOpen((open) => !open)}><DocIcon /><span>Documents</span></button>
+            )}
             {showResolvedDocument && active && (
               <>
-                <button type="button" className="collectionListToggle" aria-label="Documents" aria-expanded={documentListOpen} aria-controls="collection-document-list" onClick={() => setDocumentListOpen((open) => !open)}><DocIcon /><span>Documents</span></button>
                 <select
                   className="topBarCollectionSelect"
                   aria-label={`Collection for ${title}`}

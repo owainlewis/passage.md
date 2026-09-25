@@ -244,7 +244,8 @@ async function renderWrite(ui: ReactNode = <Write />) {
 // Collections are assigned from the open document, so a list row has to be
 // opened first.
 async function openDocumentNamed(title: string) {
-  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${title}`) }));
+  const list = screen.queryByRole("navigation", { name: /^Documents in / });
+  fireEvent.click((list ? within(list) : screen).getByRole("button", { name: new RegExp(`^${title}`) }));
   await screen.findByRole("region", { name: "Markdown editor" });
 }
 
@@ -3847,6 +3848,28 @@ describe("visual writing and collection navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Write" }));
     await screen.findByRole("textbox", { name: "Visual editor" });
     expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("opens the selected collection list before a document, including empty collections", async () => {
+    stubSignedInFetch([
+      { id: "one", publicId: "one", body: "# First draft" },
+      { id: "two", publicId: "two", body: "# Second draft", collectionSlug: "passage", collectionId: "collection-passage" }
+    ]);
+    await renderWrite();
+    const sidebar = screen.getByRole("complementary", { name: "Workspace navigation" });
+    fireEvent.click(within(sidebar).getByRole("button", { name: /^Passage/ }));
+    const list = screen.getByRole("navigation", { name: "Documents in Passage" });
+    expect(list).toHaveAttribute("data-mobile-open", "true");
+    expect(within(list).getByRole("button", { name: /Second draft/ })).not.toHaveAttribute("aria-current");
+    expect(within(list).queryByRole("button", { name: /First draft/ })).not.toBeInTheDocument();
+    fireEvent.click(within(list).getByRole("button", { name: /Second draft/ }));
+    expect(await screen.findByRole("textbox", { name: "Visual editor" })).toHaveTextContent("Second draft");
+    fireEvent.click(within(sidebar).getByRole("button", { name: /^Research/ }));
+    const emptyList = screen.getByRole("navigation", { name: "Documents in Research" });
+    expect(within(emptyList).getByText("No documents yet.")).toBeInTheDocument();
+    expect(within(emptyList).getByRole("button", { name: "New document in Research" })).toBeEnabled();
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Home" }));
+    expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
   });
 
   it("switches neighboring documents directly and keeps their collection highlighted", async () => {
