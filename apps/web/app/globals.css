@@ -2876,11 +2876,11 @@ button {
 }
 
 .markdown pre {
-  margin: 1.6rem 0;
-  padding: 16px 18px;
+  margin: 1.2em 0;
+  padding: 12px 14px;
   background: var(--code-bg);
-  border: 1px solid var(--hairline);
-  border-radius: 11px;
+  border: 0;
+  border-radius: 5px;
   overflow-x: auto;
   line-height: 1.62;
 }
@@ -2909,12 +2909,13 @@ button {
 .markdown th,
 .markdown td {
   text-align: left;
-  padding: 9px 14px;
-  border: 1px solid var(--hairline-strong);
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
 }
 
 .markdown th {
-  background: var(--code-bg);
+  background: transparent;
   font-weight: 600;
   color: var(--ink);
 }
@@ -2949,118 +2950,68 @@ button {
   white-space: pre-wrap;
 }
 
-/* ----------------------------------------------------------------- status */
-
-.statusBar {
-  min-width: 0;
-  padding: 8px clamp(14px, 4vw, 30px) 12px;
-  font-size: var(--text-ui);
-  letter-spacing: 0;
-  color: var(--muted);
-}
-
-.statusDock {
-  width: min(100%, 960px);
+/* Document controls stay above the page; status stays quiet below it. */
+.editorControls {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   min-height: 48px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 14px;
-  padding: 4px 6px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--elevated);
-  box-shadow: 0 16px 38px rgba(55, 48, 38, 0.08), 0 2px 5px rgba(55, 48, 38, 0.05);
+  padding: 4px 18px;
+  background: var(--surface);
 }
-
-.dockGroup {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 8px;
-}
-
-.dockGroupMode {
-  justify-self: start;
-}
-
-.dockGroupMeta {
-  justify-self: center;
-}
-
-.dockGroupActions {
-  justify-self: end;
-}
-
-.statusPill,
-.dockButton {
+.editorModes, .editorControlActions { display: flex; align-items: center; gap: 4px; }
+.editorControls button {
   min-height: 36px;
-  display: inline-flex;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 var(--text-ui) var(--sans);
+  cursor: pointer;
+}
+.editorControls button:hover { background: var(--hover-soft); color: var(--ink); }
+.editorModes button[aria-pressed="true"] { color: var(--ink); background: var(--hover-soft); }
+.editorControlActions > button { display: inline-flex; align-items: center; gap: 6px; }
+.editorControls button:disabled { opacity: 0.45; cursor: not-allowed; }
+.editorFocus[aria-pressed="true"] { color: var(--accent); }
+.documentActions { position: relative; }
+.documentActions > button { display: grid; place-items: center; width: 36px; padding: 0; }
+.documentActionsMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 192px;
+  padding: 4px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--elevated);
+}
+.documentActionsMenu button { display: block; width: 100%; text-align: left; color: var(--ink-soft); }
+.documentActionsMenu .documentActionDelete { margin-top: 4px; border-top: 1px solid var(--hairline); border-radius: 0 0 4px 4px; }
+.editorStatus {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  white-space: nowrap;
-  border-radius: 999px;
-}
-
-/* Status is read, not pressed, so it is plain text rather than a pill. */
-.statusPill {
-  padding: 0 6px;
-  border: 0;
-  background: transparent;
+  gap: 12px;
+  min-height: 32px;
+  padding: 6px 18px;
   color: var(--muted);
-  font-weight: 500;
+  font-size: var(--text-meta);
 }
-
-.statusSave {
-  color: var(--accent);
-}
-
-.accentPill {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--hairline));
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-
-/* Secondary actions are ghost buttons at rest, like the top bar icons. Their
-   boundary appears on hover and focus, where the affordance matters. */
-.dockButton {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--ink-soft);
-  padding: 0 12px;
-  font-weight: 600;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
-}
-
-.dockButton:hover,
-.dockButton:focus-visible {
-  border-color: var(--control-boundary);
-  background: var(--hover-soft);
-  color: var(--ink);
-}
-
-.dockButton:active {
-  transform: translateY(1px);
-}
-
-.shareToggle[data-shared="true"].dockButton {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-contrast);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-
-.shareToggle[data-shared="true"].dockButton:hover {
-  background: color-mix(in srgb, var(--accent) 92%, black 8%);
-  color: var(--accent-contrast);
-}
-
-:root[data-theme="dark"] .statusDock {
-  border-color: var(--hairline-strong);
-  background: color-mix(in srgb, var(--elevated) 86%, white 5%);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.22);
+.editorStatus [role="status"]:empty { display: none; }
+.workspace.focusMode { padding-bottom: 0; }
+@media (max-width: 720px) {
+  .editorControls { padding: 4px 8px; gap: 4px; }
+  .editorControls button { min-height: 36px; padding-inline: 8px; }
+  .editorControlActions { gap: 0; }
+  .editorFocus span, .editorShare svg { display: none; }
+  .editorFocus { width: 36px; justify-content: center; }
+  .editorModes { gap: 0; }
 }
 
 /* ------------------------------------------------------------ share view */
@@ -4911,57 +4862,15 @@ button {
     padding: 32px 20px 72px;
   }
 
-  .statusBar {
-    padding: 6px 8px 8px;
-  }
 
-  .statusDock {
-    min-height: 0;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 4px 8px;
-    padding: 4px;
-    border-radius: 18px;
-  }
 
-  .dockGroup {
-    justify-content: center;
-  }
 
-  .dockGroupMode {
-    grid-column: 1;
-    grid-row: 1;
-    justify-self: start;
-  }
 
-  .dockGroupMeta {
-    grid-column: 2;
-    grid-row: 1;
-    min-width: 0;
-    flex-wrap: wrap;
-    justify-self: end;
-  }
 
-  .dockGroupActions {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: stretch;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
-  }
 
-  .dockButton {
-    min-height: 34px;
-  }
+/* Not a control, so it does not need a touch target's height. */
 
-  /* Not a control, so it does not need a touch target's height. */
-  .statusPill {
-    min-height: 28px;
-  }
 
-  .dockButton {
-    width: 100%;
-    padding: 0 10px;
-  }
 
   :root {
     --text-body: 1rem;
@@ -5225,7 +5134,7 @@ button {
   top: calc(-1 * var(--writing-pad-top, 0px));
   z-index: 2;
   margin-top: -8px;
-  padding: 8px 0 20px;
+  padding: 4px 0 16px;
   background: var(--surface);
 }
 
@@ -5236,14 +5145,14 @@ button {
   margin: 0;
   width: fit-content;
   max-width: 100%;
-  padding: 4px;
-  background: var(--code-bg);
-  border-radius: 8px;
+  padding: 2px;
+  background: var(--hover-soft);
+  border-radius: 5px;
   flex-wrap: wrap;
 }
 .formatBar button {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -5345,8 +5254,8 @@ button {
 }
 
 .formatBar select {
-  min-height: 36px;
-  max-width: 130px;
+  min-height: 32px;
+  max-width: 114px;
   padding: 0 8px;
   border: 0;
   background: transparent;
@@ -5369,8 +5278,7 @@ button {
 .topBarCollectionSelect,
 .topBarDelete,
 .formatBar select,
-.modeToggle button,
-.dockButton {
+.modeToggle button {
   font-size: var(--text-ui);
 }
 .collectionListDocument span,
@@ -5380,8 +5288,7 @@ button {
 .workspaceDocumentMeta,
 .workspaceSidebarAccountText small,
 .workspaceCollectionTitle small,
-.workspaceSidebarLabel,
-.statusPill {
+.workspaceSidebarLabel {
   font-size: var(--text-meta);
 }
 .workspaceHero h1,
@@ -5398,7 +5305,13 @@ button {
   .topBarCollectionSelect { width: clamp(60px, calc(100vw - 260px), 92px); min-width: 0; padding-inline: 2px; }
   .topBarDelete { padding-inline: 4px; }
 }
+
+@media (max-width: 720px) {
+  .writingPane { --writing-pad-top: 24px; padding-top: var(--writing-pad-top); }
+}
+
 @media (max-width: 380px) {
-  .statusDock { display: flex; flex-wrap: wrap; justify-content: center; }
-  .dockGroupMode, .dockGroupActions { flex: 0 0 100%; }
+  .editorShare span { display: none; }
+  .editorShare svg { display: block; }
+  .editorShare { width: 36px; padding-inline: 8px; }
 }

@@ -299,8 +299,13 @@ async function openDocumentFromSearch(name: string | RegExp) {
   await screen.findByRole("region", { name: "Markdown editor" });
 }
 
+function openDocumentAction(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
 function deleteActiveDocument() {
-  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  openDocumentAction("Delete document");
   fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
 }
 
@@ -2469,7 +2474,7 @@ describe("Write (editor)", () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    openDocumentAction("Delete document");
 
     expect(screen.getByRole("dialog", { name: "Delete document" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -2489,7 +2494,7 @@ describe("Write (editor)", () => {
     ]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    openDocumentAction("Delete document");
     expect(screen.getByRole("dialog", { name: "Delete document" })).toBeInTheDocument();
 
     act(() => {
@@ -2806,7 +2811,8 @@ describe("Write (editor)", () => {
 
     await createBlankDocument();
     await screen.findByRole("textbox", { name: "Markdown editor" });
-    const remove = await screen.findByRole("button", { name: "Delete" });
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+    const remove = await screen.findByRole("menuitem", { name: "Delete document" });
     expect(remove.tagName).toBe("BUTTON");
   });
 
@@ -2819,7 +2825,8 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     expect(screen.getAllByRole("heading", { name: "Lead magnet", level: 1 }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Delete document" })).not.toBeInTheDocument();
   });
 
   it("still renders when browser storage reads are blocked", async () => {
@@ -2859,11 +2866,11 @@ describe("Write (editor)", () => {
     stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Notes\n\nExact Markdown." }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    openDocumentAction("Copy Markdown");
 
     // The Markdown itself, byte for byte, not a rendered version of it.
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("# Notes\n\nExact Markdown."));
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
   });
 
   it("copies a server share link for the active document", async () => {
@@ -2885,12 +2892,14 @@ describe("Write (editor)", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
-    // The dock keeps the link reachable and names the action that undoes it.
+    // The action menu keeps the link reachable after publishing.
     await screen.findByRole("button", { name: "Unshare" });
-    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+    expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
 
-    // Copying from the dock needs no dialog and no republishing.
-    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    // Copying from the menu needs no dialog and no republishing.
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy link" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
     expect(writeText.mock.calls[1][0]).toBe("http://localhost:3000/d/public-2");
 
@@ -3908,6 +3917,27 @@ describe("Write (editor)", () => {
 });
 
 describe("visual writing and collection navigation", () => {
+  it("moves modes to the header and restores the layout after focus mode", async () => {
+    stubSignedInFetch();
+    await renderWrite();
+    const header = screen.getByRole("banner", { name: "Document controls" });
+    expect(within(header).getByRole("button", { name: "Write" })).toBeInTheDocument();
+    expect(within(screen.getByRole("contentinfo", { name: "Editor status" })).queryByRole("button")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter focus mode" }));
+    expect(screen.queryByRole("complementary", { name: "Workspace navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /^Documents in/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue(defaultDocBody);
+    fireEvent.click(screen.getByRole("button", { name: "Exit focus mode" }));
+    expect(screen.getByRole("complementary", { name: "Workspace navigation" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /^Documents in/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enter focus mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "Exit focus mode" }));
+    expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /^Documents in/ })).not.toBeInTheDocument();
+  });
+
   it("does not save on opening or switching modes", async () => {
     const original = "---\ntags: [writing]\n---\n\n# A draft\n\nSome **text**.\n";
     const fetchMock = stubSignedInFetch([{ id: "visual", publicId: "visual", body: original }]);
