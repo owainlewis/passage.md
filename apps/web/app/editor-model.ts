@@ -19,7 +19,7 @@ export type Doc = {
   version?: number;
 };
 
-export type Mode = "edit" | "preview";
+export type Mode = "write" | "edit" | "preview";
 export type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
 export type SaveState = "loading" | "saving" | "saved" | "error";
 export type DocumentFilter = "all" | "private" | "shared";
@@ -61,8 +61,8 @@ It is pinned, so it stays at the top, and pinned documents cannot be deleted unt
 
 Just start typing. Everything is saved to your Passage account.
 
-Press **Cmd + R** (or **Ctrl + R**) to switch between **Edit** and **Preview**.
-Edit shows raw Markdown. Preview reads like a finished document.
+Press **Cmd + R** (or **Ctrl + R**) to switch between **Write** and **Source**.
+Write formats Markdown as you type. Source shows the Markdown itself. Preview displays the finished document and diagrams.
 
 ## Your documents
 

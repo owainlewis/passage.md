@@ -24,19 +24,19 @@
   --serif: var(--font-serif), Georgia, "Times New Roman", serif;
 
   /* Reading measure tuned for dense long-form text. */
-  --measure: 40rem;
+  --measure: 48rem;
 
   /* Workspace column. Wide enough for a title and a summary on one row,
      narrow enough to stay a column rather than a band across the display. */
   --workspace-measure: 55rem;
 
   /* Editorial document type scale. */
-  --text-body: 1rem; /* 16px */
-  --text-h1: 2.125rem; /* 34px */
+  --text-body: 1.0625rem; /* 17px */
+  --text-h1: 2rem; /* 32px */
   --text-h2: 1.5rem; /* 24px */
-  --text-h3: 1.21rem; /* ~19.4px */
+  --text-h3: 1.25rem; /* 20px */
   --text-h4: 1.0625rem; /* 17px */
-  --lh-body: 1.7; /* close to the golden ratio, opened slightly for screens */
+  --lh-body: 1.65;
 }
 
 :root[data-theme="dark"] {
@@ -111,6 +111,8 @@ button {
 
 .workspace {
   --control-boundary: var(--hairline);
+  --text-ui: 0.875rem;
+  --text-meta: 0.75rem;
   display: flex;
   height: 100vh;
   height: 100dvh;
@@ -908,7 +910,7 @@ button {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: clamp(28px, 3vw, 44px) clamp(24px, 6vw, 76px) 104px;
+  padding: 28px clamp(20px, 4vw, 48px) 80px;
   background: var(--bg);
 }
 
@@ -971,7 +973,7 @@ button {
 }
 
 .workspaceHero {
-  margin-bottom: 40px;
+  margin-bottom: 24px;
 }
 
 .workspaceHero h1,
@@ -979,8 +981,8 @@ button {
 .workspaceCollectionHeader h1 {
   margin: 0;
   color: var(--ink-display);
-  font-family: var(--serif);
-  font-weight: 400;
+  font-family: var(--sans);
+  font-weight: 700;
   letter-spacing: -0.025em;
 }
 
@@ -1002,8 +1004,8 @@ button {
   max-width: 650px;
   margin: 10px 0 0;
   color: var(--muted);
-  font-family: var(--serif);
-  font-size: 0.95rem;
+  font-family: var(--sans);
+  font-size: 1rem;
   line-height: 1.55;
 }
 
@@ -1185,7 +1187,7 @@ button {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 6px;
 }
 
 /* A small tracked label, not a second title. It marks the section without
@@ -1251,11 +1253,10 @@ button {
 .workspaceCollectionCard {
   position: relative;
   width: 100%;
-  min-height: 76px;
+  min-height: 56px;
   display: block;
-  padding: 14px 0;
+  padding: 10px 0;
   border: 0;
-  border-bottom: 1px solid var(--hairline);
   border-radius: 0;
   background: transparent;
   color: var(--ink);
@@ -1338,10 +1339,9 @@ button {
 
 .workspaceDocumentRow {
   position: relative;
-  min-height: 64px;
+  min-height: 56px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--hairline);
 }
 
 .workspaceDocumentRow:last-child {
@@ -2344,7 +2344,7 @@ button {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 56px clamp(24px, 7vw, 88px) 16vh;
+  padding: 28px clamp(20px, 4vw, 48px) 12vh;
 }
 
 .writingPaneEmpty {
@@ -2720,7 +2720,7 @@ button {
   line-height: 1.25;
   letter-spacing: -0.015em;
   font-weight: 680;
-  margin: 2.6rem 0 0.7rem;
+  margin: 2rem 0 0.65rem;
 }
 
 .markdown h3 {
@@ -2740,7 +2740,7 @@ button {
 }
 
 .markdown p {
-  margin: 0 0 1.15em;
+  margin: 0 0 1em;
 }
 
 .markdown strong {
@@ -2767,7 +2767,7 @@ button {
 
 .markdown ul,
 .markdown ol {
-  margin: 0 0 1.15em;
+  margin: 0 0 1em;
   padding-left: 1.4em;
 }
 
@@ -2868,8 +2868,8 @@ button {
 .markdown table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1.6rem 0;
-  font-size: 0.95rem;
+  margin: 1.4rem 0;
+  font-size: 1em;
 }
 
 .markdown th,
@@ -5127,4 +5127,212 @@ button {
     padding-right: 16px;
     font-size: 0.625rem;
   }
+}
+
+/* Visual writing inherits the same typography as the published document. */
+.visualEditor {
+  width: 100%;
+  max-width: var(--measure);
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.visualEditorContent.editor {
+  font-family: inherit;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  min-height: 60vh;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-wrap: wrap;
+}
+
+.visualEditorContent > :first-child { margin-top: 0; }
+.visualEditorContent li p { margin-bottom: 0.35em; }
+.visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "Start writing…";
+  color: var(--muted);
+  pointer-events: none;
+  position: absolute;
+}
+.visualEditorContent:focus-visible { outline: none; }
+.visualEditorContent .ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.visualEditorContent .ProseMirror-gapcursor::after { border-color: var(--accent); }
+.visualEditorContent table { table-layout: fixed; }
+.visualEditorContent td, .visualEditorContent th { min-width: 3em; }
+/* Native task controls work with both pointer and keyboard input. */
+.visualEditorContent li[data-task="true"] { list-style-type: none; position: relative; }
+.visualEditorContent li > input[type="checkbox"] {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: -1.3em;
+  top: 0.35em;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.formatBar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 20px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  background: var(--code-bg);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.formatBar button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+}
+.formatBar button:hover, .formatBar button[aria-pressed="true"] {
+  background: var(--code-bg);
+  color: var(--ink);
+}
+.formatCode { font-family: var(--mono); font-size: 0.8em; }
+.visualEditorNotice { color: var(--muted); font-size: 0.875rem; }
+.visualEditorNotice button {
+  margin-top: 12px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--code-bg);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Keep the collection's documents within reach while writing. */
+.collectionListPane { display: contents; }
+.collectionDocumentList {
+  flex: 0 0 232px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--hairline);
+}
+.collectionDocumentList header {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+}
+.collectionListTitle {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 0;
+  text-align: left;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.collectionListScroll { overflow-y: auto; padding: 8px; }
+.collectionListDocument {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+}
+.collectionListDocument:hover { background: var(--hover-soft); }
+.collectionListDocument[aria-current="page"] { background: var(--accent-tint); }
+.collectionListDocument strong { font-size: 0.8125rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.collectionListDocument span { color: var(--muted); font-size: 0.75rem; line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.collectionListMore { padding: 12px; border: 0; background: transparent; color: var(--accent); }
+.collectionListToggle { display: none; }
+@media (max-width: 1100px) {
+  .collectionDocumentList { display: none; }
+  .collectionDocumentList[data-mobile-open="true"] {
+    display: flex;
+    position: absolute;
+    top: 56px;
+    bottom: 100px;
+    right: 0;
+    width: min(320px, 100%);
+    z-index: 25;
+    border: 1px solid var(--hairline);
+    box-shadow: -6px 8px 24px rgb(0 0 0 / 10%);
+  }
+  .collectionListToggle { display: block; border: 0; background: transparent; color: var(--muted); padding: 8px; font-size: 0.75rem; }
+}
+
+.formatBar select {
+  min-height: 36px;
+  max-width: 130px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: 500 0.8125rem var(--sans);
+  cursor: pointer;
+}
+.formatBar option { background: var(--surface); color: var(--ink); }
+.formatBar button:hover, .formatBar button[aria-pressed="true"] { background: var(--hover-strong); }
+
+/* One interface scale across collections, document lists, and editor controls. */
+.workspaceDestination,
+.workspaceSidebarCollection,
+.workspaceSidebarSearch button,
+.workspaceSidebarAccountText strong,
+.collectionListTitle,
+.collectionListDocument strong,
+.workspaceCollectionTitle strong,
+.workspaceDocumentText strong,
+.topBarCollectionSelect,
+.topBarDelete,
+.formatBar select,
+.modeToggle button,
+.dockButton {
+  font-size: var(--text-ui);
+}
+.collectionListDocument span,
+.workspaceCollectionDescription,
+.workspaceDocumentSummary,
+.workspaceDocumentText small,
+.workspaceDocumentMeta,
+.workspaceSidebarAccountText small,
+.workspaceCollectionTitle small,
+.workspaceSidebarLabel,
+.statusPill {
+  font-size: var(--text-meta);
+}
+.workspaceHero h1,
+.workspacePageHeader h1,
+.workspaceCollectionHeader h1 { font-size: var(--text-h1); line-height: 1.2; }
+.markdown td > p, .markdown th > p { margin: 0; }
+
+.collectionListToggle svg { display: none; }
+@media (max-width: 720px) {
+  .topBar { grid-template-columns: 72px minmax(0, 1fr); }
+  .topCluster.end { justify-self: stretch; justify-content: flex-end; }
+  .collectionListToggle { width: 34px; height: 34px; flex: 0 0 34px; padding: 8px; }
+  .collectionListToggle svg { display: block; }
+  .collectionListToggle span { display: none; }
+  .topBarCollectionSelect { width: clamp(60px, calc(100vw - 260px), 92px); min-width: 0; padding-inline: 2px; }
+  .topBarDelete { padding-inline: 4px; }
+}
+@media (max-width: 380px) {
+  .statusDock { display: flex; flex-wrap: wrap; justify-content: center; }
+  .dockGroupMode, .dockGroupActions { flex: 0 0 100%; }
 }

@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@milkdown/kit": "7.22.2",
     "isomorphic-dompurify": "^4.2.0",
     "marked": "^18.0.12",
     "mermaid": "11.17.2",

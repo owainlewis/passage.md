@@ -12,7 +12,9 @@ import { EditorWorkspace, WorkspaceModal, WorkspaceSearch } from "./editor-works
 import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
 import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
 import { useEntitlements } from "./entitlements";
-import { PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
+import { DocIcon, PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
+import { CollectionDocumentList } from "./collection-document-list";
+import { VisualEditor } from "./visual-editor";
 import { MarkdownView } from "./markdown-view";
 import { TemplateWorkspace } from "./template-workspace";
 import { useEditorDocuments } from "./use-editor-documents";
@@ -25,8 +27,9 @@ const EMPTY_ASSIGNMENTS: Record<string, string> = {};
 const NO_DELETED_COLLECTIONS: string[] = [];
 
 export default function Editor() {
-  const [mode, setMode] = useState<Mode>("preview");
+  const [mode, setMode] = useState<Mode>("write");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [documentListOpen, setDocumentListOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
   const [shareDialogDocId, setShareDialogDocId] = useState("");
@@ -41,6 +44,7 @@ export default function Editor() {
   const [documentCopied, setDocumentCopied] = useState(false);
   const [creatingDocument, setCreatingDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const visualRef = useRef<{ focus: () => void }>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
   const focusNewDocument = useRef(false);
   const workspaceViewRef = useRef(workspaceView);
@@ -82,7 +86,7 @@ export default function Editor() {
     userId,
     maxSavedDocs: entitlements.maxSavedDocs,
     plan: entitlements.plan,
-    focusEditor: () => textareaRef.current?.focus()
+    focusEditor: () => mode === "write" ? visualRef.current?.focus() : textareaRef.current?.focus()
   });
 
   const collectionNotice = useRef("");
@@ -133,8 +137,8 @@ export default function Editor() {
   // into. This runs after the editor has actually mounted, which is why it is
   // an effect rather than a call at creation time.
   useEffect(() => {
-    if (!focusNewDocument.current || mode !== "edit") return;
-    const element = textareaRef.current;
+    if (!focusNewDocument.current || mode === "preview") return;
+    const element = mode === "write" ? visualRef.current : textareaRef.current;
     if (!element) return;
     focusNewDocument.current = false;
     element.focus();
@@ -149,11 +153,16 @@ export default function Editor() {
   }, [active?.body, mode, activeId]);
 
   const toggleMode = useCallback(() => {
-    setMode((current) => (current === "edit" ? "preview" : "edit"));
+    setMode((current) => (current === "write" ? "edit" : "write"));
   }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && documentListOpen && !searchOpen) {
+        setDocumentListOpen(false);
+        document.querySelector<HTMLButtonElement>(".collectionListToggle")?.focus();
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
@@ -172,7 +181,7 @@ export default function Editor() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, toggleMode]);
+  }, [documentListOpen, searchOpen, toggleMode]);
 
   useEffect(() => {
     function onPopState() {
@@ -201,11 +210,9 @@ export default function Editor() {
     }
     setNewDocumentCollection(null);
     setActiveTemplateId("");
-    setMode("edit");
+    setMode("write");
     setWorkspaceView({ type: "document" });
-    // Ask for focus rather than reaching for the textarea here: at this point
-    // the mode is still preview, so it is not mounted, and the document body
-    // load remounts it shortly after.
+    // Focus after the new document mounts, including async visual-editor setup.
     focusNewDocument.current = true;
     return true;
   }
@@ -237,7 +244,7 @@ export default function Editor() {
     // over the active document and history.
     if (creatingDocument) return;
     setCreatingDocument(true);
-    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null)
+    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : workspaceView.type === "document" ? active?.collectionSlug ?? "documents" : null)
       .finally(() => setCreatingDocument(false));
   }
 
@@ -432,6 +439,7 @@ export default function Editor() {
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
       <EditorSidebar
+        activeCollection={showResolvedDocument ? activeCollection : undefined}
         accountEmail={auth.user?.email}
         assignments={EMPTY_ASSIGNMENTS}
         collections={collections}
@@ -447,6 +455,24 @@ export default function Editor() {
         view={workspaceView}
       />
 
+      {showResolvedDocument && active && (sidebarOpen || documentListOpen) && (
+        <div className="collectionListPane" aria-hidden={searchOpen ? true : undefined} inert={searchOpen ? true : undefined}>
+          <CollectionDocumentList
+            title={collectionLabel(activeCollection, collections)}
+            docs={docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === activeCollection)}
+            activeId={active.id}
+            mobileOpen={documentListOpen}
+            hasMore={hasMoreDocs}
+            loadingMore={loadingMore}
+            loadError={documentIndexError}
+            onOpen={(doc) => { selectDocument(doc); setDocumentListOpen(false); }}
+            onOverview={() => { openCollection(activeCollection); setDocumentListOpen(false); }}
+            onNew={() => { createBlankDocument(); setDocumentListOpen(false); }}
+            onSearch={() => openSearch(activeCollection)}
+            onLoadMore={() => void loadMoreDocs()}
+          />
+        </div>
+      )}
       <div className="main" inert={searchOpen ? true : undefined}>
         <header className="topBar">
           <div className="topCluster">
@@ -477,6 +503,7 @@ export default function Editor() {
           <div className="topCluster end">
             {showResolvedDocument && active && (
               <>
+                <button type="button" className="collectionListToggle" aria-label="Documents" aria-expanded={documentListOpen} aria-controls="collection-document-list" onClick={() => setDocumentListOpen((open) => !open)}><DocIcon /><span>Documents</span></button>
                 <select
                   className="topBarCollectionSelect"
                   aria-label={`Collection for ${title}`}
@@ -616,6 +643,14 @@ export default function Editor() {
                 <span>Create document</span>
               </button>
             </div>
+          ) : mode === "write" ? (
+            <VisualEditor
+              key={active.id}
+              ref={visualRef}
+              source={active.body}
+              onChange={updateBody}
+              onSource={() => setMode("edit")}
+            />
           ) : mode === "edit" ? (
             <textarea
               ref={textareaRef}

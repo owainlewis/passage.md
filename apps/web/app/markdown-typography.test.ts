@@ -11,9 +11,9 @@ function declarationsFor(selector: string) {
 }
 
 describe("rendered Markdown typography", () => {
-  it("keeps the compact base rhythm used by the landing-page mock document", () => {
+  it("uses the tighter paragraph rhythm shared by reading and writing", () => {
     expect(declarationsFor(".markdown h1")).toContain("margin: 0 0 0.5em;");
-    expect(declarationsFor(".markdown p")).toContain("margin: 0 0 1.15em;");
+    expect(declarationsFor(".markdown p")).toContain("margin: 0 0 1em;");
   });
 
   it("gives later document titles room while keeping the opening title flush", () => {

@@ -65,6 +65,12 @@ The Cloud Run service, migration job, and ephemeral production operation jobs ru
 
 `apps/web` owns the browser interface, editor state, Markdown preview, templates interface, account screens, and calls to the JSON API.
 
+Document writing uses a lazily loaded Milkdown editor with CommonMark and GitHub-flavored Markdown support.
+The visual editor serializes actual edits into the existing plain-text save path.
+Opening a document or switching modes does not rewrite its source.
+Frontmatter stays outside the visual parser, and documents that cannot round-trip safely use Source mode.
+A separate document list keeps the active collection reachable while writing.
+
 It depends on the same-origin Go API for authenticated state and persistence.
 
 It does not own authentication, authorization, billing truth, quotas, or public sharing policy.

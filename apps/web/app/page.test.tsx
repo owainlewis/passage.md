@@ -253,6 +253,9 @@ async function openDocumentNamed(title: string) {
 // for example at a saved-document limit.
 async function createBlankDocument() {
   fireEvent.click(screen.getByRole("button", { name: "New document" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "New document" })).toBeEnabled());
+  // These API/save tests enter exact Markdown. Visual editing is tested separately.
+  if (screen.queryByRole("button", { name: "Source" })) fireEvent.click(screen.getByRole("button", { name: "Source" }));
 }
 
 function openWorkspaceSearch() {
@@ -899,7 +902,7 @@ describe("Write (editor)", () => {
   it("switches to edit mode to reveal the Markdown textarea", async () => {
     await renderWrite();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     expect(screen.getByRole("textbox", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -949,7 +952,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared\n\nwritten in the browser" }
     });
@@ -1003,7 +1006,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
 
     fireEvent.change(editor, { target: { value: "# Shared\n\nfirst" } });
@@ -1044,7 +1047,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared\n\nwritten in the browser" }
     });
@@ -1095,7 +1098,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared\n\nwritten in the browser" }
     });
@@ -1148,7 +1151,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
     fireEvent.change(editor, { target: { value: "# Shared\n\nfirst draft" } });
 
@@ -1189,7 +1192,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# One\n\nmy words" }
     });
@@ -1198,7 +1201,7 @@ describe("Write (editor)", () => {
     // Conflict the second document too.
     openWorkspaceHome();
     fireEvent.click(screen.getByRole("button", { name: /^Two/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Source" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Two\n\nmy other words" }
     });
@@ -1208,7 +1211,7 @@ describe("Write (editor)", () => {
     openWorkspaceHome();
     fireEvent.click(screen.getByRole("button", { name: /^One/ }));
     expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("This document changed somewhere else");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     expect(await screen.findByRole("textbox", { name: "Markdown editor" })).toHaveValue("# One\n\nmy words");
   });
 
@@ -1219,8 +1222,11 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "New document" }));
 
     // Straight into an empty editable document.
-    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
-    expect(editor).toHaveValue("");
+    const editor = await waitFor(() => {
+      const input = screen.getByRole("textbox", { name: "Visual editor" });
+      expect(input.textContent).toBe("");
+      return input;
+    });
     // Ready to type into. The editor only mounts once the mode switches, so
     // focusing at creation time silently did nothing.
     await waitFor(() => expect(editor).toHaveFocus());
@@ -1286,6 +1292,8 @@ describe("Write (editor)", () => {
     expect(screen.queryByText("Write the hook.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit YouTube script" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create document from YouTube script" }));
+    await screen.findByRole("textbox", { name: "Visual editor" });
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
 
     const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
     expect(editor).toHaveValue("# [Video title]\n\n## Opening\n\nWrite the hook.");
@@ -1791,7 +1799,7 @@ describe("Write (editor)", () => {
   it("keeps a pending document save when navigation returns to the workspace", async () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-draft", publicId: "draft", body: "# Draft" }]);
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Draft\n\nSaved after navigation." }
     });
@@ -2502,7 +2510,7 @@ describe("Write (editor)", () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Edited note\n\nUnsaved." }
     });
@@ -2535,7 +2543,7 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# First edit\n\nUnsaved." }
     });
@@ -2769,7 +2777,7 @@ describe("Write (editor)", () => {
     fireEvent.click(button);
     fireEvent.click(button);
 
-    await screen.findByRole("textbox", { name: "Markdown editor" });
+    await screen.findByRole("textbox", { name: "Visual editor" });
     await waitFor(() => expect(screen.getByRole("button", { name: "New document" })).toBeEnabled());
     expect(creates).toBe(1);
   });
@@ -3376,7 +3384,7 @@ describe("Write (editor)", () => {
 
     await renderWrite();
     await openDocumentFromSearch(/Older note/);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Older note\n\nEdited." }
     });
@@ -3570,7 +3578,7 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Saved draft\n\nAutosaved." }
     });
@@ -3619,7 +3627,7 @@ describe("Write (editor)", () => {
     );
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Saved draft\n\nSurvives refresh." }
     });
@@ -3672,7 +3680,7 @@ describe("Write (editor)", () => {
     );
 
     expect(screen.getAllByRole("heading", { name: "First account", level: 1 }).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# First account\n\nMust not cross accounts." }
     });
@@ -3825,5 +3833,36 @@ describe("Write (editor)", () => {
       method: "DELETE",
       credentials: "include"
     });
+  });
+});
+
+describe("visual writing and collection navigation", () => {
+  it("does not save on opening or switching modes", async () => {
+    const original = "---\ntags: [writing]\n---\n\n# A draft\n\nSome **text**.\n";
+    const fetchMock = stubSignedInFetch([{ id: "visual", publicId: "visual", body: original }]);
+    await renderWrite();
+    await screen.findByRole("textbox", { name: "Visual editor" });
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue(original);
+    fireEvent.click(screen.getByRole("button", { name: "Write" }));
+    await screen.findByRole("textbox", { name: "Visual editor" });
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("switches neighboring documents directly and keeps their collection highlighted", async () => {
+    stubSignedInFetch([
+      { id: "one", publicId: "one", body: "# First draft", collectionSlug: "passage", collectionId: "collection-passage" },
+      { id: "two", publicId: "two", body: "# Second draft", collectionSlug: "passage", collectionId: "collection-passage" },
+      { id: "other", publicId: "other", body: "# Elsewhere" }
+    ]);
+    await renderWrite();
+    const list = screen.getByRole("navigation", { name: "Documents in Passage" });
+    expect(within(list).queryByRole("button", { name: /Elsewhere/ })).not.toBeInTheDocument();
+    fireEvent.click(within(list).getByRole("button", { name: /Second draft/ }));
+    expect(await screen.findByRole("textbox", { name: "Visual editor" })).toHaveTextContent("Second draft");
+    expect(within(list).getByRole("button", { name: /Second draft/ })).toHaveAttribute("aria-current", "page");
+    const sidebar = screen.getByRole("complementary", { name: "Workspace navigation" });
+    expect(within(sidebar).getByRole("button", { name: /^Passage/ })).toHaveAttribute("data-active", "true");
+    expect(window.location.pathname).toBe("/write/two");
   });
 });

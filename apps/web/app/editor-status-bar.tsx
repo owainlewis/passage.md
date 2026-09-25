@@ -47,12 +47,21 @@ export function EditorStatusBar({
           <div className="modeToggle" role="group" aria-label="View mode">
             <button
               type="button"
+              className={mode === "write" ? "on" : ""}
+              aria-pressed={mode === "write"}
+              onClick={() => onModeChange("write")}
+            >
+              <PencilIcon />
+              <span>Write</span>
+            </button>
+            <button
+              type="button"
               className={mode === "edit" ? "on" : ""}
               aria-pressed={mode === "edit"}
               onClick={() => onModeChange("edit")}
             >
-              <PencilIcon />
-              <span>Edit</span>
+              <span aria-hidden="true" className="formatCode">&lt;/&gt;</span>
+              <span>Source</span>
             </button>
             <button
               type="button"
