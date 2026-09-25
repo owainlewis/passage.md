@@ -7,6 +7,7 @@ import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { EditorSidebar } from "./editor-sidebar";
 import { isShared, Mode, publicIdFromPath } from "./editor-model";
+import { EditorControls } from "./editor-controls";
 import { EditorStatusBar } from "./editor-status-bar";
 import { EditorWorkspace, WorkspaceModal, WorkspaceSearch } from "./editor-workspace";
 import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
@@ -44,6 +45,7 @@ function useMediaQuery(query: string) {
 
 export default function Editor() {
   const [mode, setMode] = useState<Mode>("write");
+  const [focusEnabled, setFocusEnabled] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [documentListOpen, setDocumentListOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -69,7 +71,7 @@ export default function Editor() {
   const mobileLayout = useMediaQuery(MOBILE_QUERY);
   // The list only overlays at narrow widths. Wider, it sits beside the sidebar
   // and shows and hides with it, so the open flag does not apply there.
-  const listOverlayOpen = narrowLayout && documentListOpen;
+  const listOverlayOpen = narrowLayout && documentListOpen && !focusEnabled;
 
   const auth = useAuth();
   const userId = auth.user?.id;
@@ -207,6 +209,7 @@ export default function Editor() {
 
   useEffect(() => {
     function onPopState() {
+      setFocusEnabled(false);
       setDeleteDialogDocId("");
       setShareDialogDocId("");
       setDocumentListOpen(false);
@@ -318,6 +321,7 @@ export default function Editor() {
   function openWorkspaceView(view: WorkspaceView, history: "push" | "replace" = "push") {
     if (view.type === "document") return;
     setActiveTemplateId("");
+    setFocusEnabled(false);
     setWorkspaceView(view);
     // Choosing a collection opens its list straight away. Narrow layouts open
     // the overlay. Wide ones show it beside the sidebar, so a hidden sidebar
@@ -466,15 +470,16 @@ export default function Editor() {
   const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
   const hasCollectionList = (workspaceView.type === "collection" && collections.some((collection) => collection.slug === workspaceView.slug))
     || (showResolvedDocument && Boolean(active));
+  const focusMode = focusEnabled && showResolvedDocument && Boolean(active);
   const canDeleteActive = Boolean(active && !isShared(active));
   // What is actually on screen. Duplicate controls are only dropped when the
   // equivalent in the list or sidebar can be seen.
-  const collectionListVisible = hasCollectionList && (narrowLayout ? documentListOpen : sidebarOpen);
+  const collectionListVisible = !focusMode && hasCollectionList && (narrowLayout ? documentListOpen : sidebarOpen);
   const sidebarSearchVisible = sidebarOpen || mobileLayout;
 
   return (
-    <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
-      <EditorSidebar
+    <div className={`workspace ${sidebarOpen && !focusMode ? "withSidebar" : ""} ${focusMode ? "focusMode" : ""}`}>
+      {!focusMode && <EditorSidebar
         activeCollection={showResolvedDocument ? activeCollection : undefined}
         accountEmail={auth.user?.email}
         assignments={EMPTY_ASSIGNMENTS}
@@ -489,7 +494,7 @@ export default function Editor() {
         templateCount={templateState.templates.length}
         templatesActive={templatesOpen}
         view={workspaceView}
-      />
+      />}
 
       {collectionListVisible && (
         <div className="collectionListPane" aria-hidden={searchOpen ? true : undefined} inert={searchOpen ? true : undefined}>
@@ -511,7 +516,7 @@ export default function Editor() {
         </div>
       )}
       <div className="main" inert={searchOpen ? true : undefined}>
-        <header className="topBar">
+        {!focusMode && <header className="topBar">
           <div className="topCluster">
             <button
               type="button"
@@ -583,16 +588,7 @@ export default function Editor() {
                 >
                   <StarIcon filled={Boolean(active.pinned)} />
                 </button>
-                {canDeleteActive && (
-                  <button
-                    type="button"
-                    className="topBarDelete"
-                    disabled={collectionState.pendingDocIds.has(active.id)}
-                    onClick={() => setDeleteDialogDocId(active.id)}
-                  >
-                    Delete
-                  </button>
-                )}
+
               </>
             )}
             <div className="userMenuWrap">
@@ -626,7 +622,27 @@ export default function Editor() {
               )}
             </div>
           </div>
-        </header>
+        </header>}
+
+        {showResolvedDocument && docsReady && active?.bodyLoaded && <EditorControls
+          key={active.id}
+          mode={mode}
+          onModeChange={setMode}
+          focusMode={focusMode}
+          onToggleFocus={() => { closeMenu(); setFocusEnabled(!focusMode); }}
+          onCopy={() => void copyDocument()}
+          onExport={exportDoc}
+          onDelete={canDeleteActive ? () => setDeleteDialogDocId(active.id) : undefined}
+          deleteDisabled={collectionState.pendingDocIds.has(active.id)}
+          onCopyLink={activeShared && publicDocPath ? () => void copyShareLink() : undefined}
+          onShare={() => {
+            if (!activeShared && !entitlements.can("shareLinks")) { void shareDoc(); return; }
+            setShareDialogDocId(active.id);
+          }}
+          shareLabel={shareButtonLabel}
+          shareState={shareState}
+          shareOpen={shareDialogOpen}
+        />}
 
         {saveConflict && active && saveConflict.id === active.id && (
           <div className="conflictNotice" role="alert">
@@ -754,30 +770,7 @@ export default function Editor() {
         )}
 
         {showResolvedDocument && docsReady && active?.bodyLoaded && (
-          <EditorStatusBar
-            activeShared={activeShared}
-            documentCopied={documentCopied}
-            onCopyDocument={() => void copyDocument()}
-            onCopyShareLink={() => void copyShareLink()}
-            publicDocPath={publicDocPath}
-            shareLinkCopied={shareState === "copied"}
-            mode={mode}
-            onExport={exportDoc}
-            onModeChange={setMode}
-            onOpenShare={() => {
-              if (!activeShared && !entitlements.can("shareLinks")) {
-                void shareDoc();
-                return;
-              }
-              setShareDialogDocId(active?.id ?? "");
-            }}
-            saveState={saveState}
-            shareDialogOpen={shareDialogOpen}
-            shareButtonLabel={shareButtonLabel}
-            shareState={shareState}
-            showSaveState={showSaveState}
-            words={words}
-          />
+          <EditorStatusBar saveState={saveState} showSaveState={showSaveState} words={words} copied={documentCopied || shareState === "copied"} />
         )}
       </div>
       {searchOpen && (

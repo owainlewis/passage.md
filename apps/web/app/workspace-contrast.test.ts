@@ -110,11 +110,10 @@ describe("light workspace contrast", () => {
       expect(declarationsFor(selector)).toContain("var(--control-boundary)");
     }
 
-    // Dock actions are ghost buttons at rest, so their 3:1 boundary belongs to
-    // hover and focus. The word count is text, not a control, so it has none.
-    expect(declarationsFor(".dockButton")).toContain("border: 1px solid transparent");
-    expect(declarationsFor(".dockButton:hover,\n.dockButton:focus-visible")).toContain("border-color: var(--control-boundary)");
-    expect(declarationsFor(".statusPill")).toContain("border: 0");
+    // The actions menu boundary remains visible in both themes. Status uses
+    // the same readable muted token as other metadata.
+    expect(declarationsFor(".documentActionsMenu")).toContain("border: 1px solid var(--hairline-strong)");
+    expect(declarationsFor(".editorStatus")).toContain("color: var(--muted)");
 
     for (const selector of [".workspaceSidebarSearch > button", ".workspaceSearchButton"]) {
       expect(declarationsFor(selector)).toContain("var(--hairline-strong)");
@@ -156,7 +155,6 @@ describe("light workspace contrast", () => {
       /(?:^|\}|\*\/)\s*\.workspace\s+:is\(button, a, select, input, textarea\)[^{]*:focus-visible\s*\{[^}]*outline: 2px solid var\(--accent\);/
     );
     expect(stylesheet).not.toMatch(/(?:^|\})\s*\.workspaceDocumentOpen:[^{]*focus-visible\s*\{[^}]*outline: 0/);
-    expect(declarationsFor(':root[data-theme="dark"] .statusDock')).toContain("border-color: var(--hairline-strong);");
 
     expect(dark).toMatchObject({
       "--muted": "#969da8",

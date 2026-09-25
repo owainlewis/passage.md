@@ -271,12 +271,8 @@ it("hides the browser ring on programmatic focus targets", () => {
 });
 
 it("keeps narrow editor chrome compact and unobstructed", () => {
-  expect(stylesheet).toMatch(
-    /@media \(max-width: 720px\)[\s\S]*?\.statusDock\s*\{[^}]*grid-template-columns: auto minmax\(0, 1fr\);/
-  );
-  expect(stylesheet).toMatch(
-    /@media \(max-width: 720px\)[\s\S]*?\.dockGroupMeta\s*\{[^}]*min-width: 0;[^}]*flex-wrap: wrap;/
-  );
+  expect(declarationsFor(".editorStatus")).toContain("flex-wrap: wrap;");
+  expect(declarationsFor(".editorStatus")).not.toContain("position: fixed");
   expect(stylesheet).toMatch(
     /@media \(max-width: 720px\)[\s\S]*?\.workspace\.withSidebar \.workspaceMobileNav\s*\{[^}]*display: none;/
   );
@@ -288,8 +284,7 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   expect(stylesheet).not.toMatch(
     /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
   );
-  expect(declarationsFor(".statusDock")).toContain("border: 1px solid var(--hairline);");
-  expect(declarationsFor(".statusDock")).toContain("min-height: 48px;");
+  expect(stylesheet).not.toContain(".statusDock");
 
   // The narrow list overlay reaches the bottom of the window, or the top of
   // the phone nav, instead of a guessed dock height that left a gap.
