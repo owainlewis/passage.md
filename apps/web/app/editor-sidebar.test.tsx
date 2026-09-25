@@ -78,6 +78,15 @@ describe("desktop destination icons", () => {
     expect(destination(/^Home$/)).toHaveAttribute("data-active", "false");
   });
 
+  it("shows counts only when there is something to count", () => {
+    render(sidebar({ templateCount: 0 }, [{ id: "a", body: "# A", bodyLoaded: true } as Doc]));
+
+    expect(destination(/^Starred/).querySelector("small")).toBeNull();
+    expect(destination(/^Templates$/).querySelector("small")).toBeNull();
+    const collections = screen.getAllByRole("button").filter((button) => button.classList.contains("workspaceSidebarCollection"));
+    expect(collections[0]).toHaveTextContent("Documents1");
+  });
+
   it("sizes destination icons without letting them shrink or drift from the label colour", () => {
     const rule = declarationsFor(".workspaceDestination > svg");
     expect(rule).toContain("flex: 0 0 auto;");

@@ -1,4 +1,4 @@
-import { parseTags, snippetOf } from "./doc-utils";
+import { parseTags, plainSummary, snippetOf } from "./doc-utils";
 import { editorDocSearchText, editorDocTags, editorDocTitle } from "./editor-list";
 import { Doc } from "./editor-model";
 
@@ -63,14 +63,13 @@ export function searchWorkspaceDocs(
 
 export function workspaceDocSummary(doc: Doc) {
   if (!doc.bodyLoaded && doc.excerpt) {
+    // A server excerpt is the start of the stored Markdown, so it goes through
+    // the same parser as a loaded body. Only its title line needs detecting.
     const excerpt = doc.excerpt.trim();
-    if (excerpt.startsWith("---") || /^#{1,6}\s/.test(excerpt)) return snippetOf(excerpt);
     const title = doc.title?.trim();
-    if (title && excerpt.startsWith(title)) {
-      const withoutTitle = excerpt.slice(title.length).trim();
-      return withoutTitle || "No additional text";
-    }
-    return excerpt;
+    if (excerpt.startsWith("---") || /^#{1,6}\s/.test(excerpt)) return snippetOf(excerpt);
+    if (title && excerpt.startsWith(title)) return plainSummary(excerpt.slice(title.length));
+    return plainSummary(excerpt);
   }
   return snippetOf(doc.body);
 }

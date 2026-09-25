@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
@@ -12,7 +12,9 @@ import { EditorWorkspace, WorkspaceModal, WorkspaceSearch } from "./editor-works
 import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
 import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
 import { useEntitlements } from "./entitlements";
-import { PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
+import { FolderIcon, ListIcon, PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
+import { CollectionDocumentList } from "./collection-document-list";
+import { VisualEditor } from "./visual-editor";
 import { MarkdownView } from "./markdown-view";
 import { TemplateWorkspace } from "./template-workspace";
 import { useEditorDocuments } from "./use-editor-documents";
@@ -23,10 +25,27 @@ import { useTheme } from "./theme";
 
 const EMPTY_ASSIGNMENTS: Record<string, string> = {};
 const NO_DELETED_COLLECTIONS: string[] = [];
+// These match the CSS breakpoints. Below the first, the collection list is an
+// overlay. Below the second, the sidebar overlays and a bottom nav appears.
+const LIST_OVERLAY_QUERY = "(max-width: 1100px)";
+const MOBILE_QUERY = "(max-width: 720px)";
+
+function useMediaQuery(query: string) {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia?.(query);
+      list?.addEventListener?.("change", onChange);
+      return () => list?.removeEventListener?.("change", onChange);
+    },
+    () => window.matchMedia?.(query).matches ?? false,
+    () => false
+  );
+}
 
 export default function Editor() {
-  const [mode, setMode] = useState<Mode>("preview");
+  const [mode, setMode] = useState<Mode>("write");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [documentListOpen, setDocumentListOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
   const [shareDialogDocId, setShareDialogDocId] = useState("");
@@ -41,10 +60,16 @@ export default function Editor() {
   const [documentCopied, setDocumentCopied] = useState(false);
   const [creatingDocument, setCreatingDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const visualRef = useRef<{ focus: () => void }>(null);
   const writingPaneRef = useRef<HTMLElement>(null);
   const focusNewDocument = useRef(false);
   const workspaceViewRef = useRef(workspaceView);
   workspaceViewRef.current = workspaceView;
+  const narrowLayout = useMediaQuery(LIST_OVERLAY_QUERY);
+  const mobileLayout = useMediaQuery(MOBILE_QUERY);
+  // The list only overlays at narrow widths. Wider, it sits beside the sidebar
+  // and shows and hides with it, so the open flag does not apply there.
+  const listOverlayOpen = narrowLayout && documentListOpen;
 
   const auth = useAuth();
   const userId = auth.user?.id;
@@ -82,7 +107,7 @@ export default function Editor() {
     userId,
     maxSavedDocs: entitlements.maxSavedDocs,
     plan: entitlements.plan,
-    focusEditor: () => textareaRef.current?.focus()
+    focusEditor: () => mode === "write" ? visualRef.current?.focus() : textareaRef.current?.focus()
   });
 
   const collectionNotice = useRef("");
@@ -123,7 +148,7 @@ export default function Editor() {
   });
 
   useEffect(() => {
-    if (window.matchMedia?.("(max-width: 720px)").matches) {
+    if (window.matchMedia?.(MOBILE_QUERY).matches) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSidebarOpen(false);
     }
@@ -133,8 +158,8 @@ export default function Editor() {
   // into. This runs after the editor has actually mounted, which is why it is
   // an effect rather than a call at creation time.
   useEffect(() => {
-    if (!focusNewDocument.current || mode !== "edit") return;
-    const element = textareaRef.current;
+    if (!focusNewDocument.current || mode === "preview") return;
+    const element = mode === "write" ? visualRef.current : textareaRef.current;
     if (!element) return;
     focusNewDocument.current = false;
     element.focus();
@@ -149,11 +174,17 @@ export default function Editor() {
   }, [active?.body, mode, activeId]);
 
   const toggleMode = useCallback(() => {
-    setMode((current) => (current === "edit" ? "preview" : "edit"));
+    setMode((current) => (current === "write" ? "edit" : "write"));
   }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && listOverlayOpen && !searchOpen) {
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+        setDocumentListOpen(false);
+        document.querySelector<HTMLButtonElement>(".collectionListToggle")?.focus();
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
@@ -172,12 +203,13 @@ export default function Editor() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, toggleMode]);
+  }, [listOverlayOpen, searchOpen, toggleMode]);
 
   useEffect(() => {
     function onPopState() {
       setDeleteDialogDocId("");
       setShareDialogDocId("");
+      setDocumentListOpen(false);
       const location = currentWorkspaceLocation();
       setActiveTemplateId("");
       if (location.shouldReplace) {
@@ -201,11 +233,9 @@ export default function Editor() {
     }
     setNewDocumentCollection(null);
     setActiveTemplateId("");
-    setMode("edit");
+    setMode("write");
     setWorkspaceView({ type: "document" });
-    // Ask for focus rather than reaching for the textarea here: at this point
-    // the mode is still preview, so it is not mounted, and the document body
-    // load remounts it shortly after.
+    // Focus after the new document mounts, including async visual-editor setup.
     focusNewDocument.current = true;
     return true;
   }
@@ -237,7 +267,7 @@ export default function Editor() {
     // over the active document and history.
     if (creatingDocument) return;
     setCreatingDocument(true);
-    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : null)
+    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : workspaceView.type === "document" ? active?.collectionSlug ?? "documents" : null)
       .finally(() => setCreatingDocument(false));
   }
 
@@ -266,7 +296,7 @@ export default function Editor() {
     setActiveTemplateId("");
     setWorkspaceView({ type: "document" });
     selectDoc(doc, "push");
-    if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarOpen(false);
+    if (window.matchMedia?.(MOBILE_QUERY).matches) setSidebarOpen(false);
   }
 
   function selectSearchDocument(doc: Parameters<typeof selectDoc>[0]) {
@@ -289,11 +319,17 @@ export default function Editor() {
     if (view.type === "document") return;
     setActiveTemplateId("");
     setWorkspaceView(view);
+    // Choosing a collection opens its list straight away. Narrow layouts open
+    // the overlay. Wide ones show it beside the sidebar, so a hidden sidebar
+    // comes back with it.
+    const overlayList = Boolean(window.matchMedia?.(LIST_OVERLAY_QUERY).matches);
+    setDocumentListOpen(view.type === "collection" && overlayList);
+    if (view.type === "collection" && !overlayList) setSidebarOpen(true);
     const nextPath = workspacePath(view);
     if (`${window.location.pathname}${window.location.search}` !== nextPath) {
       window.history[history === "push" ? "pushState" : "replaceState"](null, "", nextPath);
     }
-    if (window.matchMedia?.("(max-width: 720px)").matches) setSidebarOpen(false);
+    if (window.matchMedia?.(MOBILE_QUERY).matches) setSidebarOpen(false);
   }
 
   function openCollection(slug: string) {
@@ -407,6 +443,7 @@ export default function Editor() {
   }, [collectionState.available, collections, setBillingNotice, workspaceView]);
 
   const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
+  const listedCollection = workspaceView.type === "collection" ? workspaceView.slug : activeCollection;
   const templatesOpen = workspaceView.type === "templates";
   const hasDocumentRoute = workspaceView.type === "document"
     && typeof window !== "undefined"
@@ -427,11 +464,18 @@ export default function Editor() {
   const showDocument = !templatesOpen && workspaceView.type === "document";
   const showResolvedDocument = showDocument && documentRouteResolved;
   const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
+  const hasCollectionList = (workspaceView.type === "collection" && collections.some((collection) => collection.slug === workspaceView.slug))
+    || (showResolvedDocument && Boolean(active));
   const canDeleteActive = Boolean(active && !isShared(active));
+  // What is actually on screen. Duplicate controls are only dropped when the
+  // equivalent in the list or sidebar can be seen.
+  const collectionListVisible = hasCollectionList && (narrowLayout ? documentListOpen : sidebarOpen);
+  const sidebarSearchVisible = sidebarOpen || mobileLayout;
 
   return (
     <div className={`workspace ${sidebarOpen ? "withSidebar" : ""}`}>
       <EditorSidebar
+        activeCollection={showResolvedDocument ? activeCollection : undefined}
         accountEmail={auth.user?.email}
         assignments={EMPTY_ASSIGNMENTS}
         collections={collections}
@@ -447,6 +491,25 @@ export default function Editor() {
         view={workspaceView}
       />
 
+      {collectionListVisible && (
+        <div className="collectionListPane" aria-hidden={searchOpen ? true : undefined} inert={searchOpen ? true : undefined}>
+          <CollectionDocumentList
+            title={collectionLabel(listedCollection, collections)}
+            docs={docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === listedCollection)}
+            activeId={showResolvedDocument ? active?.id ?? "" : ""}
+            mobileOpen={listOverlayOpen}
+            hasMore={hasMoreDocs}
+            loadingMore={loadingMore}
+            loadError={documentIndexError}
+            onOpen={(doc) => { selectDocument(doc); setDocumentListOpen(false); }}
+            onOverview={() => { openCollection(listedCollection); setDocumentListOpen(false); }}
+            newDisabled={!docsReady || creatingDocument}
+            onNew={() => { createBlankDocument(); setDocumentListOpen(false); }}
+            onSearch={() => openSearch(listedCollection)}
+            onLoadMore={() => void loadMoreDocs()}
+          />
+        </div>
+      )}
       <div className="main" inert={searchOpen ? true : undefined}>
         <header className="topBar">
           <div className="topCluster">
@@ -455,19 +518,25 @@ export default function Editor() {
               className="iconButton"
               aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
               aria-pressed={sidebarOpen}
-              onClick={() => setSidebarOpen((open) => !open)}
+              onClick={() => {
+                // On phones the sidebar and the list both overlay the page.
+                if (!sidebarOpen && mobileLayout) setDocumentListOpen(false);
+                setSidebarOpen(!sidebarOpen);
+              }}
             >
               <SidebarIcon />
             </button>
-            <button
-              type="button"
-              className="iconButton"
-              aria-label="New document"
-              disabled={!docsReady || creatingDocument}
-              onClick={createBlankDocument}
-            >
-              <PlusIcon />
-            </button>
+            {!collectionListVisible && (
+              <button
+                type="button"
+                className="iconButton"
+                aria-label="New document"
+                disabled={!docsReady || creatingDocument}
+                onClick={createBlankDocument}
+              >
+                <PlusIcon />
+              </button>
+            )}
           </div>
 
           {showTopBarTitle
@@ -475,17 +544,36 @@ export default function Editor() {
             : <span className="docTitle" aria-hidden="true" />}
 
           <div className="topCluster end">
+            {hasCollectionList && narrowLayout && (
+              <button
+                type="button"
+                className="iconButton collectionListToggle"
+                aria-label="Document list"
+                aria-expanded={documentListOpen}
+                aria-controls={documentListOpen ? "collection-document-list" : undefined}
+                title={documentListOpen ? "Hide document list" : "Show document list"}
+                onClick={() => {
+                  if (!documentListOpen && mobileLayout) setSidebarOpen(false);
+                  setDocumentListOpen(!documentListOpen);
+                }}
+              >
+                <ListIcon />
+              </button>
+            )}
             {showResolvedDocument && active && (
               <>
-                <select
-                  className="topBarCollectionSelect"
-                  aria-label={`Collection for ${title}`}
-                  value={activeCollection}
-                  disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
-                  onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
-                >
-                  {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
-                </select>
+                <span className="topBarCollection" title="Move to collection">
+                  <FolderIcon />
+                  <select
+                    className="topBarCollectionSelect"
+                    aria-label={`Collection for ${title}`}
+                    value={activeCollection}
+                    disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
+                    onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
+                  >
+                    {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
+                  </select>
+                </span>
                 <button
                   type="button"
                   className="iconButton"
@@ -616,6 +704,14 @@ export default function Editor() {
                 <span>Create document</span>
               </button>
             </div>
+          ) : mode === "write" ? (
+            <VisualEditor
+              key={active.id}
+              ref={visualRef}
+              source={active.body}
+              onChange={updateBody}
+              onSource={() => setMode("edit")}
+            />
           ) : mode === "edit" ? (
             <textarea
               ref={textareaRef}
@@ -634,10 +730,12 @@ export default function Editor() {
           <EditorWorkspace
             assignments={EMPTY_ASSIGNMENTS}
             collectionAvailable={collectionState.available}
+            collectionListVisible={collectionListVisible}
             collections={collections}
             deletedCollections={NO_DELETED_COLLECTIONS}
             docs={docs}
             saveState={collectionState.loading ? "loading" : saveState}
+            searchVisible={sidebarSearchVisible}
             view={workspaceView}
             onCreateCollection={createCollection}
             onDeleteCollection={deleteCollection}

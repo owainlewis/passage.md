@@ -15,7 +15,7 @@ function declarationsFor(selector: string) {
   return match![1].replace(/\s+/g, " ");
 }
 
-function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[]) {
+function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[], searchVisible = true) {
   return (
     <EditorWorkspace
       assignments={{}}
@@ -24,6 +24,7 @@ function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[]) {
       docs={docs}
       deletedCollections={[]}
       saveState="saved"
+      searchVisible={searchVisible}
       view={{ type: "home" }}
       onCreateCollection={vi.fn()}
       onDeleteCollection={vi.fn()}
@@ -60,6 +61,34 @@ function listWorkspace(docs: Doc[]) {
       onOpenSearch={vi.fn()}
       onOpenView={vi.fn()}
       hasMoreDocs={false}
+      loadingMore={false}
+      onLoadMoreDocs={vi.fn()}
+      onToggleStar={vi.fn()}
+      onUpdateCollection={vi.fn()}
+      pendingCollectionSlugs={new Set()}
+      pendingDocIds={new Set()}
+    />
+  );
+}
+
+function collectionWorkspace(docs: Doc[], collectionListVisible: boolean) {
+  return (
+    <EditorWorkspace
+      assignments={{}}
+      collectionAvailable
+      collectionListVisible={collectionListVisible}
+      collections={[...WORKSPACE_COLLECTIONS, { slug: "research", title: "Research", description: "Research notes." }]}
+      docs={docs}
+      deletedCollections={[]}
+      saveState="saved"
+      view={{ type: "collection", slug: "research" }}
+      onCreateCollection={vi.fn()}
+      onDeleteCollection={vi.fn()}
+      onOpenCollection={vi.fn()}
+      onOpenDocument={vi.fn()}
+      onOpenSearch={vi.fn()}
+      onOpenView={vi.fn()}
+      hasMoreDocs
       loadingMore={false}
       onLoadMoreDocs={vi.fn()}
       onToggleStar={vi.fn()}
@@ -137,10 +166,53 @@ it("keeps the virtual Documents view and empty sections readable", () => {
   const recent = within(home).getByRole("heading", { name: "Recent" }).closest("section")!;
 
   expect(within(collections).getAllByRole("button")).toHaveLength(2);
-  expect(within(collections).getByRole("button", { name: /Documents0 files/ })).toHaveTextContent(
+  expect(within(collections).getByRole("button", { name: /Documents0 documents/ })).toHaveTextContent(
     "General Markdown that has not been assigned to another collection."
   );
   expect(within(recent).getByText("No documents yet.")).toBeInTheDocument();
+});
+
+it("titles Home as Home and offers search there only when nothing else on screen does", () => {
+  const docs = [{ id: "doc-1", body: "# Draft", bodyLoaded: true }] as Doc[];
+  const view = render(homeWorkspace(WORKSPACE_COLLECTIONS, docs, true));
+
+  expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Search 1 document/ })).not.toBeInTheDocument();
+
+  view.rerender(homeWorkspace(WORKSPACE_COLLECTIONS, docs, false));
+  expect(screen.getByRole("button", { name: /Search 1 document/ })).toBeInTheDocument();
+});
+
+it("labels home rows with their collection only when there is more than one", () => {
+  const research = { slug: "research", title: "Research", description: "" };
+  const docs = [{ id: "doc-1", body: "# Draft\n\nBody", bodyLoaded: true, collectionSlug: "research" }] as Doc[];
+  const view = render(homeWorkspace(WORKSPACE_COLLECTIONS, [{ ...docs[0], collectionSlug: null }]));
+  const row = () => screen.getByRole("button", { name: /^Draft/ });
+  expect(row().querySelector("small")).toBeNull();
+
+  view.rerender(homeWorkspace([...WORKSPACE_COLLECTIONS, research], docs));
+  expect(row().querySelector("small")).toHaveTextContent("Research");
+});
+
+it("leaves the rows, search, and load more to the collection list while it is on screen", () => {
+  const docs = [{ id: "doc-1", body: "# Draft\n\nBody", bodyLoaded: true, collectionSlug: "research" }] as Doc[];
+  const view = render(collectionWorkspace(docs, true));
+  const overview = screen.getByLabelText("Research");
+
+  expect(overview).toHaveTextContent("Research notes.");
+  expect(within(overview).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  expect(within(overview).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  expect(within(overview).queryByRole("button", { name: /^Draft/ })).not.toBeInTheDocument();
+  expect(within(overview).queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
+  expect(overview).toHaveTextContent("Choose a document from the list");
+
+  view.rerender(collectionWorkspace(docs, false));
+  const rows = screen.getByLabelText("Research");
+  expect(within(rows).getByRole("button", { name: /^Draft/ })).toBeInTheDocument();
+  expect(within(rows).getByRole("button", { name: "Search" })).toBeInTheDocument();
+  expect(rows).toHaveTextContent("1 document");
+  expect(screen.getByRole("button", { name: "Load more documents" })).toBeInTheDocument();
 });
 
 it("keeps collection modal surfaces fixed to the full viewport", () => {
@@ -217,6 +289,32 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
     /@media \(max-width: 360px\)[\s\S]*?\.topBarCollectionSelect\s*\{[^}]*display: none;/
   );
   expect(declarationsFor(".statusDock")).toContain("border: 1px solid var(--hairline);");
+  expect(declarationsFor(".statusDock")).toContain("min-height: 48px;");
+
+  // The narrow list overlay reaches the bottom of the window, or the top of
+  // the phone nav, instead of a guessed dock height that left a gap.
+  expect(stylesheet).not.toMatch(/\.collectionDocumentList\[data-mobile-open="true"\]\s*\{[^}]*bottom: 100px/);
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 1100px\)[\s\S]*?\.collectionDocumentList\[data-mobile-open="true"\]\s*\{[^}]*bottom: 0;[^}]*left: 0;/
+  );
+  expect(stylesheet).toMatch(
+    /@media \(max-width: 720px\)[\s\S]*?\.workspace:not\(\.withSidebar\) \.collectionDocumentList\[data-mobile-open="true"\]\s*\{\s*bottom: 64px;/
+  );
+});
+
+it("keeps the formatting bar in reach without letting text show through it", () => {
+  const dock = declarationsFor(".formatBarDock");
+  expect(dock).toContain("position: sticky;");
+  // Sticky offsets sit inside the pane padding; the band must reach the
+  // scrollport edge or text shows between the top bar and the band.
+  expect(dock).toContain("top: calc(-1 * var(--writing-pad-top, 0px));");
+  expect(declarationsFor(".writingPane")).toContain("padding: var(--writing-pad-top)");
+  expect(dock).toContain("background: var(--surface);");
+});
+
+it("uses one sidebar width at every breakpoint", () => {
+  expect(stylesheet).not.toMatch(/268px/);
+  expect(declarationsFor(".sidebar")).toContain("width: var(--sidebar-width);");
 });
 
 it("wraps long collection copy while preserving a large count", () => {
@@ -233,8 +331,9 @@ it("wraps long collection copy while preserving a large count", () => {
 
   render(homeWorkspace([...WORKSPACE_COLLECTIONS, collection], docs));
 
-  const card = screen.getByText(longTitle).closest("button")!;
-  expect(card).toHaveTextContent("1234 files");
+  const collections = screen.getByRole("heading", { name: "Collections" }).closest("section")!;
+  const card = within(collections).getByText(longTitle).closest("button")!;
+  expect(card).toHaveTextContent("1234 documents");
   expect(card).toHaveTextContent(longDescription);
   expect(declarationsFor(".workspaceCollectionTitle strong")).toMatch(/min-width: 0;.*overflow-wrap: anywhere;/);
   expect(declarationsFor(".workspaceCollectionDescription")).toContain("overflow-wrap: anywhere;");

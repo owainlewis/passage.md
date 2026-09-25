@@ -8,6 +8,7 @@ import { collectionForDoc, WorkspaceCollection, WorkspaceView } from "./editor-w
 import { DocIcon, HomeIcon, RecentIcon, SearchIcon, StarIcon, UserIcon } from "./icons";
 
 type EditorSidebarProps = {
+  activeCollection?: string;
   accountEmail?: string;
   assignments: Record<string, string>;
   collections: WorkspaceCollection[];
@@ -24,6 +25,7 @@ type EditorSidebarProps = {
 };
 
 export function EditorSidebar({
+  activeCollection,
   accountEmail,
   assignments,
   collections,
@@ -79,12 +81,12 @@ export function EditorSidebar({
               <button
                 type="button"
                 className="workspaceSidebarCollection"
-                data-active={view.type === "collection" && view.slug === collection.slug && !templatesActive}
+                data-active={((view.type === "collection" && view.slug === collection.slug) || activeCollection === collection.slug) && !templatesActive}
                 key={collection.slug}
                 onClick={() => onOpenCollection(collection.slug)}
               >
                 <span title={collection.title}>{collection.title}</span>
-                <small>{count}</small>
+                {count > 0 && <small>{count}</small>}
               </button>
             );
           })}
@@ -126,7 +128,7 @@ function SidebarDestination({ active, ariaLabel, count, icon, label, onClick }: 
     <button type="button" aria-label={ariaLabel} className="workspaceDestination" data-active={active} onClick={onClick}>
       {icon}
       <span>{label}</span>
-      {count !== undefined && <small>{count}</small>}
+      {count !== undefined && count > 0 && <small>{count}</small>}
     </button>
   );
 }
