@@ -23,6 +23,10 @@
   --mono: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --serif: var(--font-serif), Georgia, "Times New Roman", serif;
 
+  /* One sidebar width at every breakpoint. Its sections hold this as a
+     minimum so they do not reflow while it collapses. */
+  --sidebar-width: 248px;
+
   /* Reading measure tuned for dense long-form text. */
   --measure: 48rem;
 
@@ -141,7 +145,9 @@ button {
   --hover-strong: rgba(20, 20, 32, 0.085);
 }
 
-:root:not([data-theme="dark"]) .workspace
+/* One accent focus ring in both themes, so keyboard focus never falls back to
+   the browser default. */
+.workspace
   :is(button, a, select, input, textarea):not(.editor):not(.templateBodyInput):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -149,7 +155,7 @@ button {
 
 .sidebar {
   flex: 0 0 auto;
-  width: 268px;
+  width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   background: var(--sidebar-bg);
@@ -168,7 +174,7 @@ button {
 
 .sidebarHead {
   padding: 18px 16px 16px;
-  min-width: 268px;
+  min-width: var(--sidebar-width);
 }
 
 .brand {
@@ -191,7 +197,7 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 12px 18px 7px;
-  min-width: 268px;
+  min-width: var(--sidebar-width);
 }
 
 .docListLabel > span:first-child {
@@ -249,11 +255,11 @@ button {
   padding: 0 10px 16px;
   overflow-y: auto;
   min-height: 0;
-  min-width: 268px;
+  min-width: var(--sidebar-width);
 }
 
 .sidebarFoot {
-  min-width: 268px;
+  min-width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -450,7 +456,7 @@ button {
 
 .filterRow {
   padding: 0 10px 12px;
-  min-width: 268px;
+  min-width: var(--sidebar-width);
 }
 
 .filterField {
@@ -495,7 +501,7 @@ button {
 }
 
 .sidebarShortcuts {
-  min-width: 268px;
+  min-width: var(--sidebar-width);
   padding: 0 10px 4px;
 }
 
@@ -669,7 +675,7 @@ button {
 }
 
 .workspaceSidebarSearch {
-  min-width: 268px;
+  min-width: var(--sidebar-width);
   padding: 0 10px 14px;
 }
 
@@ -716,7 +722,7 @@ button {
 }
 
 .workspaceDestinations {
-  min-width: 268px;
+  min-width: var(--sidebar-width);
   padding: 0 10px 14px;
   border-bottom: 1px solid var(--hairline);
 }
@@ -781,7 +787,7 @@ button {
 }
 
 .workspaceSidebarCollections {
-  min-width: 268px;
+  min-width: var(--sidebar-width);
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1027,7 +1033,7 @@ button {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--text-meta);
   font-weight: 600;
 }
 
@@ -1100,7 +1106,7 @@ button {
   border: 0;
   background: transparent;
   color: var(--faint);
-  font-size: 0.7rem;
+  font-size: var(--text-meta);
 }
 
 .workspaceCollectionDelete:hover,
@@ -1129,7 +1135,13 @@ button {
 
 .workspaceCollectionToolbarTitle span {
   color: var(--muted);
-  font-size: 0.72rem;
+}
+
+/* Stands in for the rows while the list pane beside it shows them. */
+.workspaceCollectionHint {
+  margin: 24px 0 0;
+  color: var(--muted);
+  font-size: var(--text-ui);
 }
 
 .workspaceCollectionUtilityActions {
@@ -1148,7 +1160,7 @@ button {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--text-meta);
   font-weight: 550;
 }
 
@@ -1298,7 +1310,7 @@ button {
   flex-direction: column;
   gap: 5px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--text-meta);
   line-height: 1.5;
 }
 
@@ -1348,22 +1360,24 @@ button {
   border-bottom: 0;
 }
 
+/* Titles start on the same edge as the section labels above them. */
 .workspaceDocumentOpen {
   min-width: 0;
   flex: 1 1 auto;
   align-self: stretch;
   display: flex;
   align-items: center;
-  padding: 12px 8px 12px 4px;
+  padding: 12px 8px 12px 0;
   border: 0;
   background: transparent;
   color: var(--ink);
   text-align: left;
 }
 
-.workspaceDocumentOpen:hover,
+/* The row tint alone is too faint to find keyboard focus by, so rows keep the
+   shared accent ring. */
 .workspaceDocumentOpen:focus-visible {
-  outline: 0;
+  border-radius: 6px;
 }
 
 .workspaceDocumentRow:hover::before,
@@ -1403,7 +1417,6 @@ button {
 
 .workspaceDocumentText small {
   color: var(--faint);
-  font-size: 0.625rem;
 }
 
 .workspaceDocumentMeta {
@@ -1418,7 +1431,6 @@ button {
   flex: 1 1 auto;
   overflow: hidden;
   color: var(--faint);
-  font-size: 0.7rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1432,7 +1444,9 @@ button {
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font: 600 0.6875rem/1 var(--sans);
+  font-family: var(--sans);
+  font-weight: 600;
+  line-height: 1;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
@@ -1448,9 +1462,26 @@ button {
   outline-offset: 1px;
 }
 
+/* Sized to the chosen collection, not the longest option, so the chevron
+   sits beside the name instead of across a gap. */
 .topBarCollectionSelect {
-  max-width: 150px;
-  padding: 0 22px 0 10px;
+  max-width: 180px;
+  field-sizing: content;
+  padding: 0 18px 0 28px;
+}
+
+.topBarCollection {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.topBarCollection > svg {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
 }
 
 .workspaceStarButton {
@@ -1540,9 +1571,9 @@ button {
 .workspaceCollectionDialog header h2 {
   margin: 0;
   color: var(--ink-display);
-  font-family: var(--serif);
-  font-size: 1.4rem;
-  font-weight: 400;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .workspaceCollectionDialog header p {
@@ -1558,7 +1589,7 @@ button {
   flex-direction: column;
   gap: 7px;
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-meta);
   font-weight: 600;
 }
 
@@ -1574,7 +1605,7 @@ button {
   border-radius: 6px;
   background: var(--bg);
   color: var(--ink);
-  font: 400 0.82rem/1.45 var(--sans);
+  font: 400 var(--text-ui)/1.45 var(--sans);
 }
 
 .workspaceCollectionDialog input {
@@ -1601,7 +1632,7 @@ button {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--text-ui);
   font-weight: 600;
 }
 
@@ -1622,7 +1653,7 @@ button {
   padding-left: 9px;
   border-left: 2px solid #a04a3e;
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-meta);
   line-height: 1.45;
 }
 
@@ -2341,10 +2372,13 @@ button {
 /* ----------------------------------------------------------------- writing */
 
 .writingPane {
+  /* Shared with .formatBarDock, which offsets its sticky top by this so the
+     band starts at the scrollport edge rather than below the padding. */
+  --writing-pad-top: 28px;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 28px clamp(20px, 4vw, 48px) 12vh;
+  padding: var(--writing-pad-top) clamp(20px, 4vw, 48px) 12vh;
 }
 
 .writingPaneEmpty {
@@ -2919,21 +2953,21 @@ button {
 
 .statusBar {
   min-width: 0;
-  padding: 14px clamp(14px, 4vw, 30px) 18px;
-  font-size: 0.8125rem;
+  padding: 8px clamp(14px, 4vw, 30px) 12px;
+  font-size: var(--text-ui);
   letter-spacing: 0;
   color: var(--muted);
 }
 
 .statusDock {
   width: min(100%, 960px);
-  min-height: 64px;
+  min-height: 48px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 14px;
-  padding: 10px;
+  padding: 4px 6px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
   background: var(--elevated);
@@ -2970,12 +3004,13 @@ button {
   border-radius: 999px;
 }
 
+/* Status is read, not pressed, so it is plain text rather than a pill. */
 .statusPill {
-  padding: 0 12px;
-  border: 1px solid var(--control-boundary);
-  background: var(--surface);
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
   color: var(--muted);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .statusSave {
@@ -2988,18 +3023,20 @@ button {
   color: var(--accent);
 }
 
+/* Secondary actions are ghost buttons at rest, like the top bar icons. Their
+   boundary appears on hover and focus, where the affordance matters. */
 .dockButton {
-  border: 1px solid var(--control-boundary);
-  background: var(--surface);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--ink-soft);
-  padding: 0 13px;
-  font-size: 0.8125rem;
-  font-weight: 700;
+  padding: 0 12px;
+  font-weight: 600;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
 }
 
-.dockButton:hover {
-  border-color: var(--hairline-strong);
+.dockButton:hover,
+.dockButton:focus-visible {
+  border-color: var(--control-boundary);
   background: var(--hover-soft);
   color: var(--ink);
 }
@@ -4841,7 +4878,8 @@ button {
 
   .writingPane,
   .shareScroll {
-    padding: 40px 22px 18vh;
+    --writing-pad-top: 40px;
+    padding: var(--writing-pad-top) 22px 18vh;
   }
 
   .templateLibrary {
@@ -4874,14 +4912,14 @@ button {
   }
 
   .statusBar {
-    padding: 10px 10px 12px;
+    padding: 6px 8px 8px;
   }
 
   .statusDock {
     min-height: 0;
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 6px 8px;
-    padding: 8px;
+    gap: 4px 8px;
+    padding: 4px;
     border-radius: 18px;
   }
 
@@ -4911,9 +4949,13 @@ button {
     grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   }
 
-  .statusPill,
   .dockButton {
     min-height: 34px;
+  }
+
+  /* Not a control, so it does not need a touch target's height. */
+  .statusPill {
+    min-height: 28px;
   }
 
   .dockButton {
@@ -5015,7 +5057,8 @@ button {
 
   .writingPane,
   .shareScroll {
-    padding: 40px 22px 18vh;
+    --writing-pad-top: 40px;
+    padding: var(--writing-pad-top) 22px 18vh;
   }
 
   .workspaceHub {
@@ -5173,11 +5216,24 @@ button {
   accent-color: var(--accent);
 }
 
+/* Stays reachable in long documents. The band is the page colour, so at rest
+   it is invisible and while scrolling the text passes under it, not through.
+   Sticky offsets are measured inside the pane's padding, so pull the band up
+   by that padding or text shows in the gap between the top bar and the band. */
+.formatBarDock {
+  position: sticky;
+  top: calc(-1 * var(--writing-pad-top, 0px));
+  z-index: 2;
+  margin-top: -8px;
+  padding: 8px 0 20px;
+  background: var(--surface);
+}
+
 .formatBar {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin: 0 0 20px;
+  margin: 0;
   width: fit-content;
   max-width: 100%;
   padding: 4px;
@@ -5196,7 +5252,7 @@ button {
   font-size: 1rem;
 }
 .formatBar button:hover, .formatBar button[aria-pressed="true"] {
-  background: var(--code-bg);
+  background: var(--hover-strong);
   color: var(--ink);
 }
 .formatCode { font-family: var(--mono); font-size: 0.8em; }
@@ -5233,7 +5289,6 @@ button {
   flex: 1;
   padding: 6px 0;
   text-align: left;
-  font-size: 0.8125rem;
   font-weight: 650;
   color: var(--ink);
   background: transparent;
@@ -5248,7 +5303,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 12px 10px;
+  /* With the list's 8px inset, titles line up with the header title at 12px. */
+  padding: 12px 4px;
   border: 0;
   border-radius: 6px;
   text-align: left;
@@ -5257,24 +5313,35 @@ button {
 }
 .collectionListDocument:hover { background: var(--hover-soft); }
 .collectionListDocument[aria-current="page"] { background: var(--accent-tint); }
-.collectionListDocument strong { font-size: 0.8125rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
-.collectionListDocument span { color: var(--muted); font-size: 0.75rem; line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.collectionListDocument strong { font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.collectionListDocument span { color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .collectionListMore { padding: 12px; border: 0; background: transparent; color: var(--accent); }
-.collectionListToggle { display: none; }
+/* The toggle is only rendered below 1100px. This guards the first paint. */
+@media (min-width: 1101px) {
+  .collectionListToggle { display: none; }
+}
+/* Narrower, the list opens over the page from the same left edge it uses on
+   desktop, beside the sidebar when that is in the layout. It runs to the
+   bottom of the window, so there is no gap whether or not a dock is shown. */
 @media (max-width: 1100px) {
   .collectionDocumentList { display: none; }
   .collectionDocumentList[data-mobile-open="true"] {
     display: flex;
-    position: absolute;
+    position: fixed;
     top: 56px;
-    bottom: 100px;
-    right: 0;
+    bottom: 0;
+    left: 0;
     width: min(320px, 100%);
-    z-index: 25;
-    border: 1px solid var(--hairline);
-    box-shadow: -6px 8px 24px rgb(0 0 0 / 10%);
+    z-index: 30;
+    box-shadow: 6px 8px 24px rgb(0 0 0 / 10%);
   }
-  .collectionListToggle { display: block; border: 0; background: transparent; color: var(--muted); padding: 8px; font-size: 0.75rem; }
+  .workspace.withSidebar .collectionDocumentList[data-mobile-open="true"] { left: var(--sidebar-width); }
+}
+@media (max-width: 720px) {
+  /* The phone sidebar overlays too, and the app closes the list when it
+     opens. Without the sidebar, the list stops above the bottom nav. */
+  .workspace.withSidebar .collectionDocumentList[data-mobile-open="true"] { left: 0; }
+  .workspace:not(.withSidebar) .collectionDocumentList[data-mobile-open="true"] { bottom: 64px; }
 }
 
 .formatBar select {
@@ -5284,11 +5351,11 @@ button {
   border: 0;
   background: transparent;
   color: var(--ink-soft);
-  font: 500 0.8125rem var(--sans);
+  font-family: var(--sans);
+  font-weight: 500;
   cursor: pointer;
 }
 .formatBar option { background: var(--surface); color: var(--ink); }
-.formatBar button:hover, .formatBar button[aria-pressed="true"] { background: var(--hover-strong); }
 
 /* One interface scale across collections, document lists, and editor controls. */
 .workspaceDestination,
@@ -5322,13 +5389,12 @@ button {
 .workspaceCollectionHeader h1 { font-size: var(--text-h1); line-height: 1.2; }
 .markdown td > p, .markdown th > p { margin: 0; }
 
-.collectionListToggle svg { display: none; }
 @media (max-width: 720px) {
   .topBar { grid-template-columns: 72px minmax(0, 1fr); }
   .topCluster.end { justify-self: stretch; justify-content: flex-end; }
-  .collectionListToggle { width: 34px; height: 34px; flex: 0 0 34px; padding: 8px; }
-  .collectionListToggle svg { display: block; }
-  .collectionListToggle span { display: none; }
+  .collectionListToggle { flex: 0 0 34px; }
+  /* No room for the icon here. The select keeps its accessible name. */
+  .topBarCollection > svg { display: none; }
   .topBarCollectionSelect { width: clamp(60px, calc(100vw - 260px), 92px); min-width: 0; padding-inline: 2px; }
   .topBarDelete { padding-inline: 4px; }
 }

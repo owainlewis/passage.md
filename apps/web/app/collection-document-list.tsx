@@ -6,7 +6,7 @@ import { workspaceDocSummary } from "./editor-workspace-model";
 import { PlusIcon, SearchIcon } from "./icons";
 
 export function CollectionDocumentList({
-  title, docs, activeId, mobileOpen, hasMore, loadingMore, loadError,
+  title, docs, activeId, mobileOpen, hasMore, loadingMore, loadError, newDisabled,
   onOpen, onOverview, onNew, onSearch, onLoadMore
 }: {
   title: string;
@@ -16,6 +16,7 @@ export function CollectionDocumentList({
   hasMore: boolean;
   loadingMore: boolean;
   loadError: boolean;
+  newDisabled: boolean;
   onOpen: (doc: Doc) => void;
   onOverview: () => void;
   onNew: () => void;
@@ -27,7 +28,7 @@ export function CollectionDocumentList({
       <header>
         <button className="collectionListTitle" type="button" onClick={onOverview} title="Open collection overview">{title}</button>
         <button className="iconButton" type="button" aria-label={`Search ${title}`} onClick={onSearch}><SearchIcon /></button>
-        <button className="iconButton" type="button" aria-label={`New document in ${title}`} onClick={onNew}><PlusIcon /></button>
+        <button className="iconButton" type="button" aria-label={`New document in ${title}`} disabled={newDisabled} onClick={onNew}><PlusIcon /></button>
       </header>
       <div className="collectionListScroll">
         {docs.length === 0 && !hasMore && !loadError && <p role="status">No documents yet.</p>}

@@ -84,18 +84,22 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
         </div>
       )}
       {status === "ready" && (
-        <div className="formatBar" role="group" aria-label="Text formatting">
-          <select aria-label="Paragraph style" value={formatting.heading} onChange={(event) => instance.current?.heading(Number(event.target.value))}>
-            <option value={0}>Paragraph</option>
-            <option value={1}>Heading 1</option>
-            <option value={2}>Heading 2</option>
-            <option value={3}>Heading 3</option>
-            {formatting.heading > 3 && <option value={formatting.heading}>Heading {formatting.heading}</option>}
-          </select>
-          <button type="button" aria-label="Bold" title="Bold (⌘/Ctrl+B)" aria-pressed={formatting.bold} onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")}><strong>B</strong></button>
-          <button type="button" aria-label="Italic" title="Italic (⌘/Ctrl+I)" aria-pressed={formatting.italic} onMouseDown={(event) => event.preventDefault()} onClick={() => format("italic")}><em>I</em></button>
-          <button type="button" aria-label="Strikethrough" title="Strikethrough" aria-pressed={formatting.strike} onMouseDown={(event) => event.preventDefault()} onClick={() => format("strike")}><s>S</s></button>
-          <button type="button" aria-label="Inline code" title="Inline code" aria-pressed={formatting.code} onMouseDown={(event) => event.preventDefault()} onClick={() => format("code")}><span className="formatCode">&lt;/&gt;</span></button>
+        // The dock stays at the top of the pane in long documents. It is
+        // opaque so text scrolls under it rather than showing through.
+        <div className="formatBarDock">
+          <div className="formatBar" role="group" aria-label="Text formatting">
+            <select aria-label="Paragraph style" value={formatting.heading} onChange={(event) => instance.current?.heading(Number(event.target.value))}>
+              <option value={0}>Paragraph</option>
+              <option value={1}>Heading 1</option>
+              <option value={2}>Heading 2</option>
+              <option value={3}>Heading 3</option>
+              {formatting.heading > 3 && <option value={formatting.heading}>Heading {formatting.heading}</option>}
+            </select>
+            <button type="button" aria-label="Bold" title="Bold (⌘/Ctrl+B)" aria-pressed={formatting.bold} onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")}><strong>B</strong></button>
+            <button type="button" aria-label="Italic" title="Italic (⌘/Ctrl+I)" aria-pressed={formatting.italic} onMouseDown={(event) => event.preventDefault()} onClick={() => format("italic")}><em>I</em></button>
+            <button type="button" aria-label="Strikethrough" title="Strikethrough" aria-pressed={formatting.strike} onMouseDown={(event) => event.preventDefault()} onClick={() => format("strike")}><s>S</s></button>
+            <button type="button" aria-label="Inline code" title="Inline code" aria-pressed={formatting.code} onMouseDown={(event) => event.preventDefault()} onClick={() => format("code")}><span className="formatCode">`</span></button>
+          </div>
         </div>
       )}
       <div ref={root} hidden={status !== "ready"} />

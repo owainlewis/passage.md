@@ -11,6 +11,15 @@ function declarationsFor(selector: string) {
 }
 
 describe("rendered Markdown typography", () => {
+  it("keeps the readable document scale and measure separate from interface type", () => {
+    const root = declarationsFor(":root");
+    expect(root).toContain("--measure: 48rem;");
+    expect(root).toContain("--text-body: 1.0625rem;");
+    expect(root).toContain("--text-h1: 2rem;");
+    expect(root).toContain("--text-h2: 1.5rem;");
+    expect(root).toContain("--text-h3: 1.25rem;");
+  });
+
   it("uses the tighter paragraph rhythm shared by reading and writing", () => {
     expect(declarationsFor(".markdown h1")).toContain("margin: 0 0 0.5em;");
     expect(declarationsFor(".markdown p")).toContain("margin: 0 0 1em;");

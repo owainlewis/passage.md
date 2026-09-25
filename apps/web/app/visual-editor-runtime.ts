@@ -57,6 +57,9 @@ export async function createVisualEditor(
           "aria-multiline": "true",
           spellcheck: "true"
         },
+        // Keep the caret clear of the sticky formatting bar (a 72px band once
+        // stuck) when scrolling to it.
+        scrollMargin: { top: 84, right: 5, bottom: 24, left: 5 },
         dispatchTransaction(this: EditorView, transaction) {
           if (!ready || destroyed) return;
           dispatchDepth += 1;

@@ -4,6 +4,7 @@ import {
   isValidTag,
   parseTagInput,
   parseTags,
+  plainSummary,
   snippetOf,
   titleOf,
   wordCount
@@ -26,6 +27,55 @@ describe("titleOf", () => {
 describe("snippetOf", () => {
   it("returns the first line of body after the title", () => {
     expect(snippetOf("# Title\n\nFirst real line.")).toBe("First real line.");
+  });
+
+  it("returns readable text instead of Markdown and HTML syntax", () => {
+    const body = [
+      "# Title",
+      "",
+      "See [a link](https://example.com) and ~~old~~ new<br />text with **bold** and `code`.",
+      "",
+      "![diagram](https://example.com/d.png)",
+      "",
+      "```js",
+      "const hidden = true;",
+      "```",
+      "",
+      "- first item",
+      "- [x] done item",
+      "",
+      "> quoted &amp; kept"
+    ].join("\n");
+
+    expect(snippetOf(body)).toBe("See a link and old new text with bold and code. first item done item quoted & kept");
+  });
+
+  it("leaves ordinary prose punctuation alone", () => {
+    expect(snippetOf("Title\nPrices rose 5 * 3 times; snake_case_name and a ~ tilde stay, as does 2 > 1.")).toBe(
+      "Prices rose 5 * 3 times; snake_case_name and a ~ tilde stay, as does 2 > 1."
+    );
+  });
+
+  it("keeps inline tags inside words and separates HTML blocks", () => {
+    expect(snippetOf("Title\n\nun<b>believ</b>able\n\n<div>One</div>\n\nTwo")).toBe("unbelievable One Two");
+  });
+
+  it("reports when there is nothing after the title", () => {
+    expect(snippetOf("# Only a title")).toBe("No additional text");
+    expect(snippetOf("# Title\n\n![only an image](x.png)")).toBe("No additional text");
+    expect(snippetOf("")).toBe("No additional text");
+  });
+
+  it("bounds long summaries", () => {
+    const summary = snippetOf(`Title\n\n${"word ".repeat(200)}`);
+    expect(summary.length).toBeLessThanOrEqual(281);
+    expect(summary.endsWith("…")).toBe(true);
+  });
+});
+
+describe("plainSummary", () => {
+  it("reads tables and nested lists as words", () => {
+    expect(plainSummary("| A | B |\n| - | - |\n| one | *two* |\n\n1. outer\n   - inner")).toBe("A B one two outer inner");
   });
 });
 

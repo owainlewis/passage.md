@@ -105,12 +105,16 @@ describe("light workspace contrast", () => {
       ".docListMore",
       ".workspaceDocumentIcon",
       ".workspaceSearchEmpty button,\n.workspaceSearchResults > .workspaceSearchMore",
-      ".workspaceLoadMore button",
-      ".statusPill",
-      ".dockButton"
+      ".workspaceLoadMore button"
     ]) {
       expect(declarationsFor(selector)).toContain("var(--control-boundary)");
     }
+
+    // Dock actions are ghost buttons at rest, so their 3:1 boundary belongs to
+    // hover and focus. The word count is text, not a control, so it has none.
+    expect(declarationsFor(".dockButton")).toContain("border: 1px solid transparent");
+    expect(declarationsFor(".dockButton:hover,\n.dockButton:focus-visible")).toContain("border-color: var(--control-boundary)");
+    expect(declarationsFor(".statusPill")).toContain("border: 0");
 
     for (const selector of [".workspaceSidebarSearch > button", ".workspaceSearchButton"]) {
       expect(declarationsFor(selector)).toContain("var(--hairline-strong)");
@@ -142,14 +146,18 @@ describe("light workspace contrast", () => {
     }
   });
 
-  it("provides a three-to-one focus indicator without changing dark theme tokens", () => {
+  it("provides a three-to-one focus indicator in both themes without changing dark theme tokens", () => {
+    const dark = customProperties(declarationsFor(':root[data-theme="dark"]'));
     expect(contrast("#48685f", light["--surface"])).toBeGreaterThanOrEqual(3);
+    expect(contrast(dark["--accent"], dark["--surface"])).toBeGreaterThanOrEqual(3);
+    // Scoped to .workspace alone, so dark mode does not fall back to the
+    // browser's default ring.
     expect(stylesheet).toMatch(
-      /:root:not\(\[data-theme="dark"\]\) \.workspace\s+:is\(button, a, select, input, textarea\)[^{]*:focus-visible\s*\{[^}]*outline: 2px solid var\(--accent\);/
+      /(?:^|\}|\*\/)\s*\.workspace\s+:is\(button, a, select, input, textarea\)[^{]*:focus-visible\s*\{[^}]*outline: 2px solid var\(--accent\);/
     );
+    expect(stylesheet).not.toMatch(/(?:^|\})\s*\.workspaceDocumentOpen:[^{]*focus-visible\s*\{[^}]*outline: 0/);
     expect(declarationsFor(':root[data-theme="dark"] .statusDock')).toContain("border-color: var(--hairline-strong);");
 
-    const dark = customProperties(declarationsFor(':root[data-theme="dark"]'));
     expect(dark).toMatchObject({
       "--muted": "#969da8",
       "--faint": "#68717d",

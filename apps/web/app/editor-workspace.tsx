@@ -22,10 +22,14 @@ import { useEditorSearch } from "./use-editor-search";
 type EditorWorkspaceProps = {
   assignments: Record<string, string>;
   collectionAvailable: boolean;
+  /** The collection's own list pane is on screen beside this view. */
+  collectionListVisible?: boolean;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
   saveState: SaveState;
+  /** Search is reachable from the sidebar or mobile navigation. */
+  searchVisible?: boolean;
   view: WorkspaceView;
   onCreateCollection: (title: string, description: string) => Promise<string | null>;
   onDeleteCollection: (slug: string) => Promise<boolean>;
@@ -45,10 +49,12 @@ type EditorWorkspaceProps = {
 export function EditorWorkspace({
   assignments,
   collectionAvailable,
+  collectionListVisible = false,
   collections,
   docs,
   deletedCollections,
   saveState,
+  searchVisible = false,
   view,
   onCreateCollection,
   onDeleteCollection,
@@ -83,6 +89,7 @@ export function EditorWorkspace({
         onOpenDocument={onOpenDocument}
         onOpenSearch={onOpenSearch}
         onOpenView={onOpenView}
+        searchVisible={searchVisible}
       />
     );
   } else if (view.type === "collections") {
@@ -105,6 +112,7 @@ export function EditorWorkspace({
         assignments={assignments}
         collection={collection}
         docs={docsInCollection(docs, collection.slug, assignments, deletedCollections)}
+        listVisible={collectionListVisible}
         onDeleteCollection={onDeleteCollection}
         onOpenDocument={onOpenDocument}
         onOpenSearch={() => onOpenSearch(collection.slug)}
@@ -151,7 +159,7 @@ export function EditorWorkspace({
   return (
     <>
       {content}
-      {hasMoreDocs && (
+      {hasMoreDocs && !(view.type === "collection" && collectionListVisible) && (
         <div className="workspaceLoadMore">
           <button type="button" disabled={loadingMore} onClick={onLoadMoreDocs}>
             {loadingMore ? "Loading documents…" : "Load more documents"}
@@ -170,7 +178,8 @@ function WorkspaceHome({
   onOpenCollection,
   onOpenDocument,
   onOpenSearch,
-  onOpenView
+  onOpenView,
+  searchVisible
 }: {
   assignments: Record<string, string>;
   collections: WorkspaceCollection[];
@@ -180,28 +189,33 @@ function WorkspaceHome({
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
   onOpenView: (view: WorkspaceView) => void;
+  searchVisible: boolean;
 }) {
   const starred = docs.filter((doc) => doc.pinned).slice(0, 4);
   const recent = recentDocs(docs).slice(0, 6);
+  // Every row would repeat the same label while Documents is the only collection.
+  const showCollectionLabel = collections.length > 1;
 
   return (
     <div className="workspaceHub workspaceHome" aria-label="Workspace home">
       <header className="workspaceHero">
-        <h1>Documents</h1>
+        <h1>Home</h1>
         <p>Markdown, organised for writing and reuse.</p>
-        <div className="workspaceHeroActions">
-          <button type="button" className="workspaceSearchButton" onClick={onOpenSearch}>
-            <SearchIcon />
-            <span>Search {docs.length} {docs.length === 1 ? "document" : "documents"}</span>
-            <kbd>⌘ K</kbd>
-          </button>
-        </div>
+        {!searchVisible && (
+          <div className="workspaceHeroActions">
+            <button type="button" className="workspaceSearchButton" onClick={onOpenSearch}>
+              <SearchIcon />
+              <span>Search {docs.length} {docs.length === 1 ? "document" : "documents"}</span>
+              <kbd>⌘ K</kbd>
+            </button>
+          </div>
+        )}
       </header>
 
       {starred.length > 0 && (
         <section className="workspaceSection">
           <WorkspaceSectionHeading title="Starred" action="View all" onAction={() => onOpenView({ type: "starred" })} />
-          <WorkspaceDocumentRows assignments={assignments} docs={starred} deletedCollections={deletedCollections} onOpenDocument={onOpenDocument} />
+          <WorkspaceDocumentRows assignments={assignments} collections={collections} docs={starred} deletedCollections={deletedCollections} showCollectionLabel={showCollectionLabel} onOpenDocument={onOpenDocument} />
         </section>
       )}
 
@@ -214,8 +228,10 @@ function WorkspaceHome({
         <WorkspaceSectionHeading title="Recent" action="View all" onAction={() => onOpenView({ type: "recent" })} />
         <WorkspaceDocumentRows
           assignments={assignments}
+          collections={collections}
           docs={recent}
           deletedCollections={deletedCollections}
+          showCollectionLabel={showCollectionLabel}
           onOpenDocument={onOpenDocument}
         />
       </section>
@@ -277,7 +293,7 @@ function CollectionGrid({
         return (
           <button type="button" className="workspaceCollectionCard" key={collection.slug} onClick={() => onOpenCollection(collection.slug)}>
             <span className="workspaceCollectionBody">
-              <span className="workspaceCollectionTitle"><strong>{collection.title}</strong><small>{count} {count === 1 ? "file" : "files"}</small></span>
+              <span className="workspaceCollectionTitle"><strong>{collection.title}</strong><small>{count} {count === 1 ? "document" : "documents"}</small></span>
               <span className="workspaceCollectionDescription">{collection.description}</span>
             </span>
           </button>
@@ -293,6 +309,7 @@ function WorkspaceCollectionView({
   collections,
   docs,
   deletedCollections,
+  listVisible,
   onDeleteCollection,
   onOpenDocument,
   onOpenSearch,
@@ -307,6 +324,7 @@ function WorkspaceCollectionView({
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
+  listVisible: boolean;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
@@ -327,7 +345,7 @@ function WorkspaceCollectionView({
           <p>{collection.description}</p>
         </div>
         <div className="workspaceCollectionUtilityActions">
-          <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>
+          {!listVisible && <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>}
           {collection.slug !== "documents" && <button type="button" disabled={pendingCollectionSlugs.has(collection.slug)} onClick={() => setEditing(true)}>Edit</button>}
           {collection.slug !== "documents" && (
             <button
@@ -342,25 +360,35 @@ function WorkspaceCollectionView({
         </div>
       </header>
 
-      <section className="workspaceSection workspaceCollectionSection">
-        <div className="workspaceCollectionToolbar">
-          <div className="workspaceCollectionToolbarTitle">
-            <span>{docs.length} {docs.length === 1 ? "file" : "files"}</span>
+      {/* The list pane is the navigator when it is on screen. Repeating its
+          rows here would give screen readers and eyes the same list twice. */}
+      {listVisible ? (
+        <p className="workspaceCollectionHint">
+          {docs.length === 0
+            ? "No documents here yet. Use + in the list to add the first one."
+            : "Choose a document from the list, or use + to start a new one."}
+        </p>
+      ) : (
+        <section className="workspaceSection workspaceCollectionSection">
+          <div className="workspaceCollectionToolbar">
+            <div className="workspaceCollectionToolbarTitle">
+              <span>{docs.length} {docs.length === 1 ? "document" : "documents"}</span>
+            </div>
           </div>
-        </div>
-        <WorkspaceDocumentRows
-          assignments={assignments}
+          <WorkspaceDocumentRows
+            assignments={assignments}
             docs={docs}
-          deletedCollections={deletedCollections}
-          empty="No documents here yet. Use + in the top bar to add the first one."
-          showActions
-          showCollectionLabel={false}
+            deletedCollections={deletedCollections}
+            empty="No documents here yet. Use + in the top bar to add the first one."
+            showActions
+            showCollectionLabel={false}
             onOpenDocument={onOpenDocument}
-          onToggleStar={onToggleStar}
-          collections={collections}
-          pendingDocIds={pendingDocIds}
-        />
-      </section>
+            onToggleStar={onToggleStar}
+            collections={collections}
+            pendingDocIds={pendingDocIds}
+          />
+        </section>
+      )}
       {editing && (
         <CollectionDialog
           collection={collection}
