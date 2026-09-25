@@ -2288,6 +2288,77 @@ describe("Write (editor)", () => {
     expect(screen.getByRole("navigation", { name: "Documents in Research" })).toHaveTextContent("Untitled");
   });
 
+  it("deletes a collection directly from its document list while editing, preserving the document", async () => {
+    stubSignedInFetch([{ id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" }]);
+    await renderWrite();
+    const list = await screen.findByRole("navigation", { name: "Documents in Operating Context" });
+    const trigger = within(list).getByRole("button", { name: "Delete collection Operating Context" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Delete collection" });
+    expect(dialog).toHaveTextContent("Delete “Operating Context”? 1 document will move to Documents.");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole("dialog", { name: "Delete collection" })).not.toBeInTheDocument();
+    expect(list).toHaveTextContent("About me");
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
+    await screen.findByText("“Operating Context” was deleted. Its documents are now in Documents.");
+    openSidebarCollection("Documents");
+    const documents = screen.getByRole("navigation", { name: "Documents in Documents" });
+    expect(documents).toHaveTextContent("About me");
+    expect(within(documents).queryByRole("button", { name: /Delete collection/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the mobile collection list open when Escape dismisses its delete dialog", async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 720px)" || query === "(max-width: 1100px)"
+      }))
+    });
+    try {
+      stubSignedInFetch([{ id: "unfiled", body: "# Unfiled note" }]);
+      await renderWrite();
+      openSidebarCollection("Research");
+      const trigger = within(collectionDocuments("Research")).getByRole("button", { name: "Delete collection Research" });
+      trigger.focus();
+      fireEvent.click(trigger);
+      fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Delete collection" })).not.toBeInTheDocument();
+      expect(collectionDocuments("Research")).toHaveAttribute("data-mobile-open", "true");
+      await waitFor(() => expect(trigger).toHaveFocus());
+    } finally {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+    }
+  });
+
+  it("offers deletion for empty collections and permits retry after a failed list deletion", async () => {
+    const baseFetch = stubSignedInFetch([{ id: "unfiled", body: "# Unfiled note" }]);
+    let failDelete = true;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/collections/research" && init?.method === "DELETE" && failDelete) {
+        return Promise.resolve(new Response(JSON.stringify({ error: "Unavailable" }), { status: 500 }));
+      }
+      return baseFetch(input, init);
+    }));
+    await renderWrite();
+    openSidebarCollection("Research");
+    const list = screen.getByRole("navigation", { name: "Documents in Research" });
+    fireEvent.click(within(list).getByRole("button", { name: "Delete collection Research" }));
+    expect(screen.getByRole("dialog", { name: "Delete collection" })).toHaveTextContent("0 documents will move to Documents.");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(list).toBeInTheDocument();
+    fireEvent.click(within(list).getByRole("button", { name: "Delete collection Research" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
+    expect(await screen.findByText("Collection could not be deleted. Try again.")).toBeInTheDocument();
+    expect(list).toBeInTheDocument();
+    failDelete = false;
+    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
+    await screen.findByText("“Research” was deleted. Its documents are now in Documents.");
+  });
+
   it("deletes a collection and moves its documents to Documents after dialog confirmation", async () => {
     stubSignedInFetch([{ id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" }]);
 

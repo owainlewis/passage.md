@@ -606,6 +606,7 @@ export function WorkspaceModal({
   function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       if (!dismissDisabled) onClose();
       return;
     }
@@ -725,7 +726,7 @@ function CollectionDialog({
   );
 }
 
-function DeleteCollectionDialog({
+export function DeleteCollectionDialog({
   collection,
   documentCount,
   documentCountComplete,

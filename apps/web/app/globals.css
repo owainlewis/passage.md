@@ -5315,3 +5315,19 @@ button {
   .editorShare svg { display: block; }
   .editorShare { width: 36px; padding-inline: 8px; }
 }
+
+.collectionListActions {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding: 12px;
+}
+.collectionListActions button {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: var(--text-ui);
+}
+.collectionListActions button:hover:not(:disabled) { background: var(--hover-soft); color: var(--ink); }
