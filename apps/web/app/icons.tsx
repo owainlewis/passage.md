@@ -178,3 +178,35 @@ export function FocusIcon() {
 export function MoreIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>;
 }
+
+export function BoldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 12h7a4 4 0 0 1 0 8H7V4h6a4 4 0 0 1 0 8" />
+    </svg>
+  );
+}
+
+export function ItalicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 4h9M5 20h9M15 4 9 20" />
+    </svg>
+  );
+}
+
+export function StrikethroughIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 6c-1-1.4-2.6-2-5-2-3 0-5 1.5-5 3.5 0 1 .5 1.8 1.5 2.5M7 18c1 1.4 2.6 2 5 2 3 0 5-1.5 5-3.5 0-1-.5-1.8-1.5-2.5M4 12h16" />
+    </svg>
+  );
+}
+
+export function InlineCodeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16" />
+    </svg>
+  );
+}

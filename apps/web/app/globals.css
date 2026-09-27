@@ -2974,7 +2974,7 @@ button {
   cursor: pointer;
 }
 .editorControls button:hover { background: var(--hover-soft); color: var(--ink); }
-.editorModes button[aria-pressed="true"] { color: var(--ink); background: var(--hover-soft); }
+.editorModes button[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
 .editorControlActions > button { display: inline-flex; align-items: center; gap: 6px; }
 .editorControls button:disabled { opacity: 0.45; cursor: not-allowed; }
 .editorFocus[aria-pressed="true"] { color: var(--accent); }
@@ -5081,25 +5081,35 @@ button {
   }
 }
 
-/* Visual writing inherits the same typography as the published document. */
+/* A compact writing rhythm within the shared Markdown type system. */
 .visualEditor {
   width: 100%;
-  max-width: var(--measure);
+  max-width: min(var(--measure), 70ch);
   min-width: 0;
   margin: 0 auto;
 }
 
-.visualEditorContent.editor {
+.visualEditorContent {
   font-family: inherit;
   font-size: var(--text-body);
   line-height: var(--lh-body);
+  --text-h1: 1.75rem;
+  --text-h2: 1.375rem;
+  --text-h3: 1.125rem;
   min-height: 60vh;
+  caret-color: var(--accent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow: visible;
   text-wrap: wrap;
 }
 
+.visualEditorContent h1 { margin: 2rem 0 0.75rem; line-height: 1.25; }
+.visualEditorContent h2 { margin: 1.75rem 0 0.625rem; }
+.visualEditorContent h3 { margin: 1.5rem 0 0.5rem; }
+.visualEditorContent hr { margin: 1.75rem 0; }
+.visualEditorContent hr + h2,
+.visualEditorContent hr + h3 { margin-top: 0; }
 .visualEditorContent > :first-child { margin-top: 0; }
 .visualEditorContent li p { margin-bottom: 0.35em; }
 .visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
@@ -5125,46 +5135,56 @@ button {
   accent-color: var(--accent);
 }
 
-/* Stays reachable in long documents. The band is the page colour, so at rest
-   it is invisible and while scrolling the text passes under it, not through.
-   Sticky offsets are measured inside the pane's padding, so pull the band up
-   by that padding or text shows in the gap between the top bar and the band. */
+/* An opaque dock hides scrolling text all the way to the pane edge. */
 .formatBarDock {
   position: sticky;
   top: calc(-1 * var(--writing-pad-top, 0px));
   z-index: 2;
-  margin-top: -8px;
-  padding: 4px 0 16px;
+  margin-top: calc(-1 * var(--writing-pad-top, 0px));
+  margin-bottom: 28px;
+  padding-top: 8px;
   background: var(--surface);
 }
 
 .formatBar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin: 0;
-  width: fit-content;
-  max-width: 100%;
-  padding: 2px;
-  background: var(--hover-soft);
-  border-radius: 5px;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--hairline);
   flex-wrap: wrap;
 }
 .formatBar button {
-  width: 32px;
-  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  padding: 0;
   border: 0;
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 1rem;
 }
-.formatBar button:hover, .formatBar button[aria-pressed="true"] {
-  background: var(--hover-strong);
+.formatBar button:hover, .formatBar select:hover {
+  background: var(--hover-soft);
   color: var(--ink);
 }
-.formatCode { font-family: var(--mono); font-size: 0.8em; }
+.formatBar button[aria-pressed="true"] {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.formatBar :is(button, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.formatBarDivider {
+  flex: 0 0 1px;
+  height: 20px;
+  margin-inline: 4px;
+  background: var(--hairline-strong);
+}
 .visualEditorNotice { color: var(--muted); font-size: 0.875rem; }
 .visualEditorNotice button {
   margin-top: 12px;
@@ -5254,8 +5274,10 @@ button {
 }
 
 .formatBar select {
-  min-height: 32px;
-  max-width: 114px;
+  min-height: 36px;
+  width: 112px;
+  max-width: 100%;
+  border-radius: 5px;
   padding: 0 8px;
   border: 0;
   background: transparent;
@@ -5265,6 +5287,14 @@ button {
   cursor: pointer;
 }
 .formatBar option { background: var(--surface); color: var(--ink); }
+@media (pointer: coarse) {
+  .formatBar button { flex-basis: 40px; height: 44px; }
+  .formatBar select { min-height: 44px; }
+}
+@media (max-width: 380px) {
+  .formatBar { gap: 2px; }
+  .formatBar select { width: 96px; }
+}
 
 /* One interface scale across collections, document lists, and editor controls. */
 .workspaceDestination,
@@ -5311,6 +5341,7 @@ button {
 }
 
 @media (max-width: 380px) {
+  .editorModes button { padding-inline: 7px; }
   .editorShare span { display: none; }
   .editorShare svg { display: block; }
   .editorShare { width: 36px; padding-inline: 8px; }
