@@ -297,14 +297,18 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   );
 });
 
-it("keeps the formatting bar in reach without letting text show through it", () => {
+it("keeps formatting reachable with opaque tools and an unobstructed writing canvas", () => {
   const dock = declarationsFor(".formatBarDock");
   expect(dock).toContain("position: sticky;");
-  // Sticky offsets sit inside the pane padding; the band must reach the
-  // scrollport edge or text shows between the top bar and the band.
+  // Keep the formatting trigger reachable at the scrollport edge without
+  // turning its transparent dock into an overlay that blocks writing.
   expect(dock).toContain("top: calc(-1 * var(--writing-pad-top, 0px));");
   expect(declarationsFor(".writingPane")).toContain("padding: var(--writing-pad-top)");
-  expect(dock).toContain("background: var(--surface);");
+  expect(dock).toContain("pointer-events: none;");
+  expect(declarationsFor(".formatBarTrigger")).toContain("background: var(--surface);");
+  expect(declarationsFor(".formatBar")).toContain("background: var(--ink);");
+  expect(declarationsFor(".formatBar")).toContain("pointer-events: auto;");
+  expect(declarationsFor(".formatBar[hidden]")).toContain("display: none;");
 });
 
 it("uses one sidebar width at every breakpoint", () => {
