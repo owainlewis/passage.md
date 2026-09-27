@@ -2974,7 +2974,7 @@ button {
   cursor: pointer;
 }
 .editorControls button:hover { background: var(--hover-soft); color: var(--ink); }
-.editorModes button[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
+.editorModes button[aria-pressed="true"] { color: var(--ink); background: transparent; box-shadow: inset 0 -2px var(--ink); border-radius: 0; }
 .editorControlActions > button { display: inline-flex; align-items: center; gap: 6px; }
 .editorControls button:disabled { opacity: 0.45; cursor: not-allowed; }
 .editorFocus[aria-pressed="true"] { color: var(--accent); }
@@ -5081,21 +5081,22 @@ button {
   }
 }
 
-/* A compact writing rhythm within the shared Markdown type system. */
+/* An editorial canvas: expressive headings, book-like body text, quiet chrome. */
 .visualEditor {
   width: 100%;
-  max-width: min(var(--measure), 70ch);
+  max-width: 42.5rem;
   min-width: 0;
   margin: 0 auto;
 }
 
 .visualEditorContent {
-  font-family: inherit;
-  font-size: var(--text-body);
-  line-height: var(--lh-body);
-  --text-h1: 1.75rem;
-  --text-h2: 1.375rem;
-  --text-h3: 1.125rem;
+  --text-h1: clamp(2rem, 3vw, 2.5rem);
+  --text-h2: 1.625rem;
+  --text-h3: 1.25rem;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  line-height: 1.75;
+  letter-spacing: 0;
   min-height: 60vh;
   caret-color: var(--accent);
   white-space: pre-wrap;
@@ -5104,12 +5105,18 @@ button {
   text-wrap: wrap;
 }
 
-.visualEditorContent h1 { margin: 2rem 0 0.75rem; line-height: 1.25; }
-.visualEditorContent h2 { margin: 1.75rem 0 0.625rem; }
-.visualEditorContent h3 { margin: 1.5rem 0 0.5rem; }
-.visualEditorContent hr { margin: 1.75rem 0; }
+.visualEditorContent :is(h1, h2, h3, h4, h5, h6) { font-family: var(--sans); }
+.visualEditorContent h1 { margin: 2.5rem 0 1.25rem; line-height: 1.18; font-weight: 650; letter-spacing: -0.03em; }
+.visualEditorContent h2 { margin: 2.5rem 0 0.875rem; line-height: 1.3; font-weight: 650; }
+.visualEditorContent h3 { margin: 2rem 0 0.75rem; }
+.visualEditorContent p { margin-bottom: 1.25em; }
+.visualEditorContent hr { width: 4rem; margin: 2.5rem auto; }
+.visualEditorContent blockquote { border-left: 2px solid var(--hairline-strong); font-style: italic; }
 .visualEditorContent hr + h2,
 .visualEditorContent hr + h3 { margin-top: 0; }
+@media (max-width: 720px) {
+  .visualEditorContent { font-size: 1.125rem; --text-h2: 1.375rem; }
+}
 .visualEditorContent > :first-child { margin-top: 0; }
 .visualEditorContent li p { margin-bottom: 0.35em; }
 .visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
@@ -5135,55 +5142,67 @@ button {
   accent-color: var(--accent);
 }
 
-/* An opaque dock hides scrolling text all the way to the pane edge. */
+/* Formatting stays out of the document until a selection or explicit request. */
 .formatBarDock {
   position: sticky;
   top: calc(-1 * var(--writing-pad-top, 0px));
-  z-index: 2;
+  z-index: 12;
+  height: 36px;
   margin-top: calc(-1 * var(--writing-pad-top, 0px));
-  margin-bottom: 28px;
-  padding-top: 8px;
-  background: var(--surface);
+  margin-bottom: 40px;
+  pointer-events: none;
 }
-
-.formatBar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 4px 0 12px;
-  border-bottom: 1px solid var(--hairline);
-  flex-wrap: wrap;
-}
-.formatBar button {
-  display: grid;
-  place-items: center;
-  flex: 0 0 36px;
+.formatBarTrigger {
+  display: block;
+  margin-left: auto;
+  width: 36px;
   height: 36px;
   padding: 0;
   border: 0;
   border-radius: 5px;
-  background: transparent;
+  background: var(--surface);
   color: var(--muted);
+  font: 500 1rem var(--sans);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.formatBarTrigger:hover,
+.formatBarTrigger[aria-expanded="true"] { background: var(--hover-soft); color: var(--ink); }
+.formatBarTrigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.formatBar {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
+  pointer-events: auto;
+}
+.formatBar[hidden] { display: none; }
+.formatBar button {
+  display: grid;
+  place-items: center;
+  flex: 1 0 32px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
 }
-.formatBar button:hover, .formatBar select:hover {
-  background: var(--hover-soft);
-  color: var(--ink);
-}
-.formatBar button[aria-pressed="true"] {
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-.formatBar :is(button, select):focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+.formatBar button:hover, .formatBar select:hover { background: color-mix(in srgb, var(--surface) 16%, transparent); }
+.formatBar button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+.formatBar :is(button, select):focus-visible { outline: 2px solid var(--surface); outline-offset: -2px; }
 .formatBarDivider {
   flex: 0 0 1px;
   height: 20px;
   margin-inline: 4px;
-  background: var(--hairline-strong);
+  background: color-mix(in srgb, var(--surface) 25%, transparent);
 }
 .visualEditorNotice { color: var(--muted); font-size: 0.875rem; }
 .visualEditorNotice button {
@@ -5274,26 +5293,24 @@ button {
 }
 
 .formatBar select {
+  flex: 0 1 116px;
+  min-width: 0;
   min-height: 36px;
-  width: 112px;
-  max-width: 100%;
-  border-radius: 5px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
-  color: var(--ink-soft);
+  color: inherit;
   font-family: var(--sans);
   font-weight: 500;
   cursor: pointer;
+  color-scheme: dark;
 }
-.formatBar option { background: var(--surface); color: var(--ink); }
+:root[data-theme="dark"] .formatBar select { color-scheme: light; }
+.formatBar option { background: var(--ink); color: var(--surface); }
 @media (pointer: coarse) {
-  .formatBar button { flex-basis: 40px; height: 44px; }
+  .formatBar button { height: 44px; }
   .formatBar select { min-height: 44px; }
-}
-@media (max-width: 380px) {
-  .formatBar { gap: 2px; }
-  .formatBar select { width: 96px; }
 }
 
 /* One interface scale across collections, document lists, and editor controls. */

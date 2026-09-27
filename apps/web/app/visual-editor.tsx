@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 import { BoldIcon, ItalicIcon, StrikethroughIcon, InlineCodeIcon } from "./icons";
 import type { Format, Formatting, VisualEditorHandle } from "./visual-editor-runtime";
@@ -17,6 +17,13 @@ type Props = {
 
 export function VisualEditor({ source, onChange, onSource, ref }: Props) {
   const root = useRef<HTMLDivElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const toolbarId = useId();
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsPosition, setToolsPosition] = useState({ left: 0, top: 0 });
+  const manualTools = useRef(false);
+  const dismissedSelection = useRef<Range | null>(null);
   const instance = useRef<VisualEditorHandle | null>(null);
   const latest = useRef({ source, onChange });
   const wantsFocus = useRef(false);
@@ -74,9 +81,74 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
     }
   }, [source]);
 
+  const closeTools = useCallback(() => {
+    const selection = window.getSelection();
+    dismissedSelection.current = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    manualTools.current = false;
+    setToolsOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    function updateTools() {
+      const selection = window.getSelection();
+      const selected = selection && !selection.isCollapsed && selection.rangeCount > 0
+        && root.current?.contains(selection.anchorNode) && root.current?.contains(selection.focusNode);
+      const range = selected ? selection.getRangeAt(0) : null;
+      const dismissed = dismissedSelection.current;
+      if (range && dismissed && range.startContainer === dismissed.startContainer && range.startOffset === dismissed.startOffset
+        && range.endContainer === dismissed.endContainer && range.endOffset === dismissed.endOffset) return;
+      dismissedSelection.current = null;
+      if (toolbar.current?.contains(document.activeElement)) return;
+      if (!selected && !manualTools.current) { setToolsOpen(false); return; }
+      const rect = selected ? selection.getRangeAt(0).getBoundingClientRect() : trigger.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pane = root.current?.closest(".writingPane");
+      const paneTop = pane?.getBoundingClientRect().top ?? 0;
+      // Hide a selection's tools when its text leaves the visible writing pane.
+      if (rect.bottom < paneTop || rect.top > window.innerHeight) { setToolsOpen(false); return; }
+      const width = Math.min(320, window.innerWidth - 24);
+      setToolsPosition({
+        left: Math.max(12, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 12)),
+        top: Math.max(paneTop + 8, Math.min(rect.top - 60 >= paneTop + 8 ? rect.top - 60 : rect.bottom + 8, window.innerHeight - 64))
+      });
+      setToolsOpen(true);
+    }
+    function dismiss(event: PointerEvent) {
+      if (toolbar.current?.contains(event.target as Node) || trigger.current?.contains(event.target as Node)) return;
+      closeTools();
+    }
+    document.addEventListener("selectionchange", updateTools);
+    document.addEventListener("scroll", updateTools, true);
+    window.addEventListener("resize", updateTools);
+    document.addEventListener("pointerdown", dismiss);
+    return () => {
+      document.removeEventListener("selectionchange", updateTools);
+      document.removeEventListener("scroll", updateTools, true);
+      window.removeEventListener("resize", updateTools);
+      document.removeEventListener("pointerdown", dismiss);
+    };
+  }, [status, closeTools]);
+
+  function toggleTools() {
+    if (toolsOpen) { closeTools(); return; }
+    dismissedSelection.current = null;
+    const rect = trigger.current!.getBoundingClientRect();
+    manualTools.current = true;
+    setToolsPosition({ left: Math.max(12, Math.min(rect.right - 320, window.innerWidth - 332)), top: rect.bottom + 8 });
+    setToolsOpen(true);
+  }
+
   const format = (name: Format) => instance.current?.format(name);
   return (
-    <div className="visualEditor">
+    <div className="visualEditor" onKeyDown={(event) => {
+      if (event.key === "Escape" && toolsOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeTools();
+        if (toolbar.current?.contains(document.activeElement)) trigger.current?.focus();
+      }
+    }}>
       {status === "loading" && <p className="visualEditorNotice" role="status">Opening editor…</p>}
       {(status === "unsupported" || status === "error") && (
         <div className="visualEditorNotice" role="status">
@@ -85,10 +157,9 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
         </div>
       )}
       {status === "ready" && (
-        // The dock stays at the top of the pane in long documents. It is
-        // opaque so text scrolls under it rather than showing through.
         <div className="formatBarDock">
-          <div className="formatBar" role="group" aria-label="Text formatting">
+          <button ref={trigger} type="button" className="formatBarTrigger" aria-label="Format text" title="Format text" aria-expanded={toolsOpen} aria-controls={toolbarId} onMouseDown={(event) => event.preventDefault()} onClick={toggleTools}>Aa</button>
+          <div ref={toolbar} id={toolbarId} className="formatBar" role="group" aria-label="Text formatting" hidden={!toolsOpen} style={toolsPosition}>
             <select aria-label="Paragraph style" value={formatting.heading} onChange={(event) => instance.current?.heading(Number(event.target.value))}>
               <option value={0}>Paragraph</option>
               <option value={1}>Heading 1</option>
