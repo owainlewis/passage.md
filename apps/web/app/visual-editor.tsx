@@ -2,6 +2,7 @@
 
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import type { Ref } from "react";
+import { BoldIcon, ItalicIcon, StrikethroughIcon, InlineCodeIcon } from "./icons";
 import type { Format, Formatting, VisualEditorHandle } from "./visual-editor-runtime";
 import "@milkdown/kit/prose/view/style/prosemirror.css";
 import "@milkdown/kit/prose/gapcursor/style/gapcursor.css";
@@ -95,10 +96,11 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
               <option value={3}>Heading 3</option>
               {formatting.heading > 3 && <option value={formatting.heading}>Heading {formatting.heading}</option>}
             </select>
-            <button type="button" aria-label="Bold" title="Bold (⌘/Ctrl+B)" aria-pressed={formatting.bold} onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")}><strong>B</strong></button>
-            <button type="button" aria-label="Italic" title="Italic (⌘/Ctrl+I)" aria-pressed={formatting.italic} onMouseDown={(event) => event.preventDefault()} onClick={() => format("italic")}><em>I</em></button>
-            <button type="button" aria-label="Strikethrough" title="Strikethrough" aria-pressed={formatting.strike} onMouseDown={(event) => event.preventDefault()} onClick={() => format("strike")}><s>S</s></button>
-            <button type="button" aria-label="Inline code" title="Inline code" aria-pressed={formatting.code} onMouseDown={(event) => event.preventDefault()} onClick={() => format("code")}><span className="formatCode">`</span></button>
+            <span className="formatBarDivider" aria-hidden="true" />
+            <button type="button" aria-label="Bold" title="Bold (⌘/Ctrl+B)" aria-pressed={formatting.bold} onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")}><BoldIcon /></button>
+            <button type="button" aria-label="Italic" title="Italic (⌘/Ctrl+I)" aria-pressed={formatting.italic} onMouseDown={(event) => event.preventDefault()} onClick={() => format("italic")}><ItalicIcon /></button>
+            <button type="button" aria-label="Strikethrough" title="Strikethrough" aria-pressed={formatting.strike} onMouseDown={(event) => event.preventDefault()} onClick={() => format("strike")}><StrikethroughIcon /></button>
+            <button type="button" aria-label="Inline code" title="Inline code" aria-pressed={formatting.code} onMouseDown={(event) => event.preventDefault()} onClick={() => format("code")}><InlineCodeIcon /></button>
           </div>
         </div>
       )}

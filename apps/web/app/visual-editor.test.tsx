@@ -41,3 +41,15 @@ it("offers Source without saving a document that cannot round-trip", async () =>
   expect(change).not.toHaveBeenCalled();
   expect(screen.queryByRole("textbox", { name: "Visual editor" })).not.toBeInTheDocument();
 });
+
+
+it("keeps all formatting controls available without selecting text or opening a menu", async () => {
+  render(<VisualEditor source="A quiet space to write.\n" onChange={vi.fn()} onSource={vi.fn()} />);
+  await screen.findByRole("textbox", { name: "Visual editor" });
+  expect(screen.getByRole("group", { name: "Text formatting" })).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "Paragraph style" })).toBeVisible();
+  for (const name of ["Bold", "Italic", "Strikethrough", "Inline code"]) {
+    expect(screen.getByRole("button", { name })).toBeVisible();
+  }
+  expect(screen.queryByRole("button", { name: "Format text" })).not.toBeInTheDocument();
+});

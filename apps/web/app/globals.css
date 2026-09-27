@@ -2974,7 +2974,7 @@ button {
   cursor: pointer;
 }
 .editorControls button:hover { background: var(--hover-soft); color: var(--ink); }
-.editorModes button[aria-pressed="true"] { color: var(--ink); background: var(--hover-soft); }
+.editorModes button[aria-pressed="true"] { color: var(--ink); background: transparent; box-shadow: inset 0 -2px var(--ink); border-radius: 0; }
 .editorControlActions > button { display: inline-flex; align-items: center; gap: 6px; }
 .editorControls button:disabled { opacity: 0.45; cursor: not-allowed; }
 .editorFocus[aria-pressed="true"] { color: var(--accent); }
@@ -5081,25 +5081,42 @@ button {
   }
 }
 
-/* Visual writing inherits the same typography as the published document. */
+/* An editorial canvas: expressive headings, book-like body text, quiet chrome. */
 .visualEditor {
   width: 100%;
-  max-width: var(--measure);
+  max-width: 42.5rem;
   min-width: 0;
   margin: 0 auto;
 }
 
-.visualEditorContent.editor {
-  font-family: inherit;
-  font-size: var(--text-body);
-  line-height: var(--lh-body);
+.visualEditorContent {
+  --text-h1: clamp(2rem, 3vw, 2.5rem);
+  --text-h2: 1.625rem;
+  --text-h3: 1.25rem;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  line-height: 1.75;
+  letter-spacing: 0;
   min-height: 60vh;
+  caret-color: var(--accent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow: visible;
   text-wrap: wrap;
 }
 
+.visualEditorContent :is(h1, h2, h3, h4, h5, h6) { font-family: var(--sans); }
+.visualEditorContent h1 { margin: 2.5rem 0 1.25rem; line-height: 1.18; font-weight: 650; letter-spacing: -0.03em; }
+.visualEditorContent h2 { margin: 2.5rem 0 0.875rem; line-height: 1.3; font-weight: 650; }
+.visualEditorContent h3 { margin: 2rem 0 0.75rem; }
+.visualEditorContent p { margin-bottom: 1.25em; }
+.visualEditorContent hr { width: 4rem; margin: 2.5rem auto; }
+.visualEditorContent blockquote { border-left: 2px solid var(--hairline-strong); font-style: italic; }
+.visualEditorContent hr + h2,
+.visualEditorContent hr + h3 { margin-top: 0; }
+@media (max-width: 720px) {
+  .visualEditorContent { font-size: 1.125rem; --text-h2: 1.375rem; }
+}
 .visualEditorContent > :first-child { margin-top: 0; }
 .visualEditorContent li p { margin-bottom: 0.35em; }
 .visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
@@ -5125,46 +5142,49 @@ button {
   accent-color: var(--accent);
 }
 
-/* Stays reachable in long documents. The band is the page colour, so at rest
-   it is invisible and while scrolling the text passes under it, not through.
-   Sticky offsets are measured inside the pane's padding, so pull the band up
-   by that padding or text shows in the gap between the top bar and the band. */
+/* A quiet inline tool shelf, aligned with the writing column. */
 .formatBarDock {
   position: sticky;
   top: calc(-1 * var(--writing-pad-top, 0px));
   z-index: 2;
-  margin-top: -8px;
-  padding: 4px 0 16px;
+  margin-top: calc(-1 * var(--writing-pad-top, 0px));
+  margin-bottom: 36px;
+  padding: 12px 0;
   background: var(--surface);
 }
-
 .formatBar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin: 0;
+  gap: 4px;
   width: fit-content;
   max-width: 100%;
-  padding: 2px;
-  background: var(--hover-soft);
-  border-radius: 5px;
-  flex-wrap: wrap;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
 }
 .formatBar button {
-  width: 32px;
-  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
-  color: var(--muted);
+  color: inherit;
   cursor: pointer;
-  font-size: 1rem;
 }
-.formatBar button:hover, .formatBar button[aria-pressed="true"] {
-  background: var(--hover-strong);
-  color: var(--ink);
+.formatBar button:hover, .formatBar select:hover { background: var(--hover); color: var(--ink); }
+.formatBar button[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent); }
+.formatBar :is(button, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.formatBarDivider {
+  flex: 0 0 1px;
+  height: 20px;
+  margin-inline: 4px;
+  background: var(--hairline-strong);
 }
-.formatCode { font-family: var(--mono); font-size: 0.8em; }
 .visualEditorNotice { color: var(--muted); font-size: 0.875rem; }
 .visualEditorNotice button {
   margin-top: 12px;
@@ -5254,17 +5274,30 @@ button {
 }
 
 .formatBar select {
-  min-height: 32px;
-  max-width: 114px;
-  padding: 0 8px;
+  flex: 0 1 116px;
+  width: 116px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 6px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
-  color: var(--ink-soft);
+  color: inherit;
   font-family: var(--sans);
   font-weight: 500;
   cursor: pointer;
 }
 .formatBar option { background: var(--surface); color: var(--ink); }
+@media (pointer: coarse) {
+  .formatBar button { height: 44px; }
+  .formatBar select { min-height: 44px; }
+}
+
+@media (max-width: 380px) {
+  .formatBar { gap: 2px; }
+  .formatBar select { flex-basis: 96px; width: 96px; }
+  .formatBarDivider { margin-inline: 2px; }
+}
 
 /* One interface scale across collections, document lists, and editor controls. */
 .workspaceDestination,
@@ -5311,6 +5344,7 @@ button {
 }
 
 @media (max-width: 380px) {
+  .editorModes button { padding-inline: 7px; }
   .editorShare span { display: none; }
   .editorShare svg { display: block; }
   .editorShare { width: 36px; padding-inline: 8px; }

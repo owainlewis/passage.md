@@ -297,14 +297,12 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   );
 });
 
-it("keeps the formatting bar in reach without letting text show through it", () => {
+it("keeps inline formatting in reach without letting text show through it", () => {
   const dock = declarationsFor(".formatBarDock");
   expect(dock).toContain("position: sticky;");
-  // Sticky offsets sit inside the pane padding; the band must reach the
-  // scrollport edge or text shows between the top bar and the band.
   expect(dock).toContain("top: calc(-1 * var(--writing-pad-top, 0px));");
-  expect(declarationsFor(".writingPane")).toContain("padding: var(--writing-pad-top)");
   expect(dock).toContain("background: var(--surface);");
+  expect(declarationsFor(".formatBar")).not.toContain("position: fixed;");
 });
 
 it("uses one sidebar width at every breakpoint", () => {
