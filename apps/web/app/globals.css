@@ -5142,51 +5142,32 @@ button {
   accent-color: var(--accent);
 }
 
-/* Formatting stays out of the document until a selection or explicit request. */
+/* A quiet inline tool shelf, aligned with the writing column. */
 .formatBarDock {
   position: sticky;
   top: calc(-1 * var(--writing-pad-top, 0px));
-  z-index: 12;
-  height: 36px;
+  z-index: 2;
   margin-top: calc(-1 * var(--writing-pad-top, 0px));
-  margin-bottom: 40px;
-  pointer-events: none;
-}
-.formatBarTrigger {
-  display: block;
-  margin-left: auto;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
+  margin-bottom: 36px;
+  padding: 12px 0;
   background: var(--surface);
-  color: var(--muted);
-  font: 500 1rem var(--sans);
-  cursor: pointer;
-  pointer-events: auto;
 }
-.formatBarTrigger:hover,
-.formatBarTrigger[aria-expanded="true"] { background: var(--hover-soft); color: var(--ink); }
-.formatBarTrigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .formatBar {
-  position: fixed;
   display: flex;
   align-items: center;
-  gap: 2px;
-  width: min(320px, calc(100vw - 24px));
-  padding: 6px;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: var(--ink);
-  color: var(--surface);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
-  pointer-events: auto;
+  background: var(--bg);
+  color: var(--muted);
 }
-.formatBar[hidden] { display: none; }
 .formatBar button {
   display: grid;
   place-items: center;
-  flex: 1 0 32px;
+  flex: 0 0 36px;
   height: 36px;
   padding: 0;
   border: 0;
@@ -5195,14 +5176,14 @@ button {
   color: inherit;
   cursor: pointer;
 }
-.formatBar button:hover, .formatBar select:hover { background: color-mix(in srgb, var(--surface) 16%, transparent); }
-.formatBar button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
-.formatBar :is(button, select):focus-visible { outline: 2px solid var(--surface); outline-offset: -2px; }
+.formatBar button:hover, .formatBar select:hover { background: var(--hover); color: var(--ink); }
+.formatBar button[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent); }
+.formatBar :is(button, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .formatBarDivider {
   flex: 0 0 1px;
   height: 20px;
   margin-inline: 4px;
-  background: color-mix(in srgb, var(--surface) 25%, transparent);
+  background: var(--hairline-strong);
 }
 .visualEditorNotice { color: var(--muted); font-size: 0.875rem; }
 .visualEditorNotice button {
@@ -5294,6 +5275,7 @@ button {
 
 .formatBar select {
   flex: 0 1 116px;
+  width: 116px;
   min-width: 0;
   min-height: 36px;
   padding: 0 6px;
@@ -5304,13 +5286,17 @@ button {
   font-family: var(--sans);
   font-weight: 500;
   cursor: pointer;
-  color-scheme: dark;
 }
-:root[data-theme="dark"] .formatBar select { color-scheme: light; }
-.formatBar option { background: var(--ink); color: var(--surface); }
+.formatBar option { background: var(--surface); color: var(--ink); }
 @media (pointer: coarse) {
   .formatBar button { height: 44px; }
   .formatBar select { min-height: 44px; }
+}
+
+@media (max-width: 380px) {
+  .formatBar { gap: 2px; }
+  .formatBar select { flex-basis: 96px; width: 96px; }
+  .formatBarDivider { margin-inline: 2px; }
 }
 
 /* One interface scale across collections, document lists, and editor controls. */
