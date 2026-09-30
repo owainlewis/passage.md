@@ -305,6 +305,54 @@ func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 	}
 }
 
+func TestHandlerAcceptsDocumentBodiesWithLargeJSONEncoding(t *testing.T) {
+	user := auth.User{ID: "user-1", Email: "u@example.com"}
+	id := "11111111-1111-1111-1111-111111111111"
+	bodies := map[string]string{
+		"quotes and newlines": strings.Repeat("say \"hi\"\n", 45511),
+		"worst case escapes":  strings.Repeat("<", MaxDocumentBodyBytes),
+	}
+
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]string{"body": body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(payload) <= MaxDocumentBodyBytes+4096 {
+				t.Fatalf("payload length %d does not exceed the old request limit", len(payload))
+			}
+
+			store := &fakeStore{}
+			handler := NewHandler(store, nil)
+
+			create := httptest.NewRecorder()
+			createReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(string(payload)))
+			createReq.Header.Set("Content-Type", "application/json")
+			handler.Create(create, createReq, user, NoSavedDocumentLimit)
+			if create.Code != http.StatusCreated {
+				t.Fatalf("create status = %d, body = %s", create.Code, create.Body.String())
+			}
+			if store.body != body {
+				t.Fatalf("create stored body length %d, want %d", len(store.body), len(body))
+			}
+
+			store.body = ""
+			update := httptest.NewRecorder()
+			updateReq := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(string(payload)))
+			updateReq.Header.Set("Content-Type", "application/json")
+			updateReq.SetPathValue("id", id)
+			handler.Update(update, updateReq, user)
+			if update.Code != http.StatusOK {
+				t.Fatalf("update status = %d, body = %s", update.Code, update.Body.String())
+			}
+			if store.body != body {
+				t.Fatalf("update stored body length %d, want %d", len(store.body), len(body))
+			}
+		})
+	}
+}
+
 func TestHandlerKeepsBodyOnlyUpdatesCompatibleAndSupportsMetadataOnlyUpdates(t *testing.T) {
 	store := &fakeStore{}
 	handler := NewHandler(store, nil)
