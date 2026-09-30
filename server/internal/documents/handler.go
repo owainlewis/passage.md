@@ -358,6 +358,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 	if input.Body != nil && !validateDocumentBody(w, *input.Body) {
 		return
 	}
+	// Versions start at 1 and are stored as a Postgres integer, so anything
+	// outside that range can never match and would fail to encode.
+	if input.Version != nil && (*input.Version < 1 || *input.Version > math.MaxInt32) {
+		writeError(w, http.StatusBadRequest, "invalid version")
+		return
+	}
 	if input.CollectionID.Value != nil && !validUUID(*input.CollectionID.Value) {
 		writeError(w, http.StatusBadRequest, "collection not found")
 		return
