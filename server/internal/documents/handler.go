@@ -596,6 +596,10 @@ func validateDocumentBody(w http.ResponseWriter, body string) bool {
 		writeError(w, http.StatusRequestEntityTooLarge, "document body is too large")
 		return false
 	}
+	if strings.ContainsRune(body, '\x00') {
+		writeError(w, http.StatusBadRequest, "document body must not contain NUL characters")
+		return false
+	}
 	return true
 }
 

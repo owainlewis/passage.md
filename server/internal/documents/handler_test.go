@@ -305,6 +305,38 @@ func TestHandlerRejectsOversizedDocumentBodies(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsDocumentBodiesContainingNUL(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store, nil)
+	user := auth.User{ID: "user-1", Email: "u@example.com"}
+	payload := `{"body":"a\u0000b"}`
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(payload))
+	createReq.Header.Set("Content-Type", "application/json")
+	handler.Create(create, createReq, user, NoSavedDocumentLimit)
+
+	if create.Code != http.StatusBadRequest || !strings.Contains(create.Body.String(), "document body must not contain NUL characters") {
+		t.Fatalf("create status/body = %d/%s", create.Code, create.Body.String())
+	}
+	if store.ownerID != "" || store.body != "" {
+		t.Fatalf("NUL create reached store: owner=%q body=%q", store.ownerID, store.body)
+	}
+
+	update := httptest.NewRecorder()
+	updateReq := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/11111111-1111-1111-1111-111111111111", strings.NewReader(payload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.SetPathValue("id", "11111111-1111-1111-1111-111111111111")
+	handler.Update(update, updateReq, user)
+
+	if update.Code != http.StatusBadRequest || !strings.Contains(update.Body.String(), "document body must not contain NUL characters") {
+		t.Fatalf("update status/body = %d/%s", update.Code, update.Body.String())
+	}
+	if store.ownerID != "" || store.update.Body != nil {
+		t.Fatalf("NUL update reached store: owner=%q update=%#v", store.ownerID, store.update)
+	}
+}
+
 func TestHandlerKeepsBodyOnlyUpdatesCompatibleAndSupportsMetadataOnlyUpdates(t *testing.T) {
 	store := &fakeStore{}
 	handler := NewHandler(store, nil)
