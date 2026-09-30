@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -360,6 +361,58 @@ func TestHandlerRejectsEmptyAndInvalidCollectionUpdates(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsOutOfRangeVersionsBeforeStore(t *testing.T) {
+	id := "11111111-1111-1111-1111-111111111111"
+	for _, version := range []string{"0", "-1", "3000000000"} {
+		store := &fakeStore{}
+		handler := NewHandler(store, nil)
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(`{"body":"x","version":`+version+`}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.SetPathValue("id", id)
+		handler.Update(recorder, request, auth.User{ID: "user-1"})
+		if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "invalid version") {
+			t.Fatalf("version %s status/body = %d/%s", version, recorder.Code, recorder.Body.String())
+		}
+		if store.updateCalls != 0 {
+			t.Fatalf("version %s reached store %d times", version, store.updateCalls)
+		}
+	}
+}
+
+func TestHandlerKeepsValidAndOmittedVersionBehavior(t *testing.T) {
+	id := "11111111-1111-1111-1111-111111111111"
+	cases := []struct {
+		input    string
+		version  *int
+		storeErr error
+		wantCode int
+	}{
+		{input: `{"body":"x"}`, wantCode: http.StatusOK},
+		{input: `{"body":"x","version":1}`, version: intPtr(1), wantCode: http.StatusOK},
+		{input: `{"body":"x","version":2147483647}`, version: intPtr(math.MaxInt32), wantCode: http.StatusOK},
+		{input: `{"body":"x","version":1}`, version: intPtr(1), storeErr: ErrVersionConflict, wantCode: http.StatusConflict},
+	}
+	for _, tc := range cases {
+		store := &fakeStore{updateErr: tc.storeErr}
+		handler := NewHandler(store, nil)
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(tc.input))
+		request.Header.Set("Content-Type", "application/json")
+		request.SetPathValue("id", id)
+		handler.Update(recorder, request, auth.User{ID: "user-1"})
+		if recorder.Code != tc.wantCode {
+			t.Fatalf("input %s status/body = %d/%s", tc.input, recorder.Code, recorder.Body.String())
+		}
+		if store.updateCalls != 1 {
+			t.Fatalf("input %s store calls = %d", tc.input, store.updateCalls)
+		}
+		if (tc.version == nil) != (store.update.IfVersion == nil) || (tc.version != nil && *tc.version != *store.update.IfVersion) {
+			t.Fatalf("input %s IfVersion = %v", tc.input, store.update.IfVersion)
+		}
+	}
+}
+
 func TestHandlerReportsSavedDocumentLimit(t *testing.T) {
 	store := &fakeStore{createErr: ErrLimitReached}
 	handler := NewHandler(store, nil)
@@ -627,6 +680,8 @@ type fakeStore struct {
 	ownerID      string
 	body         string
 	update       DocumentUpdate
+	updateCalls  int
+	updateErr    error
 	maxSavedDocs int
 	createErr    error
 	getErr       error
@@ -692,6 +747,10 @@ func (s *fakeStore) Get(ctx context.Context, ownerID string, id string) (Documen
 func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error) {
 	s.ownerID = ownerID
 	s.update = update
+	s.updateCalls++
+	if s.updateErr != nil {
+		return Document{}, s.updateErr
+	}
 	if update.Body != nil {
 		s.body = *update.Body
 	}
@@ -752,4 +811,8 @@ func TestPublicHTMLCarriesARobotsMetaTag(t *testing.T) {
 	if !strings.Contains(string(page), `<meta name="robots" content="noindex, nofollow">`) {
 		t.Fatalf("public html has no robots meta tag: %s", page)
 	}
+}
+
+func intPtr(value int) *int {
+	return &value
 }
