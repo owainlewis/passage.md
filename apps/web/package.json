@@ -15,7 +15,7 @@
     "isomorphic-dompurify": "^4.3.0",
     "marked": "^18.0.12",
     "mermaid": "11.17.2",
-    "next": "^16.3.6",
+    "next": "^16.3.8",
     "react": "^19.2.1",
     "react-dom": "^19.3.0"
   },
