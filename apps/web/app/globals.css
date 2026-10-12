@@ -115,8 +115,15 @@ button {
 
 .workspace {
   --control-boundary: var(--hairline);
+  /* Interface type scale. Document prose keeps its own scale in :root.
+     page: page titles. lead: page descriptions. ui: controls, navigation,
+     and row titles. meta: labels, counts, and summaries. caption: key hints
+     and the compact phone tab bar only. */
+  --text-page: 1.75rem;
+  --text-lead: 1rem;
   --text-ui: 0.875rem;
   --text-meta: 0.75rem;
+  --text-caption: 0.6875rem;
   display: flex;
   height: 100vh;
   height: 100dvh;
@@ -717,7 +724,7 @@ button {
   border-radius: 5px;
   background: var(--sidebar-bg);
   color: var(--faint);
-  font: 0.625rem/1.2 var(--mono);
+  font: var(--text-caption)/1.2 var(--mono);
 }
 
 .workspaceDestinations {
@@ -766,7 +773,7 @@ button {
 .workspaceDestination small,
 .workspaceSidebarCollection small {
   color: var(--faint);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
 }
 
 .workspaceDestination:hover,
@@ -799,7 +806,7 @@ button {
   padding: 0 9px 7px;
   color: var(--faint);
   font-size: var(--text-meta);
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .workspaceSidebarLabel button {
@@ -807,7 +814,7 @@ button {
   border: 0;
   background: transparent;
   color: var(--faint);
-  font-size: 0.625rem;
+  font-size: var(--text-meta);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -815,8 +822,6 @@ button {
 
 .workspaceSidebarLabel .workspaceSidebarCollectionsLink {
   min-height: 32px;
-  font-size: var(--text-meta);
-  font-weight: 550;
 }
 
 .workspaceSidebarLabel .workspaceSidebarCollectionAdd {
@@ -885,15 +890,15 @@ button {
 }
 
 .workspaceSidebarAccountText strong {
-  font-size: 0.8125rem;
-  font-weight: 550;
+  font-size: var(--text-ui);
+  font-weight: 500;
 }
 
 .workspaceSidebarAccountText small {
   min-width: 0;
   overflow: hidden;
   color: var(--faint);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -984,20 +989,14 @@ button {
   margin: 0;
   color: var(--ink-display);
   font-family: var(--sans);
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-size: var(--text-page);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .workspaceHero h1 {
   max-width: none;
-  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
-  line-height: 1.12;
-}
-
-.workspacePageHeader h1,
-.workspaceCollectionHeader h1 {
-  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
-  line-height: 1.1;
 }
 
 .workspaceHero > p:last-of-type,
@@ -1007,7 +1006,7 @@ button {
   margin: 10px 0 0;
   color: var(--muted);
   font-family: var(--sans);
-  font-size: 1rem;
+  font-size: var(--text-lead);
   line-height: 1.55;
 }
 
@@ -1029,8 +1028,8 @@ button {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: var(--text-meta);
-  font-weight: 600;
+  font-size: var(--text-ui);
+  font-weight: 500;
 }
 
 .workspacePageHeaderLine button:hover,
@@ -1057,6 +1056,7 @@ button {
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
+  font-size: var(--text-ui);
   box-shadow: none;
 }
 
@@ -1102,7 +1102,7 @@ button {
   border: 0;
   background: transparent;
   color: var(--faint);
-  font-size: var(--text-meta);
+  font-size: var(--text-ui);
 }
 
 .workspaceCollectionDelete:hover,
@@ -1123,9 +1123,9 @@ button {
 
 .workspaceCollectionToolbarTitle {
   color: var(--muted);
-  font-size: 0.6875rem;
-  font-weight: 650;
-  letter-spacing: 0.1em;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -1156,8 +1156,8 @@ button {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: var(--text-meta);
-  font-weight: 550;
+  font-size: var(--text-ui);
+  font-weight: 500;
 }
 
 .workspaceCollectionUtilityActions button:hover,
@@ -1174,7 +1174,6 @@ button {
   border-left-color: var(--hairline);
   border-radius: 0;
   color: var(--faint);
-  font-weight: 400;
 }
 
 .workspaceCollectionUtilityActions .workspaceCollectionDelete:hover,
@@ -1204,9 +1203,9 @@ button {
 .workspaceSectionHeading h2 {
   margin: 0;
   color: var(--muted);
-  font-size: 0.6875rem;
-  font-weight: 650;
-  letter-spacing: 0.1em;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -1216,7 +1215,7 @@ button {
   border: 0;
   background: transparent;
   color: var(--faint);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
 }
 
 /* The arrow only leans out on hover, so the resting state stays quiet. */
@@ -1324,8 +1323,9 @@ button {
 .workspaceCollectionTitle strong {
   min-width: 0;
   flex: 0 1 auto;
-  font-size: 0.875rem;
+  font-size: var(--text-ui);
   font-weight: 600;
+  line-height: 1.4;
   letter-spacing: -0.006em;
   overflow-wrap: anywhere;
 }
@@ -1333,7 +1333,7 @@ button {
 .workspaceCollectionTitle small {
   flex: 0 0 auto;
   color: var(--faint);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   white-space: nowrap;
 }
 
@@ -1404,8 +1404,9 @@ button {
 .workspaceDocumentText strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 0.875rem;
+  font-size: var(--text-ui);
   font-weight: 600;
+  line-height: 1.4;
   letter-spacing: -0.006em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1413,6 +1414,7 @@ button {
 
 .workspaceDocumentText small {
   color: var(--faint);
+  font-size: var(--text-meta);
 }
 
 .workspaceDocumentMeta {
@@ -1420,6 +1422,8 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: var(--text-meta);
+  line-height: 1.5;
 }
 
 .workspaceDocumentSummary {
@@ -1441,7 +1445,8 @@ button {
   background: transparent;
   color: var(--muted);
   font-family: var(--sans);
-  font-weight: 600;
+  font-size: var(--text-ui);
+  font-weight: 500;
   line-height: 1;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
@@ -1531,7 +1536,7 @@ button {
   border: 1px dashed var(--hairline-strong);
   border-radius: 12px;
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: var(--text-ui);
   text-align: center;
 }
 
@@ -1575,7 +1580,7 @@ button {
 .workspaceCollectionDialog header p {
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--text-meta);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -1629,7 +1634,7 @@ button {
   background: transparent;
   color: var(--muted);
   font-size: var(--text-ui);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .workspaceCollectionDialog footer button[type="submit"] {
@@ -1674,15 +1679,15 @@ button {
   flex: 1 1 auto;
   overflow-x: auto;
   color: var(--ink-soft);
-  font: 0.75rem/1.4 var(--mono);
+  font: var(--text-meta)/1.4 var(--mono);
   white-space: nowrap;
 }
 
 .workspaceDialogPublicLink {
   width: fit-content;
   color: var(--accent);
-  font-size: 0.78rem;
-  font-weight: 650;
+  font-size: var(--text-ui);
+  font-weight: 500;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
@@ -1701,8 +1706,8 @@ button {
   border-radius: 7px;
   background: transparent;
   color: var(--faint);
-  font-size: 0.6875rem;
-  font-weight: 600;
+  font-size: var(--text-ui);
+  font-weight: 500;
 }
 
 .topBarDelete:hover,
@@ -1778,14 +1783,14 @@ button {
   border-radius: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: var(--text-meta);
   white-space: nowrap;
 }
 
 .workspaceSearchScopes button[data-active="true"] {
   box-shadow: inset 0 -1px var(--ink);
   color: var(--ink);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .workspaceSearchResults {
@@ -1796,7 +1801,7 @@ button {
 .workspaceSearchResults > p {
   margin: 6px 9px 8px;
   color: var(--faint);
-  font: 600 0.625rem/1 var(--mono);
+  font: 600 var(--text-caption)/1 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1828,18 +1833,20 @@ button {
 }
 
 .workspaceSearchResults strong {
-  font-size: 0.78rem;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .workspaceSearchResults small {
   color: var(--faint);
-  font-size: 0.625rem;
+  font-size: var(--text-meta);
 }
 
 .workspaceSearchResults em {
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--text-meta);
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1860,8 +1867,13 @@ button {
   color: var(--muted);
 }
 
+.workspaceSearchEmpty strong {
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+
 .workspaceSearchEmpty span {
-  font-size: 0.75rem;
+  font-size: var(--text-meta);
 }
 
 .workspaceSearchEmpty button,
@@ -1873,7 +1885,7 @@ button {
   background: transparent;
   color: var(--muted);
   padding: 7px 11px;
-  font-size: 0.7rem;
+  font-size: var(--text-meta);
 }
 
 .workspaceSearchEmpty button {
@@ -1893,7 +1905,7 @@ button {
   border-top: 1px solid var(--hairline);
   background: var(--sidebar-bg);
   color: var(--faint);
-  font-size: 0.625rem;
+  font-size: var(--text-caption);
 }
 
 .workspaceLoadMore {
@@ -1907,7 +1919,7 @@ button {
   border-radius: 999px;
   background: var(--surface);
   color: var(--muted);
-  font: 600 12px/1 var(--sans);
+  font: 500 var(--text-ui)/1 var(--sans);
   padding: 11px 18px;
 }
 
@@ -2016,7 +2028,7 @@ button {
   margin: 0;
   justify-self: center;
   max-width: 42ch;
-  font-size: 0.875rem;
+  font-size: var(--text-ui);
   font-weight: 600;
   letter-spacing: -0.006em;
   color: var(--ink);
@@ -2040,7 +2052,7 @@ button {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: var(--text-ui);
   font-weight: 650;
   padding: 7px 12px;
   border-radius: 999px;
@@ -4877,6 +4889,7 @@ button {
 
 @media (max-width: 720px) {
   .workspace {
+    --text-page: 1.5rem;
     padding-bottom: 64px;
   }
 
@@ -4931,12 +4944,13 @@ button {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    font-size: 0.625rem;
+    font-size: var(--text-caption);
+    font-weight: 500;
   }
 
   .workspaceMobileNav button[data-active="true"] {
     color: var(--accent);
-    font-weight: 700;
+    font-weight: 650;
   }
 
   .workspaceMobileNav button small {
@@ -4974,14 +4988,11 @@ button {
     margin-bottom: 40px;
   }
 
-  .workspaceHero h1 {
-    font-size: 2.35rem;
-  }
-
   .workspaceHero > p:last-of-type,
   .workspacePageHeader > p:last-child,
   .workspaceCollectionHeaderText > p {
-    font-size: 0.98rem;
+    font-size: var(--text-ui);
+    line-height: 1.5;
   }
 
   /* The header is a title/actions row on desktop. On a phone there is no room
@@ -5073,7 +5084,7 @@ button {
   .topBarCollectionSelect {
     max-width: 104px;
     padding-right: 16px;
-    font-size: 0.625rem;
+    font-size: var(--text-ui);
   }
 }
 
@@ -5181,7 +5192,7 @@ button {
   margin-inline: 4px;
   background: var(--hairline-strong);
 }
-.visualEditorNotice { color: var(--muted); font-size: 0.875rem; }
+.visualEditorNotice { color: var(--muted); font-size: var(--text-ui); }
 .visualEditorNotice button {
   margin-top: 12px;
   padding: 8px 12px;
@@ -5214,7 +5225,8 @@ button {
   flex: 1;
   padding: 6px 0;
   text-align: left;
-  font-weight: 650;
+  font-size: var(--text-ui);
+  font-weight: 600;
   color: var(--ink);
   background: transparent;
   border: 0;
@@ -5238,9 +5250,10 @@ button {
 }
 .collectionListDocument:hover { background: var(--hover-soft); }
 .collectionListDocument[aria-current="page"] { background: var(--accent-tint); }
-.collectionListDocument strong { font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
-.collectionListDocument span { color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-.collectionListMore { padding: 12px; border: 0; background: transparent; color: var(--accent); }
+.collectionListDocument strong { font-size: var(--text-ui); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.collectionListDocument span { color: var(--muted); font-size: var(--text-meta); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.collectionListScroll > p { margin: 8px 4px; color: var(--muted); font-size: var(--text-ui); line-height: 1.5; }
+.collectionListMore { padding: 12px; border: 0; background: transparent; color: var(--accent); font-size: var(--text-ui); font-weight: 500; }
 /* The toggle is only rendered below 1100px. This guards the first paint. */
 @media (min-width: 1101px) {
   .collectionListToggle { display: none; }
@@ -5280,6 +5293,7 @@ button {
   background: transparent;
   color: inherit;
   font-family: var(--sans);
+  font-size: var(--text-ui);
   font-weight: 500;
   cursor: pointer;
 }
@@ -5295,34 +5309,6 @@ button {
   .formatBarDivider { margin-inline: 2px; }
 }
 
-/* One interface scale across collections, document lists, and editor controls. */
-.workspaceDestination,
-.workspaceSidebarCollection,
-.workspaceSidebarSearch button,
-.workspaceSidebarAccountText strong,
-.collectionListTitle,
-.collectionListDocument strong,
-.workspaceCollectionTitle strong,
-.workspaceDocumentText strong,
-.topBarCollectionSelect,
-.topBarDelete,
-.formatBar select,
-.modeToggle button {
-  font-size: var(--text-ui);
-}
-.collectionListDocument span,
-.workspaceCollectionDescription,
-.workspaceDocumentSummary,
-.workspaceDocumentText small,
-.workspaceDocumentMeta,
-.workspaceSidebarAccountText small,
-.workspaceCollectionTitle small,
-.workspaceSidebarLabel {
-  font-size: var(--text-meta);
-}
-.workspaceHero h1,
-.workspacePageHeader h1,
-.workspaceCollectionHeader h1 { font-size: var(--text-h1); line-height: 1.2; }
 .markdown td > p, .markdown th > p { margin: 0; }
 
 @media (max-width: 720px) {
@@ -5357,7 +5343,7 @@ button {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: var(--text-ui);
 }
 .collectionListActions button:hover:not(:disabled) { background: var(--hover-soft); color: var(--ink); }
@@ -5371,19 +5357,12 @@ button {
   margin-bottom: 32px;
 }
 
-.workspaceHome .workspaceHero h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
 .workspacePageHeaderLine .workspaceNewDocument {
   min-height: 40px;
   padding: 0 16px;
   border: 0;
   background: var(--ink);
   color: var(--bg);
-  font-size: var(--text-ui);
-  font-weight: 500;
 }
 
 .workspacePageHeaderLine .workspaceNewDocument:hover:not(:disabled) {
