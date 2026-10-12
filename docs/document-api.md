@@ -150,6 +150,8 @@ Content-Type: application/json
 
 Invalid JSON returns `400`.
 
+Document bodies that contain a NUL character return `400`.
+
 Missing or non-JSON content type returns `415`.
 
 Cross-origin browser mutations with an unexpected `Origin` header return `403`.
@@ -733,7 +735,7 @@ Legacy share token URLs are still accepted while older shares exist.
 - `200`: successful read, update, or share.
 - `201`: document created.
 - `204`: document archived or unshared.
-- `400`: invalid JSON.
+- `400`: invalid JSON, or a document body that contains a NUL character.
 - `401`: authentication required.
 - `402`: a bearer-token document request requires Pro.
 - `429`: an abuse limit was exceeded.
