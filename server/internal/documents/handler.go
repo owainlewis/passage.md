@@ -25,7 +25,7 @@ type Handler struct {
 
 const (
 	MaxDocumentBodyBytes    = 512 * 1024
-	maxDocumentRequestBytes = MaxDocumentBodyBytes + 4096
+	maxDocumentRequestBytes = MaxDocumentBodyBytes*6 + 4096
 	defaultDocumentPageSize = 50
 	maxDocumentPageSize     = 100
 	maxSearchQueryLength    = 200
