@@ -47,7 +47,7 @@ export function EditorControls(props: Props) {
   }
 
   return (
-    <header className="editorControls" aria-label="Document controls">
+    <div className="editorControls" role="group" aria-label="Document controls">
       <div className="editorModes" role="group" aria-label="View mode">
         {([ ["write", "Write"], ["edit", "Source"], ["preview", "Preview"] ] as const).map(([mode, label]) => (
           <button key={mode} type="button" aria-pressed={props.mode === mode} onClick={() => props.onModeChange(mode)}>{label}</button>
@@ -55,7 +55,7 @@ export function EditorControls(props: Props) {
       </div>
       <div className="editorControlActions">
         <button type="button" className="editorFocus" aria-label={props.focusMode ? "Exit focus mode" : "Enter focus mode"} aria-pressed={props.focusMode} title={props.focusMode ? "Exit focus mode" : "Focus mode"} onClick={props.onToggleFocus}>
-          <FocusIcon /><span>{props.focusMode ? "Exit focus" : "Focus"}</span>
+          <FocusIcon />
         </button>
         <button type="button" className="editorShare" aria-label={props.shareLabel} aria-haspopup="dialog" aria-expanded={props.shareOpen} title={props.shareState === "toolong" ? "This document is too long to share as a link" : props.shareLabel} onClick={props.onShare}>
           <ShareIcon /><span>{props.shareLabel}</span>
@@ -80,6 +80,6 @@ export function EditorControls(props: Props) {
           </div>}
         </div>
       </div>
-    </header>
+    </div>
   );
 }
