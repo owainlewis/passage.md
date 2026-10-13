@@ -5180,7 +5180,7 @@ button {
 }
 .visualEditorContent > :first-child { margin-top: 0; }
 .visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
-  content: "Start writing…";
+  content: "Write, or type / for blocks…";
   color: var(--muted);
   pointer-events: none;
   position: absolute;
@@ -5511,4 +5511,66 @@ button {
 .topBarFocus > .editorControls {
   padding-inline: 0;
   background: transparent;
+}
+
+/* Slash commands keep block creation at the caret, with the editor retaining focus. */
+.blockCommandMenu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--elevated);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.875rem;
+}
+
+.blockCommandOptions {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.blockCommandOptions button {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.blockCommandOptions button[aria-selected="true"] {
+  background: var(--hover);
+}
+
+.blockCommandOptions strong {
+  font-weight: 550;
+}
+
+.blockCommandOptions span,
+.blockCommandHint,
+.blockCommandOptions > p {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.blockCommandOptions > p {
+  margin: 10px;
+}
+
+.blockCommandHint {
+  flex: 0 0 auto;
+  margin: 6px 4px 2px;
+  font-size: 0.75rem;
 }

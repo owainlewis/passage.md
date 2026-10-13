@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, waitFor } from "@testing-library/react";
-import { createVisualEditor, splitFrontmatter, UnsupportedMarkdown, type VisualEditorHandle } from "./visual-editor-runtime";
+import { createVisualEditor, splitFrontmatter, UnsupportedMarkdown, type VisualEditorHandle, type BlockMenuOptions } from "./visual-editor-runtime";
 
 // jsdom has no layout; ProseMirror scrolls its selection after commands.
 // Real selection geometry is covered by the browser checks.
@@ -11,12 +11,12 @@ beforeAll(() => {
 
 let handle: VisualEditorHandle | undefined;
 afterEach(async () => { await handle?.destroy(); handle = undefined; document.body.innerHTML = ""; });
-async function open(source: string) {
+async function open(source: string, blocks?: BlockMenuOptions) {
   const root = document.createElement("div");
   document.body.append(root);
   const change = vi.fn();
   const error = vi.fn();
-  handle = await createVisualEditor(root, source, change, vi.fn(), error);
+  handle = await createVisualEditor(root, source, change, vi.fn(), error, blocks);
   return { root, change, error, handle };
 }
 
@@ -98,5 +98,37 @@ describe("visual Markdown storage", () => {
     handle.setSource("# Remote replacement\n");
     expect(root.querySelector("h1")).toHaveTextContent("Remote replacement");
     expect(change).not.toHaveBeenCalled();
+  });
+});
+
+describe("slash block insertion", () => {
+  it.each([
+    ["paragraph", "p"], ["heading-1", "h1"], ["heading-2", "h2"], ["heading-3", "h3"],
+    ["bullet-list", "ul"], ["numbered-list", "ol"], ["task-list", 'input[type="checkbox"]'],
+    ["quote", "blockquote"], ["code", "pre"], ["divider", "hr"]
+  ] as const)("inserts %s while preserving metadata, trailing text, and neighbouring blocks", async (command, selector) => {
+    const menu = vi.fn();
+    const prefix = "---\ntags: [writing]\ncustom: keep\n---\n\n";
+    const { root, handle, change, error } = await open(prefix + "# Before\n\n/Keep this text\n\n## After\n", { onChange: menu, onKeyDown: () => false });
+    const input = root.querySelector<HTMLElement>('[role="textbox"]')!;
+    input.focus();
+    const range = document.createRange();
+    range.setStart(root.querySelector("p")!.firstChild!, 1);
+    range.collapse(true);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent(document, new Event("selectionchange"));
+    await waitFor(() => expect(menu).toHaveBeenLastCalledWith(expect.objectContaining({ query: "" })));
+    expect(handle.insertBlock(command)).toBe(true);
+    expect(root.querySelector(selector)).not.toBeNull();
+    expect(handle.source()).toMatch(/^---\ntags: \[writing\]\ncustom: keep\n---\n\n/);
+    expect(handle.source()).toContain("# Before");
+    expect(handle.source()).toContain("Keep this text");
+    expect(handle.source()).toContain("## After");
+    expect(handle.source()).not.toContain("/Keep");
+    expect(change).toHaveBeenCalledOnce();
+    expect(error).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "z", code: "KeyZ", ctrlKey: true });
+    expect(handle.source()).toContain("/Keep this text");
   });
 });

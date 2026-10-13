@@ -53,3 +53,67 @@ it("keeps all formatting controls available without selecting text or opening a 
   }
   expect(screen.queryByRole("button", { name: "Format text" })).not.toBeInTheDocument();
 });
+
+beforeAll(() => {
+  // jsdom has no caret geometry; menu placement is visually unverified.
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+});
+
+async function putCaretAtEnd(input: HTMLElement) {
+  input.focus();
+  const paragraph = input.querySelector("p")!;
+  const range = document.createRange();
+  range.selectNodeContents(paragraph);
+  range.collapse(false);
+  const selection = window.getSelection()!;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+}
+
+it("filters slash commands and applies a heading from the keyboard with undo", async () => {
+  const change = vi.fn();
+  render(<VisualEditor source={"/h2\n"} onChange={change} onSource={vi.fn()} />);
+  const input = await screen.findByRole("textbox", { name: "Visual editor" });
+  await act(async () => { await putCaretAtEnd(input); });
+  const menu = await screen.findByRole("listbox", { name: "Insert block" });
+  expect(menu).toHaveTextContent("Heading 2");
+  expect(screen.queryByRole("option", { name: "Bullet list" })).not.toBeInTheDocument();
+  expect(input).toHaveAttribute("aria-activedescendant", menu.querySelector<HTMLButtonElement>('[aria-label="Heading 2"]')!.id);
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(input.querySelector("h2")).not.toBeNull();
+  expect(input).not.toHaveTextContent("/h2");
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(input).toHaveFocus();
+  expect(change).toHaveBeenCalledOnce();
+  fireEvent.keyDown(input, { key: "z", code: "KeyZ", ctrlKey: true });
+  expect(input).toHaveTextContent("/h2");
+});
+
+it("dismisses slash commands with Escape without changing Markdown", async () => {
+  const change = vi.fn();
+  render(<VisualEditor source={"/\n"} onChange={change} onSource={vi.fn()} />);
+  const input = await screen.findByRole("textbox", { name: "Visual editor" });
+  await act(async () => { await putCaretAtEnd(input); });
+  await screen.findByRole("listbox", { name: "Insert block" });
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(input).toHaveTextContent("/");
+  expect(change).not.toHaveBeenCalled();
+  expect(input).toHaveFocus();
+});
+
+it("supports keyboard navigation and pointer insertion of a task block", async () => {
+  render(<VisualEditor source={"/list\n"} onChange={vi.fn()} onSource={vi.fn()} />);
+  const input = await screen.findByRole("textbox", { name: "Visual editor" });
+  await act(async () => { await putCaretAtEnd(input); });
+  await screen.findByRole("listbox", { name: "Insert block" });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(screen.getByRole("option", { name: "Numbered list" })).toHaveAttribute("aria-selected", "true");
+  fireEvent.click(screen.getByRole("option", { name: "To-do list" }));
+  expect(input.querySelector('input[type="checkbox"]')).not.toBeNull();
+  expect(input).not.toHaveTextContent("/list");
+  expect(input).toHaveFocus();
+});

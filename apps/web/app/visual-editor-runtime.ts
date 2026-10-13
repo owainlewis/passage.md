@@ -9,8 +9,16 @@ import { history } from "@milkdown/kit/plugin/history";
 import { cursor } from "@milkdown/kit/plugin/cursor";
 import { setBlockType, toggleMark } from "@milkdown/kit/prose/commands";
 import { closeHistory } from "@milkdown/kit/prose/history";
-import { EditorState } from "@milkdown/kit/prose/state";
+import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
+
+import type { BlockCommand } from "./editor-block-commands";
+
+export type BlockMenuState = { query: string; left: number; top: number };
+export type BlockMenuOptions = {
+  onChange: (state: BlockMenuState | null) => void;
+  onKeyDown: (event: KeyboardEvent) => boolean;
+};
 
 export type Formatting = { bold: boolean; italic: boolean; strike: boolean; code: boolean; heading: number };
 export type Format = "bold" | "italic" | "strike" | "code";
@@ -39,13 +47,15 @@ export async function createVisualEditor(
   source: string,
   onChange: (markdown: string) => void,
   onFormatting: (formatting: Formatting) => void,
-  onError: () => void
+  onError: () => void,
+  blockMenu?: BlockMenuOptions
 ) {
   let currentSource = source;
   let { prefix, markdown } = splitFrontmatter(source);
   let ready = false;
   let destroyed = false;
   let dispatchDepth = 0;
+  let dismissedBlock: number | null = null;
   const editor = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, root);
@@ -78,12 +88,22 @@ export async function createVisualEditor(
                 onChange(nextSource);
               }
               reportFormatting(this);
+              reportBlocks(this);
             }
           } catch {
             onError();
           } finally {
             dispatchDepth -= 1;
           }
+        },
+        handleKeyDown(view, event) {
+          const range = blockRange(view);
+          if (view.composing || event.isComposing || !range || dismissedBlock === range.block) return false;
+          return blockMenu?.onKeyDown(event) ?? false;
+        },
+        handleDOMEvents: {
+          focus(view) { reportBlocks(view); return false; },
+          blur() { blockMenu?.onChange(null); return false; }
         },
         handleClick(_view, _pos, event) {
           // Links are edited here; Preview is the surface for following them.
@@ -126,6 +146,32 @@ export async function createVisualEditor(
       };
     }));
 
+  function blockRange(view: EditorView) {
+    const { empty, from, $from } = view.state.selection;
+    // Blocks are inserted from a top-level paragraph, never inside code or links.
+    if (!empty || $from.depth !== 1 || $from.parent.type.name !== "paragraph") return null;
+    const text = $from.parent.textBetween(0, $from.parentOffset, "", "\ufffc");
+    if (!/^\/[^\/\n]{0,40}$/.test(text)) return null;
+    return { from: $from.start(), to: from, block: $from.before(), query: text.slice(1) };
+  }
+
+  function reportBlocks(view: EditorView) {
+    if (!blockMenu || !ready || destroyed) return;
+    const range = blockRange(view);
+    if (!range) dismissedBlock = null;
+    if (!range || !view.hasFocus() || dismissedBlock === range.block) {
+      blockMenu.onChange(null);
+      return;
+    }
+    // A temporary layout failure should close the menu, not stop editing.
+    try {
+      const caret = view.coordsAtPos(view.state.selection.from);
+      blockMenu.onChange({ query: range.query, left: caret.left, top: caret.bottom });
+    } catch {
+      blockMenu.onChange(null);
+    }
+  }
+
   function reportFormatting(view: EditorView) {
     const { from, to, empty, $from } = view.state.selection;
     const marks = view.state.storedMarks ?? $from.marks();
@@ -149,9 +195,52 @@ export async function createVisualEditor(
     assertCompatible(markdown, editor.ctx.get(serializerCtx)(view.state.doc));
     ready = true;
     reportFormatting(view);
+    const reposition = () => reportBlocks(view);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
     return {
       source: () => currentSource,
-      focus: () => view.focus(),
+      focus() { view.focus(); reportBlocks(view); },
+      dismissBlocks() {
+        dismissedBlock = blockRange(view)?.block ?? null;
+        blockMenu?.onChange(null);
+      },
+      setBlockSelection(listId: string | null, optionId: string | null) {
+        for (const [name, value] of [["aria-controls", listId], ["aria-activedescendant", optionId]] as const) {
+          if (value) view.dom.setAttribute(name, value);
+          else view.dom.removeAttribute(name);
+        }
+      },
+      insertBlock(command: BlockCommand) {
+        const range = blockRange(view);
+        if (!range) return false;
+        const { schema } = view.state;
+        const tr = closeHistory(view.state.tr).delete(range.from, range.to);
+        const paragraph = tr.doc.nodeAt(range.block)!;
+        let replacement = paragraph;
+        if (command.startsWith("heading-")) {
+          replacement = schema.nodes.heading.create({ level: Number(command.slice(-1)) }, paragraph.content);
+        } else if (["bullet-list", "numbered-list", "task-list"].includes(command)) {
+          const ordered = command === "numbered-list";
+          const item = schema.nodes.list_item.create({
+            listType: ordered ? "ordered" : "bullet", label: ordered ? "1." : "•",
+            spread: false, checked: command === "task-list" ? false : null
+          }, paragraph);
+          replacement = schema.nodes[ordered ? "ordered_list" : "bullet_list"].create(null, item);
+        } else if (command === "quote") {
+          replacement = schema.nodes.blockquote.create(null, paragraph);
+        } else if (command === "code") {
+          replacement = schema.nodes.code_block.create(null, paragraph.textContent ? schema.text(paragraph.textContent) : null);
+        }
+        const nodes = command === "divider" ? [schema.nodes.hr.create(), paragraph] : [replacement];
+        tr.replaceWith(range.block, range.block + paragraph.nodeSize, nodes);
+        const caret = range.block + (command === "divider" ? nodes[0].nodeSize : 0) + 1;
+        tr.setSelection(TextSelection.near(tr.doc.resolve(caret)));
+        dismissedBlock = null;
+        view.dispatch(tr.scrollIntoView());
+        view.focus();
+        return true;
+      },
       format(format: Format) {
         view.dispatch(closeHistory(view.state.tr));
         const name = { bold: "strong", italic: "emphasis", strike: "strike_through", code: "inlineCode" }[format];
@@ -172,16 +261,20 @@ export async function createVisualEditor(
         // External replacements (including conflict recovery) start a fresh
         // history. Undo must never restore a discarded remote version.
         ready = false;
+        dismissedBlock = null;
         view.updateState(EditorState.create({ schema: view.state.schema, doc, plugins: view.state.plugins }));
         ready = true;
         prefix = next.prefix;
         markdown = next.markdown;
         currentSource = nextSource;
         reportFormatting(view);
+        reportBlocks(view);
       },
       async destroy() {
         destroyed = true;
         ready = false;
+        window.removeEventListener("scroll", reposition, true);
+        window.removeEventListener("resize", reposition);
         await editor.destroy();
       }
     };
