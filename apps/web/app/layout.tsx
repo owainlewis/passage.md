@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Castoro, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Libre_Baskerville, Inter, IBM_Plex_Mono } from "next/font/google";
 import { AppProviders } from "./app-providers";
 import { THEME_BOOT_SCRIPT } from "./theme";
 import "./globals.css";
@@ -10,9 +10,9 @@ const sans = Inter({
   display: "swap"
 });
 
-const serif = Castoro({
+const serif = Libre_Baskerville({
   subsets: ["latin"],
-  weight: "400",
+  weight: ["400", "700"],
   style: ["normal", "italic"],
   variable: "--font-serif",
   display: "swap"
