@@ -291,13 +291,6 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   );
 });
 
-it("keeps inline formatting in reach without letting text show through it", () => {
-  const dock = declarationsFor(".formatBarDock");
-  expect(dock).toContain("position: sticky;");
-  expect(dock).toContain("top: calc(-1 * var(--writing-pad-top, 0px));");
-  expect(dock).toContain("background: var(--surface);");
-  expect(declarationsFor(".formatBar")).not.toContain("position: fixed;");
-});
 
 it("uses one sidebar width at every breakpoint", () => {
   expect(stylesheet).not.toMatch(/268px/);

@@ -7,7 +7,7 @@ import { listItemSchema, commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { history } from "@milkdown/kit/plugin/history";
 import { cursor } from "@milkdown/kit/plugin/cursor";
-import { setBlockType, toggleMark } from "@milkdown/kit/prose/commands";
+import { setBlockType } from "@milkdown/kit/prose/commands";
 import { closeHistory } from "@milkdown/kit/prose/history";
 import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
@@ -20,8 +20,6 @@ export type BlockMenuOptions = {
   onKeyDown: (event: KeyboardEvent) => boolean;
 };
 
-export type Formatting = { bold: boolean; italic: boolean; strike: boolean; code: boolean; heading: number };
-export type Format = "bold" | "italic" | "strike" | "code";
 
 // Keep metadata byte-for-byte outside the visual editor's parser/serializer.
 export function splitFrontmatter(source: string) {
@@ -46,7 +44,6 @@ export async function createVisualEditor(
   root: HTMLElement,
   source: string,
   onChange: (markdown: string) => void,
-  onFormatting: (formatting: Formatting) => void,
   onError: () => void,
   blockMenu?: BlockMenuOptions
 ) {
@@ -67,9 +64,8 @@ export async function createVisualEditor(
           "aria-multiline": "true",
           spellcheck: "true"
         },
-        // Keep the caret clear of the sticky formatting shelf, including its
-        // 44px touch targets, when scrolling to it.
-        scrollMargin: { top: 72, right: 5, bottom: 24, left: 5 },
+        // Keep a small breathing space around the caret while scrolling.
+        scrollMargin: { top: 24, right: 5, bottom: 24, left: 5 },
         dispatchTransaction(this: EditorView, transaction) {
           if (!ready || destroyed) return;
           dispatchDepth += 1;
@@ -87,7 +83,6 @@ export async function createVisualEditor(
                 currentSource = nextSource;
                 onChange(nextSource);
               }
-              reportFormatting(this);
               reportBlocks(this);
             }
           } catch {
@@ -172,16 +167,6 @@ export async function createVisualEditor(
     }
   }
 
-  function reportFormatting(view: EditorView) {
-    const { from, to, empty, $from } = view.state.selection;
-    const marks = view.state.storedMarks ?? $from.marks();
-    const has = (name: string) => {
-      const type = view.state.schema.marks[name];
-      return Boolean(type && (empty ? marks.some((mark) => mark.type === type) : view.state.doc.rangeHasMark(from, to, type)));
-    };
-    onFormatting({ bold: has("strong"), italic: has("emphasis"), strike: has("strike_through"), code: has("inlineCode"), heading: $from.parent.type.name === "heading" ? $from.parent.attrs.level : 0 });
-  }
-
   function assertCompatible(input: string, serialized: string) {
     const remark = editor.ctx.get(remarkCtx);
     if (JSON.stringify(semanticTree(remark.parse(input))) !== JSON.stringify(semanticTree(remark.parse(serialized)))) {
@@ -194,7 +179,6 @@ export async function createVisualEditor(
     const view = editor.ctx.get(editorViewCtx);
     assertCompatible(markdown, editor.ctx.get(serializerCtx)(view.state.doc));
     ready = true;
-    reportFormatting(view);
     const reposition = () => reportBlocks(view);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
@@ -241,12 +225,6 @@ export async function createVisualEditor(
         view.focus();
         return true;
       },
-      format(format: Format) {
-        view.dispatch(closeHistory(view.state.tr));
-        const name = { bold: "strong", italic: "emphasis", strike: "strike_through", code: "inlineCode" }[format];
-        toggleMark(view.state.schema.marks[name])(view.state, view.dispatch);
-        view.focus();
-      },
       heading(level: number) {
         view.dispatch(closeHistory(view.state.tr));
         const type = level ? view.state.schema.nodes.heading : view.state.schema.nodes.paragraph;
@@ -267,7 +245,6 @@ export async function createVisualEditor(
         prefix = next.prefix;
         markdown = next.markdown;
         currentSource = nextSource;
-        reportFormatting(view);
         reportBlocks(view);
       },
       async destroy() {

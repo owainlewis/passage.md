@@ -16,7 +16,7 @@ async function open(source: string, blocks?: BlockMenuOptions) {
   document.body.append(root);
   const change = vi.fn();
   const error = vi.fn();
-  handle = await createVisualEditor(root, source, change, vi.fn(), error, blocks);
+  handle = await createVisualEditor(root, source, change, error, blocks);
   return { root, change, error, handle };
 }
 

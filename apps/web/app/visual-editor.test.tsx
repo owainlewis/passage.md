@@ -15,7 +15,7 @@ it("mounts once under Strict Mode and synchronizes edits without losing typed te
   act(() => { input.querySelector("h1")!.textContent = "Finished draft"; fireEvent.input(input); });
   await waitFor(() => expect(change).toHaveBeenLastCalledWith("# Finished draft\n"));
   expect(input).toHaveTextContent("Finished draft");
-  fireEvent.change(screen.getByRole("combobox", { name: "Paragraph style" }), { target: { value: "2" } });
+  fireEvent.keyDown(input, { key: "2", code: "Digit2", ctrlKey: true, altKey: true });
   expect(change).toHaveBeenLastCalledWith("## Finished draft\n");
 });
 
@@ -23,7 +23,7 @@ it("replaces remote content without autosaving it or resurrecting it with undo",
   const change = vi.fn();
   const view = render(<VisualEditor source="# First\n" onChange={change} onSource={vi.fn()} />);
   const input = await screen.findByRole("textbox", { name: "Visual editor" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Paragraph style" }), { target: { value: "2" } });
+  fireEvent.keyDown(input, { key: "2", code: "Digit2", ctrlKey: true, altKey: true });
   change.mockClear();
   view.rerender(<VisualEditor source="# Latest from agent\n" onChange={change} onSource={vi.fn()} />);
   expect(input).toHaveTextContent("Latest from agent");
@@ -43,15 +43,23 @@ it("offers Source without saving a document that cannot round-trip", async () =>
 });
 
 
-it("keeps all formatting controls available without selecting text or opening a menu", async () => {
-  render(<VisualEditor source="A quiet space to write.\n" onChange={vi.fn()} onSource={vi.fn()} />);
-  await screen.findByRole("textbox", { name: "Visual editor" });
-  expect(screen.getByRole("group", { name: "Text formatting" })).toBeVisible();
-  expect(screen.getByRole("combobox", { name: "Paragraph style" })).toBeVisible();
-  for (const name of ["Bold", "Italic", "Strikethrough", "Inline code"]) {
-    expect(screen.getByRole("button", { name })).toBeVisible();
-  }
-  expect(screen.queryByRole("button", { name: "Format text" })).not.toBeInTheDocument();
+it("uses slash commands and keyboard shortcuts without a persistent formatting toolbar", async () => {
+  const change = vi.fn();
+  render(<VisualEditor source={"A quiet space to write.\n"} onChange={change} onSource={vi.fn()} />);
+  const input = await screen.findByRole("textbox", { name: "Visual editor" });
+  expect(screen.queryByRole("group", { name: "Text formatting" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Paragraph style" })).not.toBeInTheDocument();
+  expect(document.querySelector(".formatBarDock")).toBeNull();
+  input.focus();
+  const range = document.createRange();
+  range.selectNodeContents(input.querySelector("p")!);
+  window.getSelection()!.removeAllRanges();
+  window.getSelection()!.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+  fireEvent.keyDown(input, { key: "b", code: "KeyB", ctrlKey: true });
+  expect(input.querySelector("strong")).toHaveTextContent("A quiet space to write.");
+  expect(change).toHaveBeenCalled();
 });
 
 beforeAll(() => {
