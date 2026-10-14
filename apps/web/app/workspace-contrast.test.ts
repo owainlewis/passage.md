@@ -115,9 +115,10 @@ describe("light workspace contrast", () => {
     expect(declarationsFor(".documentActionsMenu")).toContain("border: 1px solid var(--hairline-strong)");
     expect(declarationsFor(".editorStatus")).toContain("color: var(--muted)");
 
-    for (const selector of [".workspaceSidebarSearch > button", ".workspaceSearchButton"]) {
-      expect(declarationsFor(selector)).toContain("var(--hairline-strong)");
-    }
+    expect(declarationsFor(".workspaceSearchButton")).toContain("var(--hairline-strong)");
+    // Sidebar search is a labelled ghost action, like the other navigation items.
+    expect(declarationsFor(".workspaceSidebarSearch > button")).toContain("color: var(--muted)");
+    expect(declarationsFor(".workspaceSidebarSearch > button")).toContain("border: 0;");
 
     // The toolbar collection control is a ghost button at rest, matching the
     // icon buttons beside it, so its 3:1 boundary belongs to hover and focus.

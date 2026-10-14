@@ -24,6 +24,6 @@
   "overrides": {
     "brace-expansion": "$brace-expansion",
     "postcss@8.4.31": "8.5.24",
-    "sharp@0.34.5": "0.35.3"
+    "sharp@0.34.5": "0.35.5"
   }
 }

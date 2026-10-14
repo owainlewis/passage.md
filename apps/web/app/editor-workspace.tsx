@@ -31,6 +31,8 @@ type EditorWorkspaceProps = {
   /** Search is reachable from the sidebar or mobile navigation. */
   searchVisible?: boolean;
   view: WorkspaceView;
+  onNewDocument?: () => void;
+  newDocumentDisabled?: boolean;
   onCreateCollection: (title: string, description: string) => Promise<string | null>;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenCollection: (slug: string) => void;
@@ -56,12 +58,13 @@ export function EditorWorkspace({
   saveState,
   searchVisible = false,
   view,
+  onNewDocument,
+  newDocumentDisabled = false,
   onCreateCollection,
   onDeleteCollection,
   onOpenCollection,
   onOpenDocument,
   onOpenSearch,
-  onOpenView,
   onUpdateCollection,
   hasMoreDocs,
   loadingMore,
@@ -85,10 +88,12 @@ export function EditorWorkspace({
         collections={collections}
         docs={docs}
         deletedCollections={deletedCollections}
-        onOpenCollection={onOpenCollection}
         onOpenDocument={onOpenDocument}
         onOpenSearch={onOpenSearch}
-        onOpenView={onOpenView}
+        onNewDocument={onNewDocument}
+        newDocumentDisabled={newDocumentDisabled}
+        onToggleStar={onToggleStar}
+        pendingDocIds={pendingDocIds}
         searchVisible={searchVisible}
       />
     );
@@ -175,65 +180,62 @@ function WorkspaceHome({
   collections,
   docs,
   deletedCollections,
-  onOpenCollection,
   onOpenDocument,
   onOpenSearch,
-  onOpenView,
+  onNewDocument,
+  newDocumentDisabled,
+  onToggleStar,
+  pendingDocIds,
   searchVisible
 }: {
   assignments: Record<string, string>;
   collections: WorkspaceCollection[];
   docs: Doc[];
   deletedCollections: string[];
-  onOpenCollection: (slug: string) => void;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
-  onOpenView: (view: WorkspaceView) => void;
+  onNewDocument?: () => void;
+  newDocumentDisabled: boolean;
+  onToggleStar: (id: string) => Promise<boolean>;
+  pendingDocIds: Set<string>;
   searchVisible: boolean;
 }) {
-  const starred = docs.filter((doc) => doc.pinned).slice(0, 4);
-  const recent = recentDocs(docs).slice(0, 6);
-  // Every row would repeat the same label while Documents is the only collection.
-  const showCollectionLabel = collections.length > 1;
-
   return (
     <div className="workspaceHub workspaceHome" aria-label="Workspace home">
       <header className="workspaceHero">
-        <h1>Home</h1>
-        <p>Markdown, organised for writing and reuse.</p>
+        <div className="workspacePageHeaderLine">
+          <h1>Home</h1>
+          {onNewDocument && (
+            <button className="workspaceNewDocument" type="button" disabled={newDocumentDisabled} onClick={onNewDocument}>
+              New document
+            </button>
+          )}
+        </div>
         {!searchVisible && (
           <div className="workspaceHeroActions">
             <button type="button" className="workspaceSearchButton" onClick={onOpenSearch}>
               <SearchIcon />
-              <span>Search {docs.length} {docs.length === 1 ? "document" : "documents"}</span>
+              <span>Search documents</span>
               <kbd>⌘ K</kbd>
             </button>
           </div>
         )}
       </header>
 
-      {starred.length > 0 && (
-        <section className="workspaceSection">
-          <WorkspaceSectionHeading title="Starred" action="View all" onAction={() => onOpenView({ type: "starred" })} />
-          <WorkspaceDocumentRows assignments={assignments} collections={collections} docs={starred} deletedCollections={deletedCollections} showCollectionLabel={showCollectionLabel} onOpenDocument={onOpenDocument} />
-        </section>
-      )}
-
-      <section className="workspaceSection">
-        <WorkspaceSectionHeading title="Collections" action="View all" onAction={() => onOpenView({ type: "collections" })} />
-        <CollectionGrid assignments={assignments} collections={collections} docs={docs} deletedCollections={deletedCollections} onOpenCollection={onOpenCollection} />
-      </section>
-
-      <section className="workspaceSection">
-        <WorkspaceSectionHeading title="Recent" action="View all" onAction={() => onOpenView({ type: "recent" })} />
+      <section className="workspaceSection" aria-label="Recently updated documents">
+        <WorkspaceSectionHeading title="Recently updated" />
         <WorkspaceDocumentRows
           assignments={assignments}
           collections={collections}
-          docs={recent}
+          docs={recentDocs(docs)}
           deletedCollections={deletedCollections}
-          showCollectionLabel={showCollectionLabel}
+          showCollectionLabel={collections.length > 1}
+          showActions
+          onToggleStar={onToggleStar}
+          pendingDocIds={pendingDocIds}
           onOpenDocument={onOpenDocument}
         />
+        {docs.length === 0 && <p className="workspaceHomeEmptyHint">Create your first document to start writing.</p>}
       </section>
     </div>
   );

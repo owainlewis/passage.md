@@ -477,6 +477,26 @@ export default function Editor() {
   const collectionListVisible = !focusMode && hasCollectionList && (narrowLayout ? documentListOpen : sidebarOpen);
   const sidebarSearchVisible = sidebarOpen || mobileLayout;
 
+  const documentControls = showResolvedDocument && docsReady && active?.bodyLoaded && <EditorControls
+    key={active.id}
+    mode={mode}
+    onModeChange={setMode}
+    focusMode={focusMode}
+    onToggleFocus={() => { closeMenu(); setFocusEnabled(!focusMode); }}
+    onCopy={() => void copyDocument()}
+    onExport={exportDoc}
+    onDelete={canDeleteActive ? () => setDeleteDialogDocId(active.id) : undefined}
+    deleteDisabled={collectionState.pendingDocIds.has(active.id)}
+    onCopyLink={activeShared && publicDocPath ? () => void copyShareLink() : undefined}
+    onShare={() => {
+      if (!activeShared && !entitlements.can("shareLinks")) { void shareDoc(); return; }
+      setShareDialogDocId(active.id);
+    }}
+    shareLabel={shareButtonLabel}
+    shareState={shareState}
+    shareOpen={shareDialogOpen}
+  />;
+
   return (
     <div className={`workspace ${sidebarOpen && !focusMode ? "withSidebar" : ""} ${focusMode ? "focusMode" : ""}`}>
       {!focusMode && <EditorSidebar
@@ -520,133 +540,116 @@ export default function Editor() {
         </div>
       )}
       <div className="main" inert={searchOpen ? true : undefined}>
-        {!focusMode && <header className="topBar">
-          <div className="topCluster">
-            <button
-              type="button"
-              className="iconButton"
-              aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-              aria-pressed={sidebarOpen}
-              onClick={() => {
-                // On phones the sidebar and the list both overlay the page.
-                if (!sidebarOpen && mobileLayout) setDocumentListOpen(false);
-                setSidebarOpen(!sidebarOpen);
-              }}
-            >
-              <SidebarIcon />
-            </button>
-            {!collectionListVisible && (
+        <header className={`topBar ${focusMode ? "topBarFocus" : showResolvedDocument ? "topBarDocument" : ""}`}>
+          {!focusMode && <>
+            <div className="topCluster">
               <button
                 type="button"
                 className="iconButton"
-                aria-label="New document"
-                disabled={!docsReady || creatingDocument}
-                onClick={createBlankDocument}
-              >
-                <PlusIcon />
-              </button>
-            )}
-          </div>
-
-          {showTopBarTitle
-            ? <h1 className="docTitle" title={workspaceTitle}>{workspaceTitle}</h1>
-            : <span className="docTitle" aria-hidden="true" />}
-
-          <div className="topCluster end">
-            {hasCollectionList && narrowLayout && (
-              <button
-                type="button"
-                className="iconButton collectionListToggle"
-                aria-label="Document list"
-                aria-expanded={documentListOpen}
-                aria-controls={documentListOpen ? "collection-document-list" : undefined}
-                title={documentListOpen ? "Hide document list" : "Show document list"}
+                aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                aria-pressed={sidebarOpen}
                 onClick={() => {
-                  if (!documentListOpen && mobileLayout) setSidebarOpen(false);
-                  setDocumentListOpen(!documentListOpen);
+                  // On phones the sidebar and the list both overlay the page.
+                  if (!sidebarOpen && mobileLayout) setDocumentListOpen(false);
+                  setSidebarOpen(!sidebarOpen);
                 }}
               >
-                <ListIcon />
+                <SidebarIcon />
               </button>
-            )}
-            {showResolvedDocument && active && (
-              <>
-                <span className="topBarCollection" title="Move to collection">
-                  <FolderIcon />
-                  <select
-                    className="topBarCollectionSelect"
-                    aria-label={`Collection for ${title}`}
-                    value={activeCollection}
-                    disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
-                    onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
-                  >
-                    {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
-                  </select>
-                </span>
+              {!collectionListVisible && (workspaceView.type !== "home" || !docsReady || collectionState.loading) && (
                 <button
                   type="button"
                   className="iconButton"
-                  aria-label={active.pinned ? "Unstar document" : "Star document"}
-                  disabled={collectionState.pendingDocIds.has(active.id)}
-                  onClick={() => void collectionState.toggleStar(active.id)}
+                  aria-label="New document"
+                  disabled={!docsReady || creatingDocument}
+                  onClick={createBlankDocument}
                 >
-                  <StarIcon filled={Boolean(active.pinned)} />
+                  <PlusIcon />
                 </button>
-
-              </>
-            )}
-            <div className="userMenuWrap">
-              <button
-                type="button"
-                className="iconButton userButton"
-                aria-label="Account"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
-              >
-                <UserIcon />
-              </button>
-              {menuOpen && (
-                <>
-                  <div className="menuOverlay" onClick={closeMenu} aria-hidden="true" />
-                  <div className="userMenu" role="menu">
-                    <div className="menuAccount">
-                      <span className="menuAccountLabel">Signed in</span>
-                      <span className="menuAccountEmail">{auth.user?.email}</span>
-                    </div>
-                    {authError && <p className="authError">{authError}</p>}
-                    <Link className="menuItem" role="menuitem" href="/account" onClick={closeMenu}>
-                      Account settings
-                    </Link>
-                    <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
-                      Sign out
-                    </button>
-                  </div>
-                </>
               )}
             </div>
-          </div>
-        </header>}
 
-        {showResolvedDocument && docsReady && active?.bodyLoaded && <EditorControls
-          key={active.id}
-          mode={mode}
-          onModeChange={setMode}
-          focusMode={focusMode}
-          onToggleFocus={() => { closeMenu(); setFocusEnabled(!focusMode); }}
-          onCopy={() => void copyDocument()}
-          onExport={exportDoc}
-          onDelete={canDeleteActive ? () => setDeleteDialogDocId(active.id) : undefined}
-          deleteDisabled={collectionState.pendingDocIds.has(active.id)}
-          onCopyLink={activeShared && publicDocPath ? () => void copyShareLink() : undefined}
-          onShare={() => {
-            if (!activeShared && !entitlements.can("shareLinks")) { void shareDoc(); return; }
-            setShareDialogDocId(active.id);
-          }}
-          shareLabel={shareButtonLabel}
-          shareState={shareState}
-          shareOpen={shareDialogOpen}
-        />}
+            {showTopBarTitle
+              ? <h1 className="docTitle" title={workspaceTitle}>{workspaceTitle}</h1>
+              : <span className="docTitle" aria-hidden="true" />}
+
+            <div className="topCluster end">
+              {hasCollectionList && narrowLayout && (
+                <button
+                  type="button"
+                  className="iconButton collectionListToggle"
+                  aria-label="Document list"
+                  aria-expanded={documentListOpen}
+                  aria-controls={documentListOpen ? "collection-document-list" : undefined}
+                  title={documentListOpen ? "Hide document list" : "Show document list"}
+                  onClick={() => {
+                    if (!documentListOpen && mobileLayout) setSidebarOpen(false);
+                    setDocumentListOpen(!documentListOpen);
+                  }}
+                >
+                  <ListIcon />
+                </button>
+              )}
+              {showResolvedDocument && active && (
+                <>
+                  <span className="topBarCollection" title="Move to collection">
+                    <FolderIcon />
+                    <select
+                      className="topBarCollectionSelect"
+                      aria-label={`Collection for ${title}`}
+                      value={activeCollection}
+                      disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
+                      onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
+                    >
+                      {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
+                    </select>
+                  </span>
+                  <button
+                    type="button"
+                    className="iconButton"
+                    aria-label={active.pinned ? "Unstar document" : "Star document"}
+                    disabled={collectionState.pendingDocIds.has(active.id)}
+                    onClick={() => void collectionState.toggleStar(active.id)}
+                  >
+                    <StarIcon filled={Boolean(active.pinned)} />
+                  </button>
+
+                </>
+              )}
+              <div className="userMenuWrap">
+                <button
+                  type="button"
+                  className="iconButton userButton"
+                  aria-label="Account"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
+                >
+                  <UserIcon />
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="menuOverlay" onClick={closeMenu} aria-hidden="true" />
+                    <div className="userMenu" role="menu">
+                      <div className="menuAccount">
+                        <span className="menuAccountLabel">Signed in</span>
+                        <span className="menuAccountEmail">{auth.user?.email}</span>
+                      </div>
+                      {authError && <p className="authError">{authError}</p>}
+                      <Link className="menuItem" role="menuitem" href="/account" onClick={closeMenu}>
+                        Account settings
+                      </Link>
+                      <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
+                        Sign out
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </>}
+          {documentControls}
+        </header>
 
         {saveConflict && active && saveConflict.id === active.id && (
           <div className="conflictNotice" role="alert">
@@ -757,6 +760,8 @@ export default function Editor() {
             saveState={collectionState.loading ? "loading" : saveState}
             searchVisible={sidebarSearchVisible}
             view={workspaceView}
+            onNewDocument={createBlankDocument}
+            newDocumentDisabled={!docsReady || creatingDocument}
             onCreateCollection={createCollection}
             onDeleteCollection={deleteCollection}
             onOpenCollection={openCollection}

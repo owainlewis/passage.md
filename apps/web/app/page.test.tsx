@@ -814,7 +814,7 @@ describe("Write (editor)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Session could not be loaded.");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByRole("button", { name: /Retried session/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Retried session/ })).toBeInTheDocument();
     expect(sessionRequests).toBe(3);
   });
 
@@ -844,7 +844,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByRole("button", { name: /Recovered session/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Recovered session/ })).toBeInTheDocument();
     expect(sessionRequests).toBe(2);
   });
 
@@ -910,7 +910,7 @@ describe("Write (editor)", () => {
       })
     );
 
-    expect(await screen.findByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Agent notes/ })).toBeInTheDocument();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
   });
 
@@ -1930,7 +1930,7 @@ describe("Write (editor)", () => {
     expect(newDocumentButton()).toHaveAccessibleName("New document");
   });
 
-  it("reopens the sidebar and list when a collection card is chosen with the sidebar hidden", async () => {
+  it("reopens the sidebar and list when a collection is chosen from the collections view", async () => {
     stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
     await renderWrite();
@@ -1938,8 +1938,11 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
     expect(screen.getByRole("button", { name: "Show sidebar" })).toHaveAttribute("aria-pressed", "false");
 
-    const home = screen.getByLabelText("Workspace home");
-    fireEvent.click(within(home).getByRole("button", { name: /^Research/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    const collections = screen.getByLabelText("Collections");
+    fireEvent.click(within(collections).getByRole("button", { name: /^Research/ }));
 
     expect(screen.getByRole("button", { name: "Hide sidebar" })).toHaveAttribute("aria-pressed", "true");
     expect(collectionDocuments("Research")).toBeInTheDocument();
@@ -3386,7 +3389,7 @@ describe("Write (editor)", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1", { credentials: "include" });
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/docs/doc-2", expect.anything());
 
-    const second = await screen.findByRole("button", { name: /Second/ });
+    const second = await screen.findByRole("button", { name: /^Second/ });
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50&cursor=page-two", { credentials: "include" });
 
     openWorkspaceSearch();
@@ -3594,7 +3597,7 @@ describe("Write (editor)", () => {
     expect(screen.getByText("Some documents could not be indexed. Load the next page to try again.")).toBeInTheDocument();
     fireEvent.click(retry);
 
-    expect(await screen.findByRole("button", { name: /Recovered document/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Recovered document/ })).toBeInTheDocument();
     expect(laterPageRequests).toBe(2);
     expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
   });
@@ -3884,12 +3887,12 @@ describe("Write (editor)", () => {
       </AppProviders>
     );
 
-    expect(await screen.findByRole("button", { name: /First account/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^First account/ })).toBeInTheDocument();
     await waitFor(() => expect(resolveOldPage).toBeDefined());
 
     window.dispatchEvent(new Event("focus"));
 
-    expect(await screen.findByRole("button", { name: /Second account/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Second account/ })).toBeInTheDocument();
     resolveOldPage?.(
       new Response(
         JSON.stringify({ documents: [{ id: "doc-private", title: "Private old account metadata", excerpt: "Private" }] }),
@@ -3899,7 +3902,7 @@ describe("Write (editor)", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     expect(screen.queryByText("Private old account metadata")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /First account/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^First account/ })).not.toBeInTheDocument();
   });
 
   it("creates a server share link for a signed-in document", async () => {
@@ -3988,18 +3991,52 @@ describe("Write (editor)", () => {
 });
 
 describe("visual writing and collection navigation", () => {
+  it("creates from the labelled Home action and prevents duplicate pending requests", async () => {
+    const baseFetch = stubSignedInFetch();
+    let finishCreate: (() => Promise<void>) | undefined;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs" && init?.method === "POST") {
+        return new Promise<Response>((resolve) => {
+          finishCreate = async () => resolve(await baseFetch(input, init));
+        });
+      }
+      return baseFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Write />);
+    const home = await screen.findByLabelText("Workspace home");
+    const create = within(home).getByRole("button", { name: "New document" });
+    expect(create).toHaveTextContent("New document");
+    expect(screen.getAllByRole("button", { name: "New document" })).toHaveLength(1);
+    fireEvent.click(create);
+    expect(create).toBeDisabled();
+    fireEvent.click(create);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/v1/docs" && init?.method === "POST")).toHaveLength(1);
+    await act(async () => { await finishCreate!(); });
+    expect(await screen.findByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/write/public-2");
+  });
+
   it("moves modes to the header and restores the layout after focus mode", async () => {
     stubSignedInFetch();
     await renderWrite();
-    const header = screen.getByRole("banner", { name: "Document controls" });
+    const header = screen.getByRole("group", { name: "Document controls" });
     expect(within(header).getByRole("button", { name: "Write" })).toBeInTheDocument();
     expect(within(screen.getByRole("contentinfo", { name: "Editor status" })).queryByRole("button")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter focus mode" }));
+    const focusButton = screen.getByRole("button", { name: "Enter focus mode" });
+    focusButton.focus();
+    fireEvent.click(focusButton);
+    expect(screen.getByRole("button", { name: "Exit focus mode" })).toBe(focusButton);
+    expect(focusButton).toHaveFocus();
     expect(screen.queryByRole("complementary", { name: "Workspace navigation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /^Documents in/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Source" }));
     expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue(defaultDocBody);
-    fireEvent.click(screen.getByRole("button", { name: "Exit focus mode" }));
+    const exitFocus = screen.getByRole("button", { name: "Exit focus mode" });
+    exitFocus.focus();
+    fireEvent.click(exitFocus);
+    expect(screen.getByRole("button", { name: "Enter focus mode" })).toBe(exitFocus);
+    expect(exitFocus).toHaveFocus();
     expect(screen.getByRole("complementary", { name: "Workspace navigation" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /^Documents in/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));

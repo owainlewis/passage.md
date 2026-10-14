@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { EditorWorkspace } from "./editor-workspace";
 import type { Doc } from "./editor-model";
@@ -15,7 +15,7 @@ function declarationsFor(selector: string) {
   return match![1].replace(/\s+/g, " ");
 }
 
-function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[], searchVisible = true) {
+function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[], searchVisible = true, view: Parameters<typeof EditorWorkspace>[0]["view"] = { type: "home" }) {
   return (
     <EditorWorkspace
       assignments={{}}
@@ -25,7 +25,7 @@ function homeWorkspace(collections: WorkspaceCollection[], docs: Doc[], searchVi
       deletedCollections={[]}
       saveState="saved"
       searchVisible={searchVisible}
-      view={{ type: "home" }}
+      view={view}
       onCreateCollection={vi.fn()}
       onDeleteCollection={vi.fn()}
       onOpenCollection={vi.fn()}
@@ -111,7 +111,6 @@ it("keeps every home section on one left edge with the sidebar open or closed", 
   expect(home).toHaveClass("workspaceHome");
   expect(Array.from(home.children).map((child) => child.className)).toEqual([
     "workspaceHero",
-    "workspaceSection",
     "workspaceSection"
   ]);
   // Every child of the hub takes the same measure, so no element can drift
@@ -159,17 +158,12 @@ it("keeps list rows to opening and starring, with no per-row collection picker",
   expect(document.querySelector(".workspaceDocumentActions select")).toBeNull();
 });
 
-it("keeps the virtual Documents view and empty sections readable", () => {
+it("shows one useful empty state without duplicate navigation sections", () => {
   render(homeWorkspace(WORKSPACE_COLLECTIONS, []));
   const home = screen.getByLabelText("Workspace home");
-  const collections = within(home).getByRole("heading", { name: "Collections" }).closest("section")!;
-  const recent = within(home).getByRole("heading", { name: "Recent" }).closest("section")!;
-
-  expect(within(collections).getAllByRole("button")).toHaveLength(2);
-  expect(within(collections).getByRole("button", { name: /Documents0 documents/ })).toHaveTextContent(
-    "General Markdown that has not been assigned to another collection."
-  );
-  expect(within(recent).getByText("No documents yet.")).toBeInTheDocument();
+  expect(within(home).queryByRole("heading", { name: "Collections" })).not.toBeInTheDocument();
+  expect(within(home).queryByRole("heading", { name: "Starred" })).not.toBeInTheDocument();
+  expect(within(home).getByText("Create your first document to start writing.")).toBeInTheDocument();
 });
 
 it("titles Home as Home and offers search there only when nothing else on screen does", () => {
@@ -177,10 +171,10 @@ it("titles Home as Home and offers search there only when nothing else on screen
   const view = render(homeWorkspace(WORKSPACE_COLLECTIONS, docs, true));
 
   expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /Search 1 document/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Search documents/ })).not.toBeInTheDocument();
 
   view.rerender(homeWorkspace(WORKSPACE_COLLECTIONS, docs, false));
-  expect(screen.getByRole("button", { name: /Search 1 document/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Search documents/ })).toBeInTheDocument();
 });
 
 it("labels home rows with their collection only when there is more than one", () => {
@@ -297,13 +291,6 @@ it("keeps narrow editor chrome compact and unobstructed", () => {
   );
 });
 
-it("keeps inline formatting in reach without letting text show through it", () => {
-  const dock = declarationsFor(".formatBarDock");
-  expect(dock).toContain("position: sticky;");
-  expect(dock).toContain("top: calc(-1 * var(--writing-pad-top, 0px));");
-  expect(dock).toContain("background: var(--surface);");
-  expect(declarationsFor(".formatBar")).not.toContain("position: fixed;");
-});
 
 it("uses one sidebar width at every breakpoint", () => {
   expect(stylesheet).not.toMatch(/268px/);
@@ -322,9 +309,9 @@ it("wraps long collection copy while preserving a large count", () => {
     updatedAt: new Date(2026, 0, 1, 0, 0, index).toISOString()
   }));
 
-  render(homeWorkspace([...WORKSPACE_COLLECTIONS, collection], docs));
+  render(homeWorkspace([...WORKSPACE_COLLECTIONS, collection], docs, true, { type: "collections" }));
 
-  const collections = screen.getByRole("heading", { name: "Collections" }).closest("section")!;
+  const collections = screen.getByLabelText("Collections");
   const card = within(collections).getByText(longTitle).closest("button")!;
   expect(card).toHaveTextContent("1234 documents");
   expect(card).toHaveTextContent(longDescription);
@@ -332,4 +319,17 @@ it("wraps long collection copy while preserving a large count", () => {
   expect(declarationsFor(".workspaceCollectionDescription")).toContain("overflow-wrap: anywhere;");
   expect(stylesheet).toMatch(/\.workspaceSidebarCollection > span:first-child\s*\{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
   expect(declarationsFor(".workspaceHub")).toContain("overflow-x: hidden;");
+});
+
+it("lists every loaded document once, with starred documents in updated order", () => {
+  const docs = Array.from({ length: 9 }, (_, index) => ({
+    id: `doc-${index}`, body: `# Draft ${index}`, bodyLoaded: true,
+    pinned: index === 0, updatedAt: `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00Z`
+  })) as Doc[];
+  render(homeWorkspace(WORKSPACE_COLLECTIONS, docs));
+  const rows = Array.from(document.querySelectorAll(".workspaceDocumentOpen"));
+  expect(rows).toHaveLength(9);
+  expect(rows[0]).toHaveTextContent("Draft 8");
+  expect(rows[8]).toHaveTextContent("Draft 0");
+  expect(screen.getByRole("button", { name: "Unstar Draft 0" })).toBeInTheDocument();
 });
