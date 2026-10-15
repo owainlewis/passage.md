@@ -468,7 +468,7 @@ export default function Editor() {
   const showDocument = !templatesOpen && workspaceView.type === "document";
   const showResolvedDocument = showDocument && documentRouteResolved;
   const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
-  const hasCollectionList = (workspaceView.type === "collection" && collections.some((collection) => collection.slug === workspaceView.slug))
+  const hasCollectionList = (workspaceView.type === "collection" && workspaceView.slug !== "documents" && collections.some((collection) => collection.slug === workspaceView.slug))
     || (showResolvedDocument && Boolean(active));
   const focusMode = focusEnabled && showResolvedDocument && Boolean(active);
   const canDeleteActive = Boolean(active && !isShared(active));
@@ -476,6 +476,8 @@ export default function Editor() {
   // equivalent in the list or sidebar can be seen.
   const collectionListVisible = !focusMode && hasCollectionList && (narrowLayout ? documentListOpen : sidebarOpen);
   const sidebarSearchVisible = sidebarOpen || mobileLayout;
+  const hasPageCreateAction = workspaceView.type === "home"
+    || (workspaceView.type === "collection" && workspaceView.slug === "documents");
 
   const documentControls = showResolvedDocument && docsReady && active?.bodyLoaded && <EditorControls
     key={active.id}
@@ -556,7 +558,7 @@ export default function Editor() {
               >
                 <SidebarIcon />
               </button>
-              {!collectionListVisible && (workspaceView.type !== "home" || !docsReady || collectionState.loading) && (
+              {!collectionListVisible && (!hasPageCreateAction || !docsReady || collectionState.loading) && (
                 <button
                   type="button"
                   className="iconButton"

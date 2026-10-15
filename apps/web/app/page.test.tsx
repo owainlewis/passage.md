@@ -278,9 +278,11 @@ function openWorkspaceHome() {
   fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
 }
 
-// A collection's documents are listed once, in the list pane beside it.
+// Documents has a full browsing page; custom collections keep their navigator.
 function collectionDocuments(title: string) {
-  return screen.getByRole("navigation", { name: `Documents in ${title}` });
+  return title === "Documents"
+    ? screen.getByLabelText("Documents", { selector: ".workspaceCollectionBrowse" })
+    : screen.getByRole("navigation", { name: `Documents in ${title}` });
 }
 
 function openSidebarCollection(name: string | RegExp) {
@@ -1926,7 +1928,7 @@ describe("Write (editor)", () => {
     // rows itself and the top bar's + comes back.
     fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
     expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
-    expect(screen.getByText("No documents here yet. Use + in the top bar to add the first one.")).toBeInTheDocument();
+    expect(screen.getByText("No documents yet. Create a document to start writing.")).toBeInTheDocument();
     expect(newDocumentButton()).toHaveAccessibleName("New document");
   });
 
@@ -2308,7 +2310,7 @@ describe("Write (editor)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
     await screen.findByText("“Operating Context” was deleted. Its documents are now in Documents.");
     openSidebarCollection("Documents");
-    const documents = screen.getByRole("navigation", { name: "Documents in Documents" });
+    const documents = screen.getByLabelText("Documents", { selector: ".workspaceCollectionBrowse" });
     expect(documents).toHaveTextContent("About me");
     expect(within(documents).queryByRole("button", { name: /Delete collection/ })).not.toBeInTheDocument();
   });
@@ -4083,6 +4085,20 @@ describe("visual writing and collection navigation", () => {
     expect(within(emptyList).getByRole("button", { name: "New document in Research" })).toBeEnabled();
     fireEvent.click(within(sidebar).getByRole("button", { name: "Home" }));
     expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
+  });
+
+  it("browses Documents in one list and creates a document from its heading", async () => {
+    stubSignedInFetch([{ id: "one", publicId: "one", body: "# First draft" }]);
+    await renderWrite();
+    openSidebarCollection("Documents");
+    const collection = screen.getByLabelText("Documents", { selector: ".workspaceCollectionBrowse" });
+    expect(screen.queryByRole("navigation", { name: "Documents in Documents" })).not.toBeInTheDocument();
+    expect(within(collection).getAllByRole("button", { name: /^First draft/ })).toHaveLength(1);
+    expect(collection).not.toHaveTextContent("General Markdown");
+    expect(screen.getAllByRole("button", { name: "New document" })).toHaveLength(1);
+    fireEvent.click(within(collection).getByRole("button", { name: "New document" }));
+    expect(await screen.findByRole("textbox", { name: "Visual editor" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Documents in Documents" })).toBeInTheDocument();
   });
 
   it("switches neighboring documents directly and keeps their collection highlighted", async () => {
