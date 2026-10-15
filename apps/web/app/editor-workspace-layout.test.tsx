@@ -143,6 +143,14 @@ it("puts every page header on the same column as the content it introduces", () 
   expect(declarationsFor(".workspacePageHeader")).not.toContain("display: flex");
 });
 
+it("keeps collection guidance on the shared column instead of resetting horizontal margins", () => {
+  const hint = declarationsFor(".workspaceCollectionHint");
+  expect(hint).not.toMatch(/(?:^|;)\s*margin:/);
+  expect(hint).toContain("margin-top: 0;");
+  expect(hint).toContain("line-height: 1.6;");
+  expect(declarationsFor(".workspaceCollectionUtilityActions")).toContain("flex-shrink: 0;");
+});
+
 it("keeps list rows to opening and starring, with no per-row collection picker", () => {
   const docs = [{
     id: "doc-1",
