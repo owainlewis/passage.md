@@ -118,6 +118,8 @@ export function EditorWorkspace({
         collection={collection}
         docs={docsInCollection(docs, collection.slug, assignments, deletedCollections)}
         listVisible={collectionListVisible}
+        onNewDocument={collection.slug === "documents" ? onNewDocument : undefined}
+        newDocumentDisabled={newDocumentDisabled}
         onDeleteCollection={onDeleteCollection}
         onOpenDocument={onOpenDocument}
         onOpenSearch={() => onOpenSearch(collection.slug)}
@@ -312,6 +314,8 @@ function WorkspaceCollectionView({
   docs,
   deletedCollections,
   listVisible,
+  onNewDocument,
+  newDocumentDisabled,
   onDeleteCollection,
   onOpenDocument,
   onOpenSearch,
@@ -327,6 +331,8 @@ function WorkspaceCollectionView({
   docs: Doc[];
   deletedCollections: string[];
   listVisible: boolean;
+  onNewDocument?: () => void;
+  newDocumentDisabled: boolean;
   onDeleteCollection: (slug: string) => Promise<boolean>;
   onOpenDocument: (doc: Doc) => void;
   onOpenSearch: () => void;
@@ -340,13 +346,14 @@ function WorkspaceCollectionView({
   const [deleting, setDeleting] = useState(false);
 
   return (
-    <div className="workspaceHub" aria-label={collection.title}>
+    <div className="workspaceHub workspaceCollectionBrowse" aria-label={collection.title}>
       <header className="workspaceCollectionHeader">
         <div className="workspaceCollectionHeaderText">
           <h1 data-collection-dialog-focus-destination tabIndex={-1}>{collection.title}</h1>
-          <p>{collection.description}</p>
+          {collection.slug !== "documents" && collection.description && <p>{collection.description}</p>}
         </div>
         <div className="workspaceCollectionUtilityActions">
+          {onNewDocument && <button className="workspaceNewDocument" type="button" disabled={newDocumentDisabled} onClick={onNewDocument}>New document</button>}
           {!listVisible && <button type="button" onClick={onOpenSearch}><SearchIcon />Search</button>}
           {collection.slug !== "documents" && <button type="button" disabled={pendingCollectionSlugs.has(collection.slug)} onClick={() => setEditing(true)}>Edit</button>}
           {collection.slug !== "documents" && (
@@ -381,7 +388,7 @@ function WorkspaceCollectionView({
             assignments={assignments}
             docs={docs}
             deletedCollections={deletedCollections}
-            empty="No documents here yet. Use + in the top bar to add the first one."
+            empty="No documents yet. Create a document to start writing."
             showActions
             showCollectionLabel={false}
             onOpenDocument={onOpenDocument}

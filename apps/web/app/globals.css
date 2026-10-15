@@ -5342,7 +5342,8 @@ button {
   margin-bottom: 32px;
 }
 
-.workspacePageHeaderLine .workspaceNewDocument {
+.workspacePageHeaderLine .workspaceNewDocument,
+.workspaceCollectionUtilityActions .workspaceNewDocument {
   min-height: 40px;
   padding: 0 16px;
   border: 0;
@@ -5350,7 +5351,8 @@ button {
   color: var(--bg);
 }
 
-.workspacePageHeaderLine .workspaceNewDocument:hover:not(:disabled) {
+.workspacePageHeaderLine .workspaceNewDocument:hover:not(:disabled),
+.workspaceCollectionUtilityActions .workspaceNewDocument:hover:not(:disabled) {
   background: var(--ink-soft);
   color: var(--bg);
 }
@@ -5505,4 +5507,38 @@ button {
   flex: 0 0 auto;
   margin: 6px 4px 2px;
   font-size: 0.75rem;
+}
+
+/* Collection browsing uses the same quiet document rhythm as Home. */
+.workspaceCollectionBrowse {
+  padding-top: 40px;
+}
+
+.workspaceCollectionBrowse .workspaceCollectionHeader {
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.workspaceCollectionBrowse .workspaceDocumentRow {
+  min-height: 68px;
+}
+
+.workspaceCollectionToolbarTitle {
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.workspaceCollectionBrowse .workspaceCollectionUtilityActions {
+  flex-wrap: wrap;
+}
+
+.workspaceCollectionBrowse .workspaceCollectionHeaderText h1 {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .workspaceCollectionBrowse .workspaceCollectionHeader {
+    align-items: stretch;
+  }
 }
