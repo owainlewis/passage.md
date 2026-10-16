@@ -150,6 +150,7 @@ export function EditorWorkspace({
         docs={list}
         deletedCollections={deletedCollections}
         title={view.type === "starred" ? "Starred" : "Recent"}
+        titlesOnly={view.type === "recent"}
         description={
           view.type === "starred"
             ? "The documents you return to most often. Stars are personal and do not change agent access."
@@ -424,6 +425,7 @@ function WorkspaceList({
   docs,
   deletedCollections,
   title,
+  titlesOnly,
   description,
   empty,
   onOpenDocument,
@@ -435,6 +437,7 @@ function WorkspaceList({
   docs: Doc[];
   deletedCollections: string[];
   title: string;
+  titlesOnly: boolean;
   description: string;
   empty: string;
   onOpenDocument: (doc: Doc) => void;
@@ -452,6 +455,7 @@ function WorkspaceList({
         docs={docs}
         deletedCollections={deletedCollections}
         empty={empty}
+        titlesOnly={titlesOnly}
         showActions
         onOpenDocument={onOpenDocument}
         onToggleStar={onToggleStar}
@@ -489,6 +493,7 @@ function WorkspaceDocumentRows({
   empty = "No documents yet.",
   showActions = false,
   showCollectionLabel = true,
+  titlesOnly = false,
   onOpenDocument,
   onToggleStar,
   pendingDocIds = new Set()
@@ -500,21 +505,22 @@ function WorkspaceDocumentRows({
   empty?: string;
   showActions?: boolean;
   showCollectionLabel?: boolean;
+  titlesOnly?: boolean;
   onOpenDocument: (doc: Doc) => void;
   onToggleStar?: (id: string) => Promise<boolean>;
   pendingDocIds?: Set<string>;
 }) {
   return (
-    <div className="workspaceDocumentList">
+    <div className={`workspaceDocumentList${titlesOnly ? " workspaceDocumentListTitles" : ""}`}>
       {docs.map((doc) => (
         <div className="workspaceDocumentRow" key={doc.id}>
           <button type="button" className="workspaceDocumentOpen" onClick={() => onOpenDocument(doc)}>
             <span className="workspaceDocumentText">
               <strong>{editorDocTitle(doc)}</strong>
-              <span className="workspaceDocumentMeta">
+              {!titlesOnly && <span className="workspaceDocumentMeta">
                 {showCollectionLabel && <small>{collectionLabel(collectionForDoc(doc, assignments, deletedCollections), collections)}</small>}
                 <span className="workspaceDocumentSummary">{workspaceDocSummary(doc)}</span>
-              </span>
+              </span>}
             </span>
           </button>
           {showActions && (
