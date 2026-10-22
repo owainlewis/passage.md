@@ -166,6 +166,18 @@ it("keeps list rows to opening and starring, with no per-row collection picker",
   expect(document.querySelector(".workspaceDocumentActions select")).toBeNull();
 });
 
+it("shows only document titles in Recent while keeping open and star controls", () => {
+  const docs = [{ id: "recent-doc", body: "# Recent draft\n\nA private body excerpt.", bodyLoaded: true }] as Doc[];
+  const view = render(listWorkspace(docs));
+  expect(screen.getByRole("button", { name: "Recent draft" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Star Recent draft" })).toBeInTheDocument();
+  expect(document.querySelector(".workspaceDocumentMeta")).toBeNull();
+  expect(screen.queryByText("A private body excerpt.")).not.toBeInTheDocument();
+
+  view.rerender(homeWorkspace(WORKSPACE_COLLECTIONS, docs));
+  expect(document.querySelector(".workspaceDocumentMeta")).not.toBeNull();
+});
+
 it("shows one useful empty state without duplicate navigation sections", () => {
   render(homeWorkspace(WORKSPACE_COLLECTIONS, []));
   const home = screen.getByLabelText("Workspace home");

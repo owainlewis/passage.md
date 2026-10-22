@@ -5546,3 +5546,9 @@ button {
     align-items: stretch;
   }
 }
+
+/* Recent is a compact title index. Allow long titles to wrap on narrow screens. */
+.workspaceDocumentListTitles .workspaceDocumentText strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
