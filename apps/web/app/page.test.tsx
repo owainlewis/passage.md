@@ -1747,13 +1747,32 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    openDocumentAction("Share…");
+    openDocumentAction("Share…Pro");
 
-    expect(await screen.findByText("Sharing and raw .md URLs are Pro features.")).toBeInTheDocument();
+    expect(await screen.findByText("Share links are part of Passage Pro.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-1/share",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("explains the upgrade when the server says sharing needs Pro", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-1", body: "# One" }]);
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-1/share" && init?.method === "POST") {
+        return new Response(JSON.stringify({ error: "Passage Pro is required" }), { status: 402 });
+      }
+      return respond(input, init);
+    });
+
+    await renderWrite();
+    publishActiveDocument();
+
+    expect(await screen.findByText("Share links are part of Passage Pro.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByText("Share failed")).not.toBeInTheDocument();
   });
 
   it("shares large documents through the server", async () => {

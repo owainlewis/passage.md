@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ReactNode, useEffect, useId, useRef, useState } from "react";
 
 export type MenuItem =
-  | { kind?: "action"; label: string; hint?: string; danger?: boolean; disabled?: boolean; onSelect: () => void }
+  | { kind?: "action"; label: string; hint?: string; badge?: string; danger?: boolean; disabled?: boolean; onSelect: () => void }
   | { kind: "link"; label: string; href: string }
   | { kind: "separator" }
   | { kind: "note"; label: string; detail?: string };
@@ -121,6 +121,7 @@ export function MenuButton({ label, icon, items }: { label: string; icon: ReactN
               >
                 <span>{item.label}</span>
                 {item.hint && <kbd>{item.hint}</kbd>}
+                {item.badge && <span className="wMenuBadge">{item.badge}</span>}
               </button>
             );
           })}

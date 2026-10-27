@@ -155,12 +155,21 @@ export type ShareResponse = {
   markdownPath: string;
 };
 
+// The server answers 402 when a feature needs Passage Pro.
+export class ProRequiredError extends Error {
+  constructor() {
+    super("Passage Pro is required");
+    this.name = "ProRequiredError";
+  }
+}
+
 export async function apiShareDoc(id: string): Promise<ShareResponse> {
   const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}/share`, {
     method: "POST",
     credentials: "include"
   });
   const payload = await res.json().catch(() => ({}));
+  if (res.status === 402) throw new ProRequiredError();
   if (!res.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be shared");
   }

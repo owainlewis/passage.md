@@ -84,6 +84,7 @@ export default function Editor() {
     activeId,
     billingNotice,
     billingNoticeAction,
+    showUpgrade,
     createDoc,
     deleteDoc: archiveDocument,
     docs,
@@ -112,14 +113,17 @@ export default function Editor() {
   });
 
   const activeShared = active ? isShared(active) : false;
+  const canExport = entitlements.can("exportMarkdown");
+  const canShare = entitlements.can("shareLinks");
   const shareDialogOpen = Boolean(active && shareDialogDocId === active.id);
   const { copyShareLink, exportDoc, publicDocPath, shareDoc, shareState, unshareDoc } = useEditorSharing({
     active,
     activeShared,
     pendingSave,
-    canExport: entitlements.can("exportMarkdown"),
-    canShare: entitlements.can("shareLinks"),
+    canExport,
+    canShare,
     setBillingNotice,
+    showUpgrade,
     setDocs,
     setPendingSave,
     setSaveState,
@@ -352,13 +356,12 @@ export default function Editor() {
     { label: source ? "Show formatted" : "Show Markdown", hint: `${mod}/`, onSelect: () => setSource(!source) },
     { kind: "separator" },
     { label: "Copy Markdown", onSelect: () => void copyDocument() },
-    { label: "Download .md", onSelect: exportDoc },
+    { label: "Download .md", badge: canExport ? undefined : "Pro", onSelect: exportDoc },
     activeShared && publicDocPath
       ? { label: "Copy share link", onSelect: () => void copyShareLink() }
-      : { label: "Share…", onSelect: () => {
-        if (!entitlements.can("shareLinks")) { void shareDoc(); return; }
-        setShareDialogDocId(active.id);
-      } },
+      : canShare
+        ? { label: "Share…", onSelect: () => setShareDialogDocId(active.id) }
+        : { label: "Share…", badge: "Pro", onSelect: () => void shareDoc() },
     ...(activeShared ? [{ label: "Sharing settings…", onSelect: () => setShareDialogDocId(active.id) }] : []),
     ...(canDeleteActive ? [
       { kind: "separator" as const },
