@@ -239,10 +239,10 @@
 
 .windowPage h2 {
   margin: 0 0 24px;
-  font-size: 36px;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
+  font-size: 44px;
+  font-weight: 450;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
 }
 
 .windowPage p,
@@ -622,7 +622,7 @@
   }
 
   .windowPage h2 {
-    font-size: 28px;
+    font-size: 32px;
     margin-bottom: 16px;
   }
 
