@@ -304,11 +304,11 @@ afterEach(() => {
 });
 
 describe("Landing", () => {
-  it("shows the shared context workflow, current pricing, and account actions for Pro users", async () => {
+  it("pitches quiet writing, current pricing, and account actions for Pro users", async () => {
     render(<Landing />);
 
-    expect(screen.getByRole("heading", { name: "A writing app built for you and your agents." })).toBeInTheDocument();
-    expect(screen.getByText(/in a collection your agents can read/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "A quiet place to write." })).toBeInTheDocument();
+    expect(screen.getByText(/a Markdown editor with nothing in the way/)).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
@@ -320,16 +320,11 @@ describe("Landing", () => {
     expect(screen.getByRole("link", { name: "Account settings" })).toHaveAttribute("href", "/account");
     expect(screen.queryByRole("link", { name: "Go Pro" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Upgrade" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Keep context and writing together." })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Store your knowledge" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Group it into collections" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Give your agents access" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Share deliberately" })).toBeInTheDocument();
-    expect(screen.getByText(/one CLI your agents use to read and update the same Markdown/)).toBeInTheDocument();
-    expect(screen.getByText(/A folder on one machine is a poor shared memory/)).toBeInTheDocument();
-    expect(screen.getAllByText("$ passage list").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("passage list --collection operating-context").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("passage share <doc-id>").length).toBeGreaterThan(0);
+    for (const name of ["Nothing in the way", "Find anything", "Plain Markdown", "Your agents can read it too."]) {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    }
+    expect(within(screen.getByRole("list", { name: "Keyboard shortcuts" })).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getByRole("link", { name: "Read the CLI guide" })).toHaveAttribute("href", "/cli");
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
     expect(
