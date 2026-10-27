@@ -222,42 +222,30 @@ function render(ui: ReactNode) {
 
 async function renderWrite(ui: ReactNode = <Write />) {
   const view = render(ui);
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Markdown editor" }) ?? screen.queryByLabelText("Workspace home")
-    ).not.toBeNull();
-  });
-  if (screen.queryByLabelText("Workspace home")) {
-    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
-    const firstDocument = await waitFor(() => {
-      const button = view.container.querySelector<HTMLButtonElement>(".workspaceDocumentOpen");
-      expect(button).not.toBeNull();
-      return button!;
-    });
-    fireEvent.click(firstDocument);
-  }
   await screen.findByRole("region", { name: "Markdown editor" });
-  await waitFor(() => expect(screen.queryByRole("status", { name: "Loading saved docs" })).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole("status", { name: "Opening your writing" })).not.toBeInTheDocument());
   return view;
 }
 
-// Collections are assigned from the open document, so a list row has to be
-// opened first.
+function openDrawer() {
+  const toggle = screen.getByRole("button", { name: "Documents" });
+  if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle);
+  return screen.getByRole("navigation", { name: "All documents" });
+}
+
 async function openDocumentNamed(title: string) {
-  const list = screen.queryByRole("navigation", { name: /^Documents in / });
-  fireEvent.click((list ? within(list) : screen).getByRole("button", { name: new RegExp(`^${title}`) }));
+  fireEvent.click(within(openDrawer()).getByRole("button", { name: new RegExp(`^${title}`) }));
   await screen.findByRole("region", { name: "Markdown editor" });
 }
 
-// There is one visible new-document control. While a collection's list is on
-// screen it is the list's own +, otherwise the top bar's.
 function newDocumentButton() {
-  const buttons = [
-    ...screen.queryAllByRole("button", { name: "New document" }),
-    ...screen.queryAllByRole("button", { name: /^New document in / })
-  ];
-  expect(buttons).toHaveLength(1);
-  return buttons[0];
+  return screen.getByRole("button", { name: "New document" });
+}
+
+function showSource() {
+  if (!screen.queryByRole("textbox", { name: "Markdown editor" })) {
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+  }
 }
 
 // The new-document control creates a blank page directly. Callers that expect
@@ -267,37 +255,17 @@ async function createBlankDocument() {
   fireEvent.click(newDocumentButton());
   await waitFor(() => expect(newDocumentButton()).toBeEnabled());
   // These API/save tests enter exact Markdown. Visual editing is tested separately.
-  if (screen.queryByRole("button", { name: "Source" })) fireEvent.click(screen.getByRole("button", { name: "Source" }));
+  showSource();
 }
 
 function openWorkspaceSearch() {
   fireEvent.keyDown(window, { key: "k", metaKey: true });
 }
 
-function openWorkspaceHome() {
-  fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
-}
-
-// Documents has a full browsing page; custom collections keep their navigator.
-function collectionDocuments(title: string) {
-  return title === "Documents"
-    ? screen.getByLabelText("Documents", { selector: ".workspaceCollectionBrowse" })
-    : screen.getByRole("navigation", { name: `Documents in ${title}` });
-}
-
-function openSidebarCollection(name: string | RegExp) {
-  const sidebar = screen.getByLabelText("Workspace navigation");
-  const button = Array.from(sidebar.querySelectorAll("button")).find((candidate) =>
-    typeof name === "string" ? candidate.textContent?.startsWith(name) : name.test(candidate.textContent ?? "")
-  );
-  expect(button).toBeDefined();
-  fireEvent.click(button!);
-}
-
 async function openDocumentFromSearch(name: string | RegExp) {
   openWorkspaceSearch();
-  const result = await screen.findByRole("button", { name });
-  fireEvent.click(result);
+  const list = screen.getByRole("navigation", { name: "All documents" });
+  fireEvent.click(await within(list).findByRole("button", { name }));
   await screen.findByRole("region", { name: "Markdown editor" });
 }
 
@@ -307,18 +275,18 @@ function openDocumentAction(name: string) {
 }
 
 function deleteActiveDocument() {
-  openDocumentAction("Delete document");
-  fireEvent.click(screen.getByRole("button", { name: "Delete document" }));
+  openDocumentAction("Delete");
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Delete document" })).getByRole("button", { name: "Delete" }));
 }
 
 function publishActiveDocument() {
-  fireEvent.click(screen.getByRole("button", { name: "Share" }));
-  fireEvent.click(screen.getByRole("button", { name: "Publish and copy link" }));
+  openDocumentAction("Share…");
+  fireEvent.click(screen.getByRole("button", { name: "Create link" }));
 }
 
 function makeActiveDocumentPrivate() {
-  fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
-  fireEvent.click(screen.getByRole("button", { name: "Make private" }));
+  openDocumentAction("Sharing settings…");
+  fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
 }
 
 beforeEach(() => {
@@ -816,7 +784,7 @@ describe("Write (editor)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Session could not be loaded.");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByRole("button", { name: /^Retried session/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Retried session/ , hidden: true })).toBeInTheDocument();
     expect(sessionRequests).toBe(3);
   });
 
@@ -846,7 +814,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByRole("button", { name: /^Recovered session/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Recovered session/ , hidden: true })).toBeInTheDocument();
     expect(sessionRequests).toBe(2);
   });
 
@@ -901,7 +869,7 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
-    expect(await screen.findByRole("status", { name: "Loading saved docs" })).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Opening your writing" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New document" })).toBeDisabled();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
 
@@ -912,44 +880,8 @@ describe("Write (editor)", () => {
       })
     );
 
-    expect(await screen.findByRole("button", { name: /^Agent notes/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Agent notes/ , hidden: true })).toBeInTheDocument();
     expect(screen.queryByText("Markdown for agents and humans")).not.toBeInTheDocument();
-  });
-
-  it("seeds a starter document titled from its first heading", async () => {
-    await renderWrite();
-
-    expect(screen.getAllByText("Markdown for agents and humans").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Workspace navigation")).toBeInTheDocument();
-  });
-
-  it("switches to edit mode to reveal the Markdown textarea", async () => {
-    await renderWrite();
-
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
-    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toBeInTheDocument();
-  });
-
-  it("starts with the sidebar collapsed on mobile viewports", async () => {
-    const originalMatchMedia = window.matchMedia;
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: vi.fn().mockReturnValue({ matches: true })
-    });
-
-    await renderWrite();
-
-    await waitFor(() => expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument());
-    const sidebar = document.querySelector<HTMLElement>('[aria-label="Workspace navigation"]');
-    expect(sidebar).toHaveAttribute("aria-hidden", "true");
-    expect(sidebar).toHaveAttribute("inert");
-    expect(screen.queryByRole("complementary", { name: "Workspace navigation" })).not.toBeInTheDocument();
-    const mobileNavigation = screen.getByRole("navigation", { name: "Mobile workspace navigation" });
-    expect(Array.from(mobileNavigation.querySelectorAll("button")).every((button) => button.querySelector("svg"))).toBe(true);
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: originalMatchMedia
-    });
   });
 
   it("sends the loaded version with autosave and keeps the draft when the server refuses it", async () => {
@@ -976,7 +908,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared\n\nwritten in the browser" }
     });
@@ -1030,7 +962,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
 
     fireEvent.change(editor, { target: { value: "# Shared\n\nfirst" } });
@@ -1071,7 +1003,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared\n\nwritten in the browser" }
     });
@@ -1122,7 +1054,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Shared\n\nwritten in the browser" }
     });
@@ -1175,7 +1107,7 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
     fireEvent.change(editor, { target: { value: "# Shared\n\nfirst draft" } });
 
@@ -1216,227 +1148,25 @@ describe("Write (editor)", () => {
     }));
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# One\n\nmy words" }
     });
     await screen.findByRole("alert", {}, { timeout: 3000 });
 
     // Conflict the second document too.
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: /^Two/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Source" }));
+    fireEvent.click(within(openDrawer()).getByRole("button", { name: /^Two/ , hidden: true }));
+    showSource();
     fireEvent.change(await screen.findByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Two\n\nmy other words" }
     });
     await screen.findByRole("alert", {}, { timeout: 3000 });
 
     // The first document's conflict is still waiting, with its draft intact.
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: /^One/ }));
+    fireEvent.click(within(openDrawer()).getByRole("button", { name: /^One/ , hidden: true }));
     expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("This document changed somewhere else");
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     expect(await screen.findByRole("textbox", { name: "Markdown editor" })).toHaveValue("# One\n\nmy words");
-  });
-
-  it("creates a blank document straight into the editor, without the template picker", async () => {
-    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
-    await renderWrite();
-
-    fireEvent.click(newDocumentButton());
-
-    // Straight into an empty editable document.
-    const editor = await waitFor(() => {
-      const input = screen.getByRole("textbox", { name: "Visual editor" });
-      expect(input.textContent).toBe("");
-      return input;
-    });
-    // Ready to type into. The editor only mounts once the mode switches, so
-    // focusing at creation time silently did nothing.
-    await waitFor(() => expect(editor).toHaveFocus());
-    expect(screen.queryByRole("heading", { name: "What are we working on today?" })).not.toBeInTheDocument();
-
-    // Templates are still one click away for the times you want one.
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
-  });
-
-  it("creates a document, updates its title, and renders Markdown preview", async () => {
-    await renderWrite();
-
-    await createBlankDocument();
-    await screen.findByRole("textbox", { name: "Markdown editor" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
-      target: { value: "# Launch note\n\nThis is **ready**." }
-    });
-
-    expect(screen.getByRole("heading", { name: "Launch note", level: 1 })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent === "This is ready.")).toBeInTheDocument();
-    expect(screen.getByText("ready")).toBeInTheDocument();
-  });
-
-  it("creates, edits, and copies a Markdown template into an independent document", async () => {
-    const fetchMock = stubSignedInFetch([{ id: "doc-1", body: "# Existing" }]);
-    await renderWrite();
-
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
-    expect(screen.queryByText("Library")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "New template" }));
-
-    const title = await screen.findByRole("textbox", { name: "Template title" });
-    expect(screen.queryByRole("button", { name: "Create document" })).not.toBeInTheDocument();
-    fireEvent.change(title, { target: { value: "YouTube script" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Template description" }), {
-      target: { value: "A clear structure for planning a YouTube video." }
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Template Markdown" }), {
-      target: { value: "# [Video title]\n\n## Opening\n\nWrite the hook." }
-    });
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/templates/template-1",
-        expect.objectContaining({
-          method: "PATCH",
-          body: JSON.stringify({
-            title: "YouTube script",
-            description: "A clear structure for planning a YouTube video.",
-            body: "# [Video title]\n\n## Opening\n\nWrite the hook."
-          })
-        })
-      )
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
-    expect(await screen.findByRole("heading", { name: "YouTube script" })).toBeInTheDocument();
-    expect(screen.getByText("A clear structure for planning a YouTube video.")).toBeInTheDocument();
-    expect(screen.queryByText("Write the hook.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit YouTube script" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Create document from YouTube script" }));
-    await screen.findByRole("textbox", { name: "Visual editor" });
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
-
-    const editor = await screen.findByRole("textbox", { name: "Markdown editor" });
-    expect(editor).toHaveValue("# [Video title]\n\n## Opening\n\nWrite the hook.");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/docs",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ body: "# [Video title]\n\n## Opening\n\nWrite the hook." })
-      })
-    );
-  });
-
-  it("disables template creation until the template library finishes loading", async () => {
-    const signedInFetch = stubSignedInFetch();
-    let resolveTemplates: ((response: Response) => void) | undefined;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === "/api/v1/templates" && (init?.method ?? "GET") === "GET") {
-          return new Promise<Response>((resolve) => {
-            resolveTemplates = resolve;
-          });
-        }
-        return signedInFetch(input, init);
-      })
-    );
-
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-
-    const newTemplate = screen.getByRole("button", { name: "New template" });
-    expect(newTemplate).toBeDisabled();
-    await waitFor(() => expect(resolveTemplates).toBeDefined());
-    resolveTemplates?.(new Response(JSON.stringify({ templates: [] }), { status: 200 }));
-    await waitFor(() => expect(newTemplate).toBeEnabled());
-  });
-
-  it("deletes a template and frees its library slot", async () => {
-    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const fetchMock = stubSignedInFetch();
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
-    await screen.findByRole("textbox", { name: "Template title" });
-    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
-    expect(await screen.findByText("No description.")).toBeInTheDocument();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
-
-    expect(confirmDelete).toHaveBeenCalledWith("Delete “Untitled template”? This cannot be undone.");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/templates/template-1",
-      expect.objectContaining({ method: "DELETE" })
-    );
-    expect(await screen.findByText("0 of 10")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Untitled template" })).not.toBeInTheDocument();
-  });
-
-  it("keeps a template when deletion is cancelled", async () => {
-    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const fetchMock = stubSignedInFetch();
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
-    await screen.findByRole("textbox", { name: "Template title" });
-    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
-
-    expect(confirmDelete).toHaveBeenCalledTimes(1);
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      "/api/v1/templates/template-1",
-      expect.objectContaining({ method: "DELETE" })
-    );
-    expect(screen.getByRole("heading", { name: "Untitled template" })).toBeInTheDocument();
-    expect(screen.getByText("1 of 10")).toBeInTheDocument();
-  });
-
-  it("requires confirmation before deleting from the template editor", async () => {
-    const confirmDelete = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const fetchMock = stubSignedInFetch();
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
-    await screen.findByRole("textbox", { name: "Template title" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete Untitled template" }));
-
-    expect(confirmDelete).toHaveBeenCalledTimes(1);
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      "/api/v1/templates/template-1",
-      expect.objectContaining({ method: "DELETE" })
-    );
-    expect(screen.getByRole("textbox", { name: "Template title" })).toBeInTheDocument();
-  });
-
-  it("keeps a template visible when deletion fails", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    const signedInFetch = stubSignedInFetch();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input) === "/api/v1/templates/template-1" && init?.method === "DELETE") {
-          return Promise.resolve(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
-        }
-        return signedInFetch(input, init);
-      })
-    );
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    fireEvent.click(await screen.findByRole("button", { name: "New template" }));
-    await screen.findByRole("textbox", { name: "Template title" });
-    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Untitled template" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("delete failed");
-    expect(screen.getByRole("heading", { name: "Untitled template" })).toBeInTheDocument();
-    expect(screen.getByText("1 of 10")).toBeInTheDocument();
   });
 
   it("filters the document list by title and body text", async () => {
@@ -1453,13 +1183,11 @@ describe("Write (editor)", () => {
       expect.objectContaining({ method: "PATCH" })
     ));
     openWorkspaceSearch();
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search documents" }), {
       target: { value: "roadmap" }
     });
 
-    const launchNote = await screen.findByRole("button", { name: /Launch note/ });
-    expect(launchNote).toBeInTheDocument();
-    expect(launchNote).toHaveTextContent("Roadmap coverage");
+    await waitFor(() => expect(screen.getByRole("button", { name: /Launch note/ })).toHaveTextContent("Roadmap coverage"));
     expect(screen.queryByRole("button", { name: /Markdown for agents and humans/ })).not.toBeInTheDocument();
   });
 
@@ -1477,37 +1205,21 @@ describe("Write (editor)", () => {
 
     await openDocumentFromSearch(/Agent notes/);
 
-    expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("heading", { name: "Agent notes", level: 1 })).length).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/write/notes-public-id");
-  });
-
-  it("restores workspace home when browser history returns to /write", async () => {
-    stubSignedInFetch([{ id: "doc-notes", publicId: "notes-public-id", body: "# Agent notes\n\nFollow ups." }]);
-
-    await renderWrite();
-    expect(window.location.pathname).toBe("/write/notes-public-id");
-
-    act(() => {
-      window.history.pushState(null, "", "/write");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
   });
 
   it("restores a document when browser history returns to its stable URL", async () => {
     stubSignedInFetch([{ id: "doc-notes", publicId: "notes-public-id", body: "# Agent notes\n\nFollow ups." }]);
 
     await renderWrite();
-    openWorkspaceHome();
     act(() => {
       window.history.pushState(null, "", "/write/notes-public-id");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
     expect(await screen.findByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Agent notes", level: 1 }).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("heading", { name: "Agent notes", level: 1 })).length).toBeGreaterThan(0);
   });
 
   it("restores a document requested by popstate during the initial document load", async () => {
@@ -1611,927 +1323,15 @@ describe("Write (editor)", () => {
     expect(window.location.pathname).toBe("/write/later");
   });
 
-  it.each([
-    ["/write", "Workspace home"],
-    ["/write?view=starred", "Starred"],
-    ["/write?view=recent", "Recent"],
-    ["/write?view=collections", "Collections"],
-    ["/write?collection=research", "Research"]
-  ])("restores the canonical workspace URL %s on direct load", async (path, label) => {
-    window.history.replaceState(null, "", path);
-
-    render(<Write />);
-
-    expect(await screen.findByLabelText(label)).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe(path);
-  });
-
-  it("restores Templates on direct load", async () => {
-    window.history.replaceState(null, "", "/write?view=templates");
-
-    render(<Write />);
-
-    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
-  });
-
-  it("uses Back and Forward to restore Collections and an individual collection", async () => {
-    render(<Write />);
-    await screen.findByLabelText("Workspace home");
-
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
-    const collections = screen.getByLabelText("Collections");
-    fireEvent.click(Array.from(collections.querySelectorAll<HTMLButtonElement>(".workspaceCollectionCard"))
-      .find((button) => button.textContent?.includes("Research"))!);
-    expect(await screen.findByLabelText("Research")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research");
-
-    act(() => window.history.back());
-    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections"));
-    expect(screen.getByLabelText("Collections")).toBeInTheDocument();
-
-    act(() => window.history.forward());
-    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research"));
-    expect(screen.getByLabelText("Research")).toBeInTheDocument();
-  });
-
-  it("keeps Templates in workspace history", async () => {
-    render(<Write />);
-    await screen.findByLabelText("Workspace home");
-
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
-    expect(await screen.findByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates");
-    fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
-
-    act(() => window.history.back());
-    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=templates"));
-    expect(screen.getByRole("heading", { name: "What are we working on today?" })).toBeInTheDocument();
-  });
-
-  it("does not push duplicate history for the active workspace destination", async () => {
-    render(<Write />);
-    await screen.findByLabelText("Workspace home");
-    const pushState = vi.spyOn(window.history, "pushState");
-
-    for (const home of screen.getAllByRole("button", { name: "Home" })) fireEvent.click(home);
-    expect(pushState).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    expect(pushState).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Collections" }));
-    expect(pushState).toHaveBeenCalledTimes(1);
-  });
-
-  it("restores the collection that opened a document when Back is pressed", async () => {
-    stubSignedInFetch([{
-      id: "doc-research",
-      publicId: "research-note",
-      body: "# Research note",
-      collectionId: "collection-research",
-      collectionSlug: "research"
-    }]);
-    render(<Write />);
-    await screen.findByLabelText("Workspace home");
-    openSidebarCollection("Research");
-    await openDocumentNamed("Research note");
-    expect(window.location.pathname).toBe("/write/research-note");
-
-    act(() => window.history.back());
-
-    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research"));
-    expect(screen.getByLabelText("Research")).toBeInTheDocument();
-    // The list follows the sidebar, so it is back beside the overview.
-    expect(screen.getByRole("navigation", { name: "Documents in Research" })).toHaveTextContent("Research note");
-  });
-
-  it("replaces unknown views with Home", async () => {
-    window.history.replaceState(null, "", "/write?view=unknown");
-    const replaceState = vi.spyOn(window.history, "replaceState");
-
-    render(<Write />);
-
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
-    expect(replaceState).toHaveBeenCalledWith(null, "", "/write");
-  });
-
-  it("replaces a missing collection with the collection index and a clear message", async () => {
-    window.history.replaceState(null, "", "/write?collection=missing");
-    const replaceState = vi.spyOn(window.history, "replaceState");
-
-    render(<Write />);
-
-    expect(await screen.findByLabelText("Collections")).toBeInTheDocument();
-    expect(await screen.findByText("Collection could not be found")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
-    expect(replaceState).toHaveBeenCalledWith(null, "", "/write?view=collections");
-  });
-
-  it("keeps a custom collection URL without substituting Documents when collection loading fails", async () => {
-    const baseFetch = stubSignedInFetch([{ id: "doc-research", body: "# Research note" }]);
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/collections" && (init?.method ?? "GET") === "GET") {
-        return Promise.resolve(new Response(JSON.stringify({ error: "Collections unavailable" }), { status: 503 }));
-      }
-      return baseFetch(input, init);
-    }));
-    window.history.replaceState(null, "", "/write?collection=research");
-
-    render(<Write />);
-
-    expect(await screen.findByLabelText("Collection unavailable")).toHaveTextContent("Collection could not be loaded");
-    expect(screen.getByText("Collections unavailable")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?collection=research");
-    expect(screen.queryByLabelText("Documents")).not.toBeInTheDocument();
-  });
-
   it("recovers a stale document URL without showing another document under it", async () => {
     stubSignedInFetch([{ id: "doc-current", publicId: "current", body: "# Current note" }]);
     window.history.replaceState(null, "", "/write/stale");
 
     render(<Write />);
 
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
-    expect(await screen.findByText("Document could not be found")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
-  });
-
-  it("filters the document list by frontmatter tags", async () => {
-    stubSignedInFetch([
-      { id: "doc-notes", body: "---\ntags: [notes]\n---\n\n# Agent notes\n\nFollow ups." },
-      { id: "doc-scripts", body: "---\ntags: [scripts]\n---\n\n# Video script\n\nOpening line." }
-    ]);
-
-    await renderWrite();
-    openWorkspaceSearch();
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
-      target: { value: "scripts" }
-    });
-
-    expect(await screen.findByRole("button", { name: /Video script/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
-  });
-
-  it("scopes workspace search to persisted collection membership without inferring tags", async () => {
-    stubSignedInFetch([
-      { id: "doc-notes", body: "---\ntags: [content-studio]\n---\n\n# Agent notes\n\nFollow ups.", collectionId: "collection-context", collectionSlug: "operating-context" },
-      { id: "doc-scripts", body: "# Video script\n\nOpening line.", collectionId: "collection-content", collectionSlug: "content-studio" }
-    ]);
-
-    await renderWrite();
-    openWorkspaceSearch();
-    fireEvent.click(screen.getByRole("button", { name: "Content Studio" }));
-    expect(screen.getByRole("button", { name: /Video script/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Agent notes/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
-    expect(screen.getByRole("button", { name: /Agent notes/ })).toBeInTheDocument();
-  });
-
-  it("groups documents in collections instead of one flat sidebar", async () => {
-    stubSignedInFetch([
-      { id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" },
-      { id: "doc-draft", body: "# Newsletter draft\n\nWorking copy.", collectionId: "collection-content", collectionSlug: "content-studio" }
-    ]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Operating Context");
-    expect(screen.getByLabelText("Operating Context")).toBeInTheDocument();
-    expect(collectionDocuments("Operating Context")).toHaveTextContent("About me");
-    expect(screen.queryByRole("button", { name: /Newsletter draft/ })).not.toBeInTheDocument();
-    // One list of the collection's documents on screen, not two.
-    expect(screen.getAllByRole("button", { name: /^About me/ })).toHaveLength(1);
-  });
-
-  it("persists a document move before showing it in the new collection", async () => {
-    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
-
-    await renderWrite();
-    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), {
-      target: { value: "research" }
-    });
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).not.toBeDisabled());
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-
-    expect(collectionDocuments("Research")).toHaveTextContent("Private note");
-    expect(screen.getByLabelText("Research")).toHaveTextContent("Research notes.");
-  });
-
-  it("keeps a pending document save when navigation returns to the workspace", async () => {
-    const fetchMock = stubSignedInFetch([{ id: "doc-draft", publicId: "draft", body: "# Draft" }]);
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
-      target: { value: "# Draft\n\nSaved after navigation." }
-    });
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Home" })[0]);
-
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/docs/doc-draft",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ body: "# Draft\n\nSaved after navigation." })
-      })
-    ));
-  });
-
-  it("moves a document to a collection and back through controls available at 390 pixels", async () => {
-    const originalMatchMedia = window.matchMedia;
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      // 390 pixels is below both the phone and the list overlay breakpoints.
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(max-width: 720px)" || query === "(max-width: 1100px)"
-      }))
-    });
-    // Restore in a finally, so a failure here cannot leak a mobile matchMedia
-    // into every test that follows.
-    try {
-      stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
-
-      await renderWrite();
-      const documentCollection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
-      fireEvent.change(documentCollection, { target: { value: "research" } });
-      await waitFor(() => expect(documentCollection).toHaveValue("research"));
-
-      // Choosing a collection opens its list as an overlay straight away, and
-      // the overview behind it does not repeat the rows.
-      openSidebarCollection("Research");
-      expect(collectionDocuments("Research")).toHaveAttribute("data-mobile-open", "true");
-      expect(collectionDocuments("Research")).toHaveTextContent("Mobile note");
-      expect(screen.getByLabelText("Research")).not.toHaveTextContent("Mobile note");
-      expect(newDocumentButton()).toHaveAccessibleName("New document in Research");
-
-      // Closing the overlay puts the rows and the top bar + back in the page.
-      fireEvent.keyDown(window, { key: "Escape" });
-      expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
-      expect(screen.getByLabelText("Research")).toHaveTextContent("Mobile note");
-      expect(newDocumentButton()).toHaveAccessibleName("New document");
-      expect(screen.getByRole("button", { name: "Document list" })).toHaveAttribute("aria-expanded", "false");
-
-      fireEvent.click(screen.getByRole("button", { name: "Document list" }));
-      await openDocumentNamed("Mobile note");
-      expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
-      const movedBack = await screen.findByRole("combobox", { name: "Collection for Mobile note" });
-      fireEvent.change(movedBack, { target: { value: "documents" } });
-      await waitFor(() => expect(movedBack).toHaveValue("documents"));
-
-      openSidebarCollection("Documents");
-      expect(collectionDocuments("Documents")).toHaveTextContent("Mobile note");
-
-      // Opening the phone sidebar closes the list rather than stacking both.
-      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
-      expect(screen.queryByRole("navigation", { name: "Documents in Documents" })).not.toBeInTheDocument();
-    } finally {
-      Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
-    }
-  });
-
-  it("keeps the confirmed mobile collection when assignment fails", async () => {
-    const baseFetch = stubSignedInFetch([{ id: "doc-mobile", publicId: "mobile", body: "# Mobile note" }]);
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/docs/doc-mobile" && init?.method === "PATCH") {
-        return Promise.resolve(new Response(JSON.stringify({ error: "move failed" }), { status: 500 }));
-      }
-      return baseFetch(input, init);
-    }));
-    await renderWrite();
-    const collection = screen.getByRole("combobox", { name: "Collection for Mobile note" });
-
-    fireEvent.change(collection, { target: { value: "research" } });
-
-    expect(await screen.findByText("move failed")).toBeInTheDocument();
-    expect(collection).toHaveValue("documents");
-  });
-
-  it("shows a clear empty state for a collection with no documents", async () => {
-    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-
-    // The list beside the overview carries the empty state and its own +.
-    expect(screen.getByText("No documents here yet. Use + in the list to add the first one.")).toBeInTheDocument();
-    const list = screen.getByRole("navigation", { name: "Documents in Research" });
-    expect(within(list).getByText("No documents yet.")).toBeInTheDocument();
-    expect(newDocumentButton()).toBe(within(list).getByRole("button", { name: "New document in Research" }));
-
-    // With the sidebar hidden the list goes too, so the overview lists the
-    // rows itself and the top bar's + comes back.
-    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
-    expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
-    expect(screen.getByText("No documents yet. Create a document to start writing.")).toBeInTheDocument();
-    expect(newDocumentButton()).toHaveAccessibleName("New document");
-  });
-
-  it("reopens the sidebar and list when a collection is chosen from the collections view", async () => {
-    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
-    expect(screen.getByRole("button", { name: "Show sidebar" })).toHaveAttribute("aria-pressed", "false");
-
-    fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
-    const collections = screen.getByLabelText("Collections");
-    fireEvent.click(within(collections).getByRole("button", { name: /^Research/ }));
-
-    expect(screen.getByRole("button", { name: "Hide sidebar" })).toHaveAttribute("aria-pressed", "true");
-    expect(collectionDocuments("Research")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
-
-    // Hiding the sidebar again still collapses both panes.
-    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
-    expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
-  });
-
-  it("disables star and collection controls while persistence is pending", async () => {
-    const baseFetch = stubSignedInFetch([{
-      id: "doc-pending",
-      body: "# Pending controls",
-      pinned: false,
-      starred: false
-    }]);
-    let resolveStar: ((response: Response) => void) | undefined;
-    let resolveCollection: ((response: Response) => void) | undefined;
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? "GET";
-      const body = JSON.parse(String(init?.body ?? "{}"));
-      if (url === "/api/v1/docs/doc-pending" && method === "PATCH" && Object.prototype.hasOwnProperty.call(body, "starred")) {
-        return new Promise<Response>((resolve) => { resolveStar = resolve; });
-      }
-      if (url === "/api/v1/collections" && method === "POST") {
-        return new Promise<Response>((resolve) => { resolveCollection = resolve; });
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Star document" })).toBeDisabled());
-    await act(async () => {
-      resolveStar!(new Response(JSON.stringify({
-        id: "doc-pending",
-        publicId: "public-1",
-        body: "# Pending controls",
-        collectionId: null,
-        collectionSlug: null,
-        starred: true
-      }), { status: 200 }));
-    });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled());
-
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Pending collection" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled());
-    expect(screen.getByRole("textbox", { name: "Collection title" })).toBeDisabled();
-    expect(screen.getByRole("dialog", { name: "New collection" })).toHaveFocus();
-    await act(async () => {
-      resolveCollection!(new Response(JSON.stringify({
-        id: "collection-pending",
-        slug: "pending-collection",
-        title: "Pending collection",
-        description: null,
-        createdAt: "2026-08-15T10:00:00Z",
-        updatedAt: "2026-08-15T10:00:00Z"
-      }), { status: 201 }));
-    });
-    expect(await screen.findByLabelText("Pending collection")).toBeInTheDocument();
-  });
-
-  it("keeps assignment disabled until collections load and after failure", async () => {
-    let rejectCollections: ((reason?: unknown) => void) | undefined;
-    const baseFetch = stubSignedInFetch([{
-      id: "doc-assigned",
-      publicId: "assigned",
-      body: "# Assigned note",
-      collectionId: "collection-research",
-      collectionSlug: "research"
-    }]);
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/collections" && (init?.method ?? "GET") === "GET") {
-        return new Promise<Response>((_, reject) => { rejectCollections = reject; });
-      }
-      return baseFetch(input, init);
-    }));
-    window.history.replaceState(null, "", "/write/assigned");
-
-    render(<Write />);
-    const collection = await screen.findByRole("combobox", { name: "Collection for Assigned note" });
-    expect(collection).toBeDisabled();
-    await act(async () => rejectCollections!(new Error("collection outage")));
-
-    expect(await screen.findByText("collection outage")).toBeInTheDocument();
-    expect(collection).toBeDisabled();
-    fireEvent.change(collection, { target: { value: "documents" } });
-    expect(baseFetch).not.toHaveBeenCalledWith(
-      "/api/v1/docs/doc-assigned",
-      expect.objectContaining({ method: "PATCH" })
-    );
-  });
-
-  it("creates a collection and makes it available across the workspace", async () => {
-    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection description" }), { target: { value: "Briefs and decisions." } });
-    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
-
-    expect(await screen.findByLabelText("Client Work")).toHaveTextContent("Briefs and decisions.");
-    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Client Work" })).toHaveFocus());
-    openWorkspaceSearch();
-    expect(within(screen.getByRole("dialog", { name: "Search workspace" })).getByRole("button", { name: "Client Work" })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "Search workspace" }), { key: "Escape" });
-    openSidebarCollection("Documents");
-    await openDocumentNamed("Private note");
-    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "client-work" } });
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Collection for Private note" })).toHaveValue("client-work"));
-    openSidebarCollection("Client Work");
-    expect(collectionDocuments("Client Work")).toHaveTextContent("Private note");
-  });
-
-  it("keeps a user-created Documents collection distinct from the fallback", async () => {
-    stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "New collection" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Documents" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
-
-    await waitFor(() => expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Documents"));
-    openSidebarCollection("Documents");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-  });
-
-  it("renames a collection and keeps its document assignments", async () => {
-    stubSignedInFetch([{ id: "doc-context", body: "# Findings", collectionId: "collection-research", collectionSlug: "research" }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Discovery" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByLabelText("Discovery")).toBeInTheDocument();
-    expect(collectionDocuments("Discovery")).toHaveTextContent("Findings");
-    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Discovery");
-  });
-
-  it("keeps failed collection saves inside the dialog and restores input focus", async () => {
-    const baseFetch = stubSignedInFetch();
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/collections/research" && init?.method === "PATCH") {
-        return Promise.resolve(new Response(JSON.stringify({ error: "save failed" }), { status: 500 }));
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const title = screen.getByRole("textbox", { name: "Collection title" });
-    fireEvent.change(title, { target: { value: "Discovery" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "save failed"
-    );
-    await waitFor(() => expect(title).toHaveFocus());
-    expect(screen.getAllByText("save failed")).toHaveLength(1);
-    expect(screen.getByRole("dialog", { name: "Edit collection" })).toBeInTheDocument();
-  });
-
-  it("shows actionable collection creation failures inside the dialog", async () => {
-    const baseFetch = stubSignedInFetch();
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/collections" && init?.method === "POST") {
-        return Promise.resolve(new Response(JSON.stringify({ error: "collection limit reached" }), { status: 409 }));
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
-    const title = screen.getByRole("textbox", { name: "Collection title" });
-    fireEvent.change(title, { target: { value: "One too many" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("collection limit reached");
-    await waitFor(() => expect(title).toHaveFocus());
-    expect(screen.getAllByText("collection limit reached")).toHaveLength(1);
-    expect(screen.getByRole("dialog", { name: "New collection" })).toBeInTheDocument();
-  });
-
-  it("closes collection creation with Escape without adding it", async () => {
-    stubSignedInFetch();
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    const trigger = screen.getAllByRole("button", { name: "New collection" }).at(-1)!;
-    trigger.focus();
-    fireEvent.click(trigger);
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "New collection" }), { key: "Escape" });
-
-    expect(screen.queryByRole("dialog", { name: "New collection" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("New collection");
-    await waitFor(() => expect(trigger).toHaveFocus());
-  });
-
-  it("portals collection dialogs to the viewport and contains keyboard focus", async () => {
-    stubSignedInFetch();
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    const trigger = screen.getAllByRole("button", { name: "New collection" }).at(-1)!;
-    trigger.focus();
-    fireEvent.click(trigger);
-
-    const dialog = screen.getByRole("dialog", { name: "New collection" });
-    const backdrop = dialog.parentElement!;
-    const title = screen.getByRole("textbox", { name: "Collection title" });
-    expect(backdrop).toHaveClass("workspace", "workspaceCollectionDialogBackdrop");
-    expect(backdrop.parentElement).toBe(document.body);
-    expect(dialog.closest(".workspace")).toBe(backdrop);
-    expect(Array.from(document.body.children).filter((element) => element !== backdrop)
-      .every((element) => element.hasAttribute("inert"))).toBe(true);
-    expect(document.body).toHaveStyle({ overflow: "hidden" });
-    expect(title).toHaveFocus();
-
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(screen.getByRole("dialog", { name: "New collection" })).toBeInTheDocument();
-    expect(title).toHaveFocus();
-
-    fireEvent.change(title, { target: { value: "Focus test" } });
-    const submit = screen.getByRole("button", { name: "Create collection" });
-    fireEvent.keyDown(title, { key: "Tab", shiftKey: true });
-    expect(submit).toHaveFocus();
-    fireEvent.keyDown(submit, { key: "Tab" });
-    expect(title).toHaveFocus();
-    trigger.focus();
-    expect(title).toHaveFocus();
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(trigger).toHaveFocus());
-    expect(document.body).not.toHaveStyle({ overflow: "hidden" });
-    expect(Array.from(document.body.children).some((element) => element.hasAttribute("inert"))).toBe(false);
-  });
-
-  it("uses the shared modal contract for editing and deleting collections", async () => {
-    stubSignedInFetch();
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-
-    const editTrigger = screen.getByRole("button", { name: "Edit" });
-    editTrigger.focus();
-    fireEvent.click(editTrigger);
-    const editDialog = screen.getByRole("dialog", { name: "Edit collection" });
-    const editBackdrop = editDialog.parentElement!;
-    expect(editDialog.parentElement?.parentElement).toBe(document.body);
-    expect(screen.getByRole("textbox", { name: "Collection title" })).toHaveFocus();
-    fireEvent.pointerDown(editDialog);
-    fireEvent.click(editBackdrop);
-    expect(editDialog).toBeInTheDocument();
-    fireEvent.pointerDown(editBackdrop);
-    fireEvent.click(editBackdrop);
-    await waitFor(() => expect(editTrigger).toHaveFocus());
-
-    const deleteTrigger = screen.getByRole("button", { name: "Delete" });
-    deleteTrigger.focus();
-    fireEvent.click(deleteTrigger);
-    const deleteDialog = screen.getByRole("dialog", { name: "Delete collection" });
-    const cancel = screen.getByRole("button", { name: "Cancel" });
-    const confirm = screen.getByRole("button", { name: "Delete collection" });
-    expect(deleteDialog.parentElement?.parentElement).toBe(document.body);
-    expect(cancel).toHaveFocus();
-    fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
-    expect(confirm).toHaveFocus();
-    fireEvent.keyDown(confirm, { key: "Tab" });
-    expect(cancel).toHaveFocus();
-    fireEvent.keyDown(deleteDialog, { key: "Escape" });
-
-    expect(screen.queryByRole("dialog", { name: "Delete collection" })).not.toBeInTheDocument();
-    await waitFor(() => expect(deleteTrigger).toHaveFocus());
-  });
-
-  it("opens collection creation from the sidebar while Collections is already open", async () => {
-    stubSignedInFetch();
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" })[0]);
-
-    expect(screen.getByRole("dialog", { name: "New collection" })).toBeInTheDocument();
-  });
-
-  it("can recreate a deleted custom collection name", async () => {
-    stubSignedInFetch();
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getByRole("button", { name: "View all collections" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
-    await screen.findByLabelText("Client Work");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    await screen.findByLabelText("Collections");
-    fireEvent.click(screen.getAllByRole("button", { name: "New collection" }).at(-1)!);
-    fireEvent.change(screen.getByRole("textbox", { name: "Collection title" }), { target: { value: "Client Work" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create collection" }));
-
-    expect(await screen.findByLabelText("Client Work")).toBeInTheDocument();
-    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Client Work");
-  });
-
-  it("assigns a document created from a collection back to that collection", async () => {
-    stubSignedInFetch([{ id: "doc-private", body: "# Private note" }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-    // Creating from inside a collection files the document there, without a
-    // stop at the template picker.
-    fireEvent.click(newDocumentButton());
-    await screen.findByRole("region", { name: "Markdown editor" });
-
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: "Collection for Untitled" })).toHaveValue("research")
-    );
-    openSidebarCollection("Research");
-    expect(screen.getByRole("navigation", { name: "Documents in Research" })).toHaveTextContent("Untitled");
-  });
-
-  it("deletes a collection directly from its document list while editing, preserving the document", async () => {
-    stubSignedInFetch([{ id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" }]);
-    await renderWrite();
-    const list = await screen.findByRole("navigation", { name: "Documents in Operating Context" });
-    const trigger = within(list).getByRole("button", { name: "Delete collection Operating Context" });
-    trigger.focus();
-    fireEvent.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: "Delete collection" });
-    expect(dialog).toHaveTextContent("Delete “Operating Context”? 1 document will move to Documents.");
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    await waitFor(() => expect(trigger).toHaveFocus());
-    expect(screen.queryByRole("dialog", { name: "Delete collection" })).not.toBeInTheDocument();
-    expect(list).toHaveTextContent("About me");
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    await screen.findByText("“Operating Context” was deleted. Its documents are now in Documents.");
-    openSidebarCollection("Documents");
-    const documents = screen.getByLabelText("Documents", { selector: ".workspaceCollectionBrowse" });
-    expect(documents).toHaveTextContent("About me");
-    expect(within(documents).queryByRole("button", { name: /Delete collection/ })).not.toBeInTheDocument();
-  });
-
-  it("keeps the mobile collection list open when Escape dismisses its delete dialog", async () => {
-    const originalMatchMedia = window.matchMedia;
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(max-width: 720px)" || query === "(max-width: 1100px)"
-      }))
-    });
-    try {
-      stubSignedInFetch([{ id: "unfiled", body: "# Unfiled note" }]);
-      await renderWrite();
-      openSidebarCollection("Research");
-      const trigger = within(collectionDocuments("Research")).getByRole("button", { name: "Delete collection Research" });
-      trigger.focus();
-      fireEvent.click(trigger);
-      fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" });
-      expect(screen.queryByRole("dialog", { name: "Delete collection" })).not.toBeInTheDocument();
-      expect(collectionDocuments("Research")).toHaveAttribute("data-mobile-open", "true");
-      await waitFor(() => expect(trigger).toHaveFocus());
-    } finally {
-      Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
-    }
-  });
-
-  it("offers deletion for empty collections and permits retry after a failed list deletion", async () => {
-    const baseFetch = stubSignedInFetch([{ id: "unfiled", body: "# Unfiled note" }]);
-    let failDelete = true;
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/collections/research" && init?.method === "DELETE" && failDelete) {
-        return Promise.resolve(new Response(JSON.stringify({ error: "Unavailable" }), { status: 500 }));
-      }
-      return baseFetch(input, init);
-    }));
-    await renderWrite();
-    openSidebarCollection("Research");
-    const list = screen.getByRole("navigation", { name: "Documents in Research" });
-    fireEvent.click(within(list).getByRole("button", { name: "Delete collection Research" }));
-    expect(screen.getByRole("dialog", { name: "Delete collection" })).toHaveTextContent("0 documents will move to Documents.");
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(list).toBeInTheDocument();
-    fireEvent.click(within(list).getByRole("button", { name: "Delete collection Research" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    expect(await screen.findByText("Collection could not be deleted. Try again.")).toBeInTheDocument();
-    expect(list).toBeInTheDocument();
-    failDelete = false;
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    await screen.findByText("“Research” was deleted. Its documents are now in Documents.");
-  });
-
-  it("deletes a collection and moves its documents to Documents after dialog confirmation", async () => {
-    stubSignedInFetch([{ id: "doc-context", body: "# About me\n\nStable context.", collectionId: "collection-context", collectionSlug: "operating-context" }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Operating Context");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-
-    expect(screen.getByRole("dialog", { name: "Delete collection" })).toHaveTextContent(
-      "Delete “Operating Context”? 1 document will move to Documents."
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    expect(await screen.findByLabelText("Collections")).toBeInTheDocument();
-    expect(screen.getByText("“Operating Context” was deleted. Its documents are now in Documents.")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write?view=collections");
-    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Operating Context");
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "New collection" }).at(-1)).toHaveFocus());
-    openSidebarCollection("Documents");
-    expect(collectionDocuments("Documents")).toHaveTextContent("About me");
-  });
-
-  it("discards an assignment response after its collection is deleted", async () => {
-    let resolveAssignment: ((response: Response) => void) | undefined;
-    const baseFetch = stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}"));
-      if (String(input) === "/api/v1/docs/doc-private" && init?.method === "PATCH" && body.collectionId === "collection-research") {
-        return new Promise<Response>((resolve) => { resolveAssignment = resolve; });
-      }
-      return baseFetch(input, init);
-    }));
-    await renderWrite();
-    fireEvent.change(screen.getByRole("combobox", { name: "Collection for Private note" }), { target: { value: "research" } });
-    await waitFor(() => expect(resolveAssignment).toBeDefined());
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    await screen.findByLabelText("Collections");
-    await act(async () => {
-      resolveAssignment!(new Response(JSON.stringify({
-        id: "doc-private",
-        publicId: "public-1",
-        body: "# Private note\n\nDraft.",
-        collectionId: "collection-research",
-        collectionSlug: "research",
-        starred: false
-      }), { status: 200 }));
-    });
-
-    openSidebarCollection("Documents");
-    expect(collectionDocuments("Documents")).toHaveTextContent("Private note");
-    expect(screen.getByLabelText("Workspace navigation")).not.toHaveTextContent("Research");
-  });
-
-  it("shows a later-loaded document from a deleted collection as Documents", async () => {
-    let resolveLaterPage: ((response: Response) => void) | undefined;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/collections" && !init?.method) {
-        return new Response(JSON.stringify({ collections: [
-          { id: "collection-research", slug: "research", title: "Research", description: "Research notes.", createdAt: "2026-08-01T10:00:00Z", updatedAt: "2026-08-01T10:00:00Z" }
-        ] }), { status: 200 });
-      }
-      if (url === "/api/v1/collections/research" && init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
-      }
-      if (url === "/api/v1/docs?limit=50") {
-        return new Response(
-          JSON.stringify({ documents: [{ id: "doc-context", publicId: "context", body: "# First research", collectionId: "collection-research", collectionSlug: "research", starred: false }], nextCursor: "page-two" }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs?limit=50&cursor=page-two") {
-        return new Promise<Response>((resolve) => { resolveLaterPage = resolve; });
-      }
-      return new Response(JSON.stringify({ error: `unexpected request: ${url}` }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    render(<Write />);
-    await screen.findByLabelText("Workspace home");
-    openSidebarCollection("Research");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    await screen.findByLabelText("Collections");
-    await waitFor(() => expect(resolveLaterPage).toBeDefined());
-    resolveLaterPage?.(
-      new Response(
-        JSON.stringify({ documents: [{ id: "doc-later", publicId: "later", body: "# Later research", collectionId: "collection-research", collectionSlug: "research", starred: false }] }),
-        { status: 200 }
-      )
-    );
-
-    openWorkspaceSearch();
-    const searchDialog = await screen.findByRole("dialog", { name: "Search workspace" });
-    const searchResult = await waitFor(() => {
-      const result = Array.from(searchDialog.querySelectorAll<HTMLButtonElement>(".workspaceSearchResults button"))
-        .find((button) => button.textContent?.includes("Later research"));
-      expect(result).toBeDefined();
-      return result!;
-    });
-    fireEvent.click(searchResult);
-    await screen.findByRole("region", { name: "Markdown editor" });
-    expect(screen.getByRole("combobox", { name: "Collection for Later research" })).toHaveValue("documents");
-  });
-
-  it("keeps a collection when deletion is cancelled", async () => {
-    stubSignedInFetch([{ id: "doc-context", body: "---\ntags: [operating-context]\n---\n\n# About me" }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Operating Context");
-    const trigger = screen.getByRole("button", { name: "Delete" });
-    trigger.focus();
-    fireEvent.click(trigger);
-    expect(screen.getByRole("dialog", { name: "Delete collection" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    expect(screen.getByLabelText("Operating Context")).toBeInTheDocument();
-    expect(screen.getByLabelText("Workspace navigation")).toHaveTextContent("Operating Context");
-    await waitFor(() => expect(trigger).toHaveFocus());
-  });
-
-  it("shows collection deletion failures inside the modal", async () => {
-    let resolveDelete: ((response: Response) => void) | undefined;
-    const baseFetch = stubSignedInFetch();
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/collections/research" && init?.method === "DELETE") {
-        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Research");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete collection" }));
-    await waitFor(() => expect(resolveDelete).toBeDefined());
-    expect(screen.getByRole("dialog", { name: "Delete collection" })).toHaveFocus();
-    await act(async () => {
-      resolveDelete!(new Response(JSON.stringify({ error: "delete failed" }), { status: 500 }));
-    });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Collection could not be deleted. Try again."
-    );
-    expect(screen.queryByText("delete failed")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Delete collection" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete collection" })).toBeEnabled();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus());
-  });
-
-  it("protects the Documents fallback collection from deletion", async () => {
-    stubSignedInFetch([{ id: "doc-general", body: "# Scratch" }]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    openSidebarCollection("Documents");
-
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(await screen.findByText("That document could not be found.")).toBeInTheDocument();
+    expect((await screen.findAllByRole("heading", { name: "Current note", level: 1 })).length).toBeGreaterThan(0);
+    await waitFor(() => expect(window.location.pathname).toBe("/write/current"));
   });
 
   it("continues to the next document after deleting the active document", async () => {
@@ -2550,7 +1350,7 @@ describe("Write (editor)", () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-private", body: "# Private note\n\nDraft." }]);
 
     await renderWrite();
-    openDocumentAction("Delete document");
+    openDocumentAction("Delete");
 
     expect(screen.getByRole("dialog", { name: "Delete document" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -2560,7 +1360,7 @@ describe("Write (editor)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Delete document" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "Private note", level: 1 }).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("heading", { name: "Private note", level: 1 })).length).toBeGreaterThan(0);
   });
 
   it("closes document confirmations when history changes the active document", async () => {
@@ -2570,7 +1370,7 @@ describe("Write (editor)", () => {
     ]);
 
     await renderWrite();
-    openDocumentAction("Delete document");
+    openDocumentAction("Delete");
     expect(screen.getByRole("dialog", { name: "Delete document" })).toBeInTheDocument();
 
     act(() => {
@@ -2581,7 +1381,7 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("dialog", { name: "Delete document" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).startsWith("/api/v1/docs/") && init?.method === "DELETE")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
+    openDocumentAction("Sharing settings…");
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
     act(() => {
       window.history.pushState(null, "", "/write/first");
@@ -2594,7 +1394,7 @@ describe("Write (editor)", () => {
       expect.objectContaining({ method: "DELETE" })
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    openDocumentAction("Share…");
     act(() => {
       window.history.pushState(null, "", "/write/second");
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -2614,7 +1414,7 @@ describe("Write (editor)", () => {
 
     deleteActiveDocument();
 
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "A blank page." })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Only note/ })).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/write");
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-only", {
@@ -2625,44 +1425,18 @@ describe("Write (editor)", () => {
     unmount();
     render(<Write />);
 
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "A blank page." })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs",
       expect.objectContaining({ method: "POST" })
     );
   });
 
-  it("does not replace a newer workspace URL when document deletion finishes late", async () => {
-    let resolveDelete: ((response: Response) => void) | undefined;
-    const baseFetch = stubSignedInFetch([
-      { id: "doc-private", body: "# Private note\n\nDraft." },
-      { id: "doc-next", body: "# Next note\n\nKeep." }
-    ]);
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/docs/doc-private" && init?.method === "DELETE") {
-        return new Promise<Response>((resolve) => { resolveDelete = resolve; });
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    deleteActiveDocument();
-    await waitFor(() => expect(resolveDelete).toBeDefined());
-    openWorkspaceHome();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
-
-    await act(async () => resolveDelete!(new Response(null, { status: 204 })));
-
-    expect(await screen.findByLabelText("Workspace home")).toBeInTheDocument();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/write");
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
-  });
-
   it("cancels a pending autosave when deleting its document", async () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-only", body: "# Only note\n\nDraft." }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Edited note\n\nUnsaved." }
     });
@@ -2695,7 +1469,7 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# First edit\n\nUnsaved." }
     });
@@ -2725,72 +1499,6 @@ describe("Write (editor)", () => {
     );
   });
 
-  it("keeps starred documents separate from the recent ordering", async () => {
-    stubSignedInFetch([
-      {
-        id: "doc-old",
-        body: "# Old note",
-        updatedAt: "2026-07-09T08:00:00Z"
-      },
-      {
-        id: "doc-pinned",
-        body: "# Pinned note",
-        pinned: true,
-        updatedAt: "2026-07-09T07:00:00Z"
-      },
-      {
-        id: "doc-new",
-        body: "# Latest note",
-        updatedAt: "2026-07-09T09:00:00Z"
-      }
-    ]);
-
-    await renderWrite();
-    openWorkspaceHome();
-    fireEvent.click(screen.getAllByRole("button", { name: /Recent/ })[0]);
-    const rows = Array.from(screen.getByLabelText("Recent").querySelectorAll<HTMLButtonElement>(".workspaceDocumentOpen"))
-      .map((button) => button.textContent ?? "");
-    expect(rows[0]).toContain("Latest note");
-    expect(rows[1]).toContain("Old note");
-    expect(rows[2]).toContain("Pinned note");
-    fireEvent.click(screen.getAllByRole("button", { name: /Starred/ })[0]);
-    expect(screen.getByLabelText("Starred")).toHaveTextContent("Pinned note");
-    expect(screen.queryByRole("button", { name: /Latest note/ })).not.toBeInTheDocument();
-  });
-
-  it("moves a metadata-updated document to its confirmed recent position", async () => {
-    const baseFetch = stubSignedInFetch([
-      { id: "doc-old", body: "# Older note", updatedAt: "2026-08-15T08:00:00Z" },
-      { id: "doc-new", body: "# Newer note", updatedAt: "2026-08-15T09:00:00Z" }
-    ]);
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/docs/doc-old" && init?.method === "PATCH") {
-        return Promise.resolve(new Response(JSON.stringify({
-          id: "doc-old",
-          publicId: "public-1",
-          body: "# Older note",
-          collectionId: null,
-          collectionSlug: null,
-          starred: true,
-          updatedAt: "2026-08-15T10:00:00Z"
-        }), { status: 200 }));
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    await openDocumentFromSearch(/Older note/);
-    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
-    await screen.findByRole("button", { name: "Unstar document" });
-    openWorkspaceHome();
-    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
-
-    const recent = await screen.findByLabelText("Recent");
-    const rows = recent.querySelectorAll(".workspaceDocumentOpen");
-    expect(rows[0]).toHaveTextContent("Older note");
-    expect(rows[1]).toHaveTextContent("Newer note");
-  });
-
   it("marks a document as shared without leaving the editor", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const fetchMock = stubSignedInFetch();
@@ -2800,96 +1508,32 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    openDocumentAction("Share…");
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Share" })).not.toHaveAttribute("aria-pressed");
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-welcome/share",
       expect.objectContaining({ method: "POST" })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Publish and copy link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create link" }));
 
-    await screen.findByRole("button", { name: "Unshare" });
+    await screen.findByText("Shared", { selector: ".wFooter span" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
-  });
-
-  it("keeps sharing independent from collection assignment", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
-    });
-    stubSignedInFetch([
-      { id: "doc-private", body: "# Private note", updatedAt: "2000-01-01T08:00:00Z" },
-      { id: "doc-shared", body: "# Shared note", sharedAt: "2000-01-01T09:00:00Z", updatedAt: "2000-01-01T09:00:00Z" }
-    ]);
-
-    await renderWrite();
-    await openDocumentFromSearch(/Private note/);
-    const collection = screen.getByRole("combobox", { name: /Collection for/ });
-    fireEvent.change(collection, { target: { value: "research" } });
-    publishActiveDocument();
-
-    await screen.findByRole("button", { name: "Unshare" });
-    expect(collection).toHaveValue("research");
   });
 
   it("removes the shared state without leaving the editor", async () => {
     const fetchMock = stubSignedInFetch([{ id: "doc-shared", body: "# Shared draft", shareToken: "share-token", sharedAt: "2026-07-09T08:00:00Z" }]);
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
+    openDocumentAction("Sharing settings…");
     expect(screen.getByRole("dialog", { name: "Share document" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-shared/share",
       expect.objectContaining({ method: "DELETE" })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Make private" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
 
-    await screen.findByRole("button", { name: "Share" });
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
-  });
-
-  it("keeps collection assignment after a document is unshared", async () => {
-    stubSignedInFetch([
-      {
-        id: "doc-shared",
-        body: "# Shared note",
-        shareToken: "share-token",
-        sharedAt: "2000-01-01T08:00:00Z",
-        updatedAt: "2000-01-01T08:00:00Z"
-      },
-      { id: "doc-private", body: "# Private note", updatedAt: "2000-01-01T09:00:00Z" }
-    ]);
-
-    await renderWrite();
-    await openDocumentFromSearch(/Shared note/);
-    const collection = screen.getByRole("combobox", { name: /Collection for/ });
-    fireEvent.change(collection, { target: { value: "passage" } });
-    makeActiveDocumentPrivate();
-
-    await screen.findByRole("button", { name: "Share" });
-    expect(collection).toHaveValue("passage");
-  });
-
-  it("uses document frontmatter as a collection signal without adding tag controls", async () => {
-    await renderWrite();
-    expect(screen.getByRole("combobox", { name: "Collection for Markdown for agents and humans" })).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Filter by tag" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Document tags" })).not.toBeInTheDocument();
-  });
-
-  it("keeps document row actions as native keyboard-reachable buttons", async () => {
-    await renderWrite();
-
-    const pin = screen.getByRole("button", { name: "Unstar document" });
-    expect(pin.tagName).toBe("BUTTON");
-
-    await createBlankDocument();
-    await screen.findByRole("textbox", { name: "Markdown editor" });
-    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
-    const remove = await screen.findByRole("menuitem", { name: "Delete document" });
-    expect(remove.tagName).toBe("BUTTON");
   });
 
   it("does not show delete for shared documents", async () => {
@@ -2900,9 +1544,9 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    expect(screen.getAllByRole("heading", { name: "Lead magnet", level: 1 }).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("heading", { name: "Lead magnet", level: 1 })).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
-    expect(screen.queryByRole("menuitem", { name: "Delete document" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("still renders when browser storage reads are blocked", async () => {
@@ -2969,18 +1613,18 @@ describe("Write (editor)", () => {
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
     // The action menu keeps the link reachable after publishing.
-    await screen.findByRole("button", { name: "Unshare" });
+    await screen.findByText("Shared", { selector: ".wFooter span" });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
-    expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Copy share link" })).toBeInTheDocument();
 
     // Copying from the menu needs no dialog and no republishing.
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy link" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy share link" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
     expect(writeText.mock.calls[1][0]).toBe("http://localhost:3000/d/public-2");
 
     // The dialog shows the URL rather than only linking to it.
-    fireEvent.click(screen.getByRole("button", { name: "Unshare" }));
+    openDocumentAction("Sharing settings…");
     expect(await screen.findByText("http://localhost:3000/d/public-2")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/d/public-2");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -3103,13 +1747,32 @@ describe("Write (editor)", () => {
     });
 
     await renderWrite();
-    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    openDocumentAction("Share…Pro");
 
-    expect(await screen.findByText("Sharing and raw .md URLs are Pro features.")).toBeInTheDocument();
+    expect(await screen.findByText("Share links are part of Passage Pro.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/v1/docs/doc-1/share",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("explains the upgrade when the server says sharing needs Pro", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-1", body: "# One" }]);
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/v1/docs/doc-1/share" && init?.method === "POST") {
+        return new Response(JSON.stringify({ error: "Passage Pro is required" }), { status: 402 });
+      }
+      return respond(input, init);
+    });
+
+    await renderWrite();
+    publishActiveDocument();
+
+    expect(await screen.findByText("Share links are part of Passage Pro.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByText("Share failed")).not.toBeInTheDocument();
   });
 
   it("shares large documents through the server", async () => {
@@ -3161,7 +1824,9 @@ describe("Write (editor)", () => {
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "/account");
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    expect(screen.getByRole("menuitem", { name: "Light mode" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Account" })).toHaveAttribute("href", "/account");
   });
 
   it("keeps the sign-in action stable while the session check resolves", () => {
@@ -3298,7 +1963,7 @@ describe("Write (editor)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
     const accountMenu = await screen.findByRole("menu");
     expect(within(accountMenu).getByText("writer@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Account settings" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("menuitem", { name: "Account" })).toHaveAttribute("href", "/account");
     expect(screen.queryByLabelText("API tokens")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create token" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/api-tokens", expect.anything());
@@ -3391,11 +2056,11 @@ describe("Write (editor)", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1", { credentials: "include" });
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/docs/doc-2", expect.anything());
 
-    const second = await screen.findByRole("button", { name: /^Second/ });
+    const second = await screen.findByRole("button", { name: /^Second/ , hidden: true });
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs?limit=50&cursor=page-two", { credentials: "include" });
 
     openWorkspaceSearch();
-    fireEvent.change(screen.getByRole("textbox", { name: "Search documents and tags" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search documents" }), {
       target: { value: "Second" }
     });
     expect(second).toBeInTheDocument();
@@ -3404,168 +2069,6 @@ describe("Write (editor)", () => {
     expect((await screen.findAllByText("Full second body")).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-2", { credentials: "include" });
     expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
-  });
-
-  it("preserves newer collection and star state when a slow body read finishes", async () => {
-    let resolveBody: ((response: Response) => void) | undefined;
-    let confirmedCollectionId: string | null = null;
-    let confirmedCollectionSlug: string | null = null;
-    let confirmedStarred = false;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? "GET";
-      if (url === "/api/v1/me") {
-        return new Response(
-          JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
-          { status: 200 }
-        );
-      }
-      if (url === "/api/v1/docs?limit=50") {
-        return new Response(JSON.stringify({
-          documents: [{
-            id: "doc-race",
-            publicId: "public-race",
-            title: "Race metadata",
-            excerpt: "Race metadata\n\nPreview",
-            updatedAt: "2026-08-15T08:00:00Z",
-            collectionId: null,
-            collectionSlug: null,
-            starred: false
-          }, {
-            id: "doc-newer",
-            publicId: "public-newer",
-            title: "Newer metadata",
-            excerpt: "Newer metadata",
-            updatedAt: "2026-08-15T09:30:00Z",
-            collectionId: null,
-            collectionSlug: null,
-            starred: false
-          }]
-        }), { status: 200 });
-      }
-      if (url === "/api/v1/docs/doc-race" && method === "GET") {
-        return new Promise<Response>((resolve) => { resolveBody = resolve; });
-      }
-      if (url === "/api/v1/docs/doc-race" && method === "PATCH") {
-        const update = JSON.parse(String(init?.body ?? "{}"));
-        if (Object.prototype.hasOwnProperty.call(update, "collectionId")) {
-          confirmedCollectionId = update.collectionId;
-          confirmedCollectionSlug = update.collectionId ? "research" : null;
-        }
-        if (Object.prototype.hasOwnProperty.call(update, "starred")) confirmedStarred = update.starred;
-        return new Response(JSON.stringify({
-          id: "doc-race",
-          publicId: "public-race",
-          body: "# Race metadata\n\nFull body",
-          collectionId: confirmedCollectionId,
-          collectionSlug: confirmedCollectionSlug,
-          starred: confirmedStarred,
-          updatedAt: "2026-08-15T10:00:00Z"
-        }), { status: 200 });
-      }
-      if (url === "/api/v1/collections") {
-        return new Response(JSON.stringify({ collections: [{
-          id: "collection-research",
-          slug: "research",
-          title: "Research",
-          description: "Research notes.",
-          createdAt: "2026-08-15T10:00:00Z",
-          updatedAt: "2026-08-15T10:00:00Z"
-        }] }), { status: 200 });
-      }
-      if (url === "/api/v1/templates") {
-        return new Response(JSON.stringify({ templates: [] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ error: `unexpected request: ${method} ${url}` }), { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    render(<Write />);
-    const open = await screen.findByRole("button", { name: /Race metadata.*Preview/ });
-    fireEvent.click(open);
-    const collection = await screen.findByRole("combobox");
-    fireEvent.change(collection, { target: { value: "research" } });
-    await waitFor(() => expect(collection).toHaveValue("research"));
-    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
-    await screen.findByRole("button", { name: "Unstar document" });
-
-    await act(async () => {
-      resolveBody!(new Response(JSON.stringify({
-        id: "doc-race",
-        publicId: "public-race",
-        body: "# Race metadata\n\nFull body",
-        collectionId: null,
-        collectionSlug: null,
-        starred: false,
-        updatedAt: "2026-08-15T09:00:00Z"
-      }), { status: 200 }));
-    });
-
-    expect((await screen.findAllByText("Full body")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("combobox", { name: "Collection for Race metadata" })).toHaveValue("research");
-    expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
-    openWorkspaceHome();
-    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
-    const rows = screen.getByLabelText("Recent").querySelectorAll(".workspaceDocumentOpen");
-    expect(rows[0]).toHaveTextContent("Race metadata");
-    expect(rows[1]).toHaveTextContent("Newer metadata");
-  });
-
-  it("preserves newer metadata when an older body save finishes", async () => {
-    const baseFetch = stubSignedInFetch([
-      { id: "doc-old", body: "# Older note\n\nDraft.", updatedAt: "2026-08-15T08:00:00Z" },
-      { id: "doc-new", body: "# Newer note", updatedAt: "2026-08-15T09:30:00Z" }
-    ]);
-    let resolveBodySave: ((response: Response) => void) | undefined;
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/docs/doc-old" && init?.method === "PATCH") {
-        const update = JSON.parse(String(init.body ?? "{}"));
-        if (Object.prototype.hasOwnProperty.call(update, "body")) {
-          return new Promise<Response>((resolve) => { resolveBodySave = resolve; });
-        }
-        if (Object.prototype.hasOwnProperty.call(update, "starred")) {
-          return Promise.resolve(new Response(JSON.stringify({
-            id: "doc-old",
-            publicId: "public-1",
-            body: "# Older note\n\nEdited.",
-            collectionId: null,
-            collectionSlug: null,
-            starred: true,
-            updatedAt: "2026-08-15T10:00:00Z"
-          }), { status: 200 }));
-        }
-      }
-      return baseFetch(input, init);
-    }));
-
-    await renderWrite();
-    await openDocumentFromSearch(/Older note/);
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
-      target: { value: "# Older note\n\nEdited." }
-    });
-    await waitFor(() => expect(resolveBodySave).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: "Star document" }));
-    await screen.findByRole("button", { name: "Unstar document" });
-
-    await act(async () => {
-      resolveBodySave!(new Response(JSON.stringify({
-        id: "doc-old",
-        publicId: "public-1",
-        body: "# Older note\n\nEdited.",
-        collectionId: null,
-        collectionSlug: null,
-        starred: false,
-        updatedAt: "2026-08-15T09:00:00Z"
-      }), { status: 200 }));
-    });
-
-    expect(screen.getByRole("button", { name: "Unstar document" })).toBeEnabled();
-    openWorkspaceHome();
-    fireEvent.click(screen.getAllByRole("button", { name: "Recent" })[0]);
-    const rows = screen.getByLabelText("Recent").querySelectorAll(".workspaceDocumentOpen");
-    expect(rows[0]).toHaveTextContent("Older note");
-    expect(rows[1]).toHaveTextContent("Newer note");
   });
 
   it("lets users retry after a background document page fails", async () => {
@@ -3595,11 +2098,13 @@ describe("Write (editor)", () => {
 
     render(<Write />);
 
+    await screen.findByText("Some documents could not be indexed. Load the next page to try again.");
+    openDrawer();
     const retry = await screen.findByRole("button", { name: "Load more documents" });
     expect(screen.getByText("Some documents could not be indexed. Load the next page to try again.")).toBeInTheDocument();
     fireEvent.click(retry);
 
-    expect(await screen.findByRole("button", { name: /^Recovered document/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Recovered document/ , hidden: true })).toBeInTheDocument();
     expect(laterPageRequests).toBe(2);
     expect(screen.queryByRole("button", { name: "Load more documents" })).not.toBeInTheDocument();
   });
@@ -3636,7 +2141,7 @@ describe("Write (editor)", () => {
     window.history.replaceState(null, "", "/write/public-1");
     render(<Write />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Document could not be loaded.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("This document could not be opened.");
     expect(screen.queryByRole("textbox", { name: "Markdown editor" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
@@ -3734,7 +2239,7 @@ describe("Write (editor)", () => {
     await renderWrite();
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Saved draft\n\nAutosaved." }
     });
@@ -3783,7 +2288,7 @@ describe("Write (editor)", () => {
     );
 
     expect((await screen.findAllByText("Saved draft")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# Saved draft\n\nSurvives refresh." }
     });
@@ -3835,8 +2340,8 @@ describe("Write (editor)", () => {
       </AppProviders>
     );
 
-    expect(screen.getAllByRole("heading", { name: "First account", level: 1 }).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    expect((await screen.findAllByRole("heading", { name: "First account", level: 1 })).length).toBeGreaterThan(0);
+    showSource();
     fireEvent.change(screen.getByRole("textbox", { name: "Markdown editor" }), {
       target: { value: "# First account\n\nMust not cross accounts." }
     });
@@ -3889,12 +2394,12 @@ describe("Write (editor)", () => {
       </AppProviders>
     );
 
-    expect(await screen.findByRole("button", { name: /^First account/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^First account/ , hidden: true })).toBeInTheDocument();
     await waitFor(() => expect(resolveOldPage).toBeDefined());
 
     window.dispatchEvent(new Event("focus"));
 
-    expect(await screen.findByRole("button", { name: /^Second account/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Second account/ , hidden: true })).toBeInTheDocument();
     resolveOldPage?.(
       new Response(
         JSON.stringify({ documents: [{ id: "doc-private", title: "Private old account metadata", excerpt: "Private" }] }),
@@ -3904,7 +2409,7 @@ describe("Write (editor)", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     expect(screen.queryByText("Private old account metadata")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^First account/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^First account/ , hidden: true })).not.toBeInTheDocument();
   });
 
   it("creates a server share link for a signed-in document", async () => {
@@ -3951,7 +2456,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByRole("button", { name: "Unshare" })).not.toHaveAttribute("aria-pressed");
+    expect(await screen.findByText("Shared", { selector: ".wFooter span" })).toBeInTheDocument();
   });
 
   it("unshares a signed-in document", async () => {
@@ -3979,12 +2484,10 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    const shared = await screen.findByRole("button", { name: "Unshare" });
-    expect(shared).not.toHaveAttribute("aria-pressed");
-    fireEvent.click(shared);
-    fireEvent.click(screen.getByRole("button", { name: "Make private" }));
+    await screen.findByText("Shared", { selector: ".wFooter span" });
+    makeActiveDocumentPrivate();
 
-    await screen.findByRole("button", { name: "Share" });
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
       method: "DELETE",
       credentials: "include"
@@ -3993,128 +2496,102 @@ describe("Write (editor)", () => {
 });
 
 describe("visual writing and collection navigation", () => {
-  it("creates from the labelled Home action and prevents duplicate pending requests", async () => {
-    const baseFetch = stubSignedInFetch();
-    let finishCreate: (() => Promise<void>) | undefined;
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/docs" && init?.method === "POST") {
-        return new Promise<Response>((resolve) => {
-          finishCreate = async () => resolve(await baseFetch(input, init));
-        });
-      }
-      return baseFetch(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    render(<Write />);
-    const home = await screen.findByLabelText("Workspace home");
-    const create = within(home).getByRole("button", { name: "New document" });
-    expect(create).toHaveTextContent("New document");
-    expect(screen.getAllByRole("button", { name: "New document" })).toHaveLength(1);
-    fireEvent.click(create);
-    expect(create).toBeDisabled();
-    fireEvent.click(create);
-    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/v1/docs" && init?.method === "POST")).toHaveLength(1);
-    await act(async () => { await finishCreate!(); });
-    expect(await screen.findByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/write/public-2");
-  });
-
-  it("moves modes to the header and restores the layout after focus mode", async () => {
-    stubSignedInFetch();
-    await renderWrite();
-    const header = screen.getByRole("group", { name: "Document controls" });
-    expect(within(header).getByRole("button", { name: "Write" })).toBeInTheDocument();
-    expect(within(screen.getByRole("contentinfo", { name: "Editor status" })).queryByRole("button")).not.toBeInTheDocument();
-    const focusButton = screen.getByRole("button", { name: "Enter focus mode" });
-    focusButton.focus();
-    fireEvent.click(focusButton);
-    expect(screen.getByRole("button", { name: "Exit focus mode" })).toBe(focusButton);
-    expect(focusButton).toHaveFocus();
-    expect(screen.queryByRole("complementary", { name: "Workspace navigation" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: /^Documents in/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
-    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue(defaultDocBody);
-    const exitFocus = screen.getByRole("button", { name: "Exit focus mode" });
-    exitFocus.focus();
-    fireEvent.click(exitFocus);
-    expect(screen.getByRole("button", { name: "Enter focus mode" })).toBe(exitFocus);
-    expect(exitFocus).toHaveFocus();
-    expect(screen.getByRole("complementary", { name: "Workspace navigation" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: /^Documents in/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
-    fireEvent.click(screen.getByRole("button", { name: "Enter focus mode" }));
-    fireEvent.click(screen.getByRole("button", { name: "Exit focus mode" }));
-    expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: /^Documents in/ })).not.toBeInTheDocument();
-  });
-
   it("does not save on opening or switching modes", async () => {
     const original = "---\ntags: [writing]\n---\n\n# A draft\n\nSome **text**.\n";
     const fetchMock = stubSignedInFetch([{ id: "visual", publicId: "visual", body: original }]);
     await renderWrite();
     await screen.findByRole("textbox", { name: "Visual editor" });
-    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    showSource();
     expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue(original);
-    fireEvent.click(screen.getByRole("button", { name: "Write" }));
+    showSource();
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
     await screen.findByRole("textbox", { name: "Visual editor" });
     expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "PATCH")).toHaveLength(0);
   });
 
-  it("opens the selected collection list before a document, including empty collections", async () => {
+});
+
+describe("Writer", () => {
+  it("lists every document newest first, with no folders, stars, or templates", async () => {
     stubSignedInFetch([
-      { id: "one", publicId: "one", body: "# First draft" },
-      { id: "two", publicId: "two", body: "# Second draft", collectionSlug: "passage", collectionId: "collection-passage" }
+      { id: "doc-old", publicId: "old", body: "# Older idea", updatedAt: "2026-08-01T10:00:00Z", collectionSlug: "research" },
+      { id: "doc-new", publicId: "new", body: "# Newest draft", updatedAt: "2026-08-03T10:00:00Z" },
+      { id: "doc-mid", publicId: "mid", body: "# Middle note", updatedAt: "2026-08-02T10:00:00Z", starred: true }
     ]);
     await renderWrite();
-    const sidebar = screen.getByRole("complementary", { name: "Workspace navigation" });
-    fireEvent.click(within(sidebar).getByRole("button", { name: /^Passage/ }));
-    const list = screen.getByRole("navigation", { name: "Documents in Passage" });
-    // On a wide screen the list sits in the layout beside the sidebar rather
-    // than overlaying, and no document is opened on the writer's behalf.
-    expect(list).toHaveAttribute("data-mobile-open", "false");
-    expect(screen.queryByRole("region", { name: "Markdown editor" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Document list" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /Second draft/ })).toHaveLength(1);
-    expect(within(list).getByRole("button", { name: /Second draft/ })).not.toHaveAttribute("aria-current");
-    expect(within(list).queryByRole("button", { name: /First draft/ })).not.toBeInTheDocument();
-    fireEvent.click(within(list).getByRole("button", { name: /Second draft/ }));
-    expect(await screen.findByRole("textbox", { name: "Visual editor" })).toHaveTextContent("Second draft");
-    fireEvent.click(within(sidebar).getByRole("button", { name: /^Research/ }));
-    const emptyList = screen.getByRole("navigation", { name: "Documents in Research" });
-    expect(within(emptyList).getByText("No documents yet.")).toBeInTheDocument();
-    expect(within(emptyList).getByRole("button", { name: "New document in Research" })).toBeEnabled();
-    fireEvent.click(within(sidebar).getByRole("button", { name: "Home" }));
-    expect(screen.queryByRole("navigation", { name: "Documents in Research" })).not.toBeInTheDocument();
+
+    const rows = within(openDrawer()).getAllByRole("button").filter((row) => row.classList.contains("wDocRow"));
+    expect(rows.map((row) => row.querySelector(".wDocTitle")?.textContent)).toEqual(["Newest draft", "Middle note", "Older idea"]);
+    for (const retired of ["Collections", "Starred", "Templates", "Home", "Recent", "Share", "Write", "Preview"]) {
+      expect(screen.queryByRole("button", { name: retired })).not.toBeInTheDocument();
+    }
   });
 
-  it("browses Documents in one list and creates a document from its heading", async () => {
-    stubSignedInFetch([{ id: "one", publicId: "one", body: "# First draft" }]);
+  it("lands retired workspace links on the writer", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Only note" }]);
+    window.history.replaceState(null, "", "/write?view=templates");
+
     await renderWrite();
-    openSidebarCollection("Documents");
-    const collection = screen.getByLabelText("Documents", { selector: ".workspaceCollectionBrowse" });
-    expect(screen.queryByRole("navigation", { name: "Documents in Documents" })).not.toBeInTheDocument();
-    expect(within(collection).getAllByRole("button", { name: /^First draft/ })).toHaveLength(1);
-    expect(collection).not.toHaveTextContent("General Markdown");
-    expect(screen.getAllByRole("button", { name: "New document" })).toHaveLength(1);
-    fireEvent.click(within(collection).getByRole("button", { name: "New document" }));
+
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe("/write/one"));
+  });
+
+  it("opens search with the keyboard and opens the highlighted result with Enter", async () => {
+    stubSignedInFetch([
+      { id: "doc-1", publicId: "one", body: "# Grocery list\n\nEggs." },
+      { id: "doc-2", publicId: "two", body: "# Talk outline\n\nCalm software." }
+    ]);
+    await renderWrite();
+
+    openWorkspaceSearch();
+    const search = screen.getByRole("searchbox", { name: "Search documents" });
+    await waitFor(() => expect(search).toHaveFocus());
+    fireEvent.change(search, { target: { value: "calm" } });
+    await waitFor(() => expect(within(screen.getByRole("navigation", { name: "All documents" })).getAllByRole("button")).toHaveLength(1));
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    await waitFor(() => expect(window.location.pathname).toBe("/write/two"));
+  });
+
+  it("shows the Markdown source with the keyboard and goes back", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Plain\n\n- one\n- two\n" }]);
+    await renderWrite();
+    await screen.findByRole("textbox", { name: "Visual editor" });
+
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    expect(screen.getByRole("textbox", { name: "Markdown editor" })).toHaveValue("# Plain\n\n- one\n- two\n");
+    expect(screen.getByRole("button", { name: "Markdown" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
     expect(await screen.findByRole("textbox", { name: "Visual editor" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Documents in Documents" })).toBeInTheDocument();
   });
 
-  it("switches neighboring documents directly and keeps their collection highlighted", async () => {
-    stubSignedInFetch([
-      { id: "one", publicId: "one", body: "# First draft", collectionSlug: "passage", collectionId: "collection-passage" },
-      { id: "two", publicId: "two", body: "# Second draft", collectionSlug: "passage", collectionId: "collection-passage" },
-      { id: "other", publicId: "other", body: "# Elsewhere" }
-    ]);
+  it("steps the chrome back while typing and brings it back on pointer movement", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Quiet" }]);
+    const { container } = await renderWrite();
+    showSource();
+    const writer = container.querySelector<HTMLElement>(".writer")!;
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Markdown editor" }), { key: "a" });
+    expect(writer.dataset.typing).toBe("true");
+
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 40, clientY: 40 });
+    expect(writer.dataset.typing).toBeUndefined();
+  });
+
+  it("creates a blank document straight into the editor", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
     await renderWrite();
-    const list = screen.getByRole("navigation", { name: "Documents in Passage" });
-    expect(within(list).queryByRole("button", { name: /Elsewhere/ })).not.toBeInTheDocument();
-    fireEvent.click(within(list).getByRole("button", { name: /Second draft/ }));
-    expect(await screen.findByRole("textbox", { name: "Visual editor" })).toHaveTextContent("Second draft");
-    expect(within(list).getByRole("button", { name: /Second draft/ })).toHaveAttribute("aria-current", "page");
-    const sidebar = screen.getByRole("complementary", { name: "Workspace navigation" });
-    expect(within(sidebar).getByRole("button", { name: /^Passage/ })).toHaveAttribute("data-active", "true");
-    expect(window.location.pathname).toBe("/write/two");
+
+    fireEvent.click(newDocumentButton());
+
+    const editor = await waitFor(() => {
+      const input = screen.getByRole("textbox", { name: "Visual editor" });
+      expect(input.textContent).toBe("");
+      return input;
+    });
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(window.location.pathname).toBe("/write/public-2");
   });
 });
