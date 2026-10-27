@@ -25,10 +25,34 @@ const BLOCKS = new Set(["paragraph", "heading", "blockquote", "list_item", "text
 // parsed rather than pattern-stripped, so links keep their text, images and
 // code blocks drop out, and prose containing *, _ or ~ is left alone.
 export function snippetOf(body: string): string {
+  const rest = bodyAfterTitle(body);
+  return rest === null ? NO_SUMMARY : plainSummary(rest);
+}
+
+// The Markdown after the title line, or null when there is no title line.
+export function bodyAfterTitle(body: string): string | null {
   const lines = bodyWithoutFrontmatter(body).split("\n");
   const titleLine = lines.findIndex((line) => line.trim().length > 0);
-  if (titleLine === -1) return NO_SUMMARY;
-  return plainSummary(lines.slice(titleLine + 1).join("\n"));
+  return titleLine === -1 ? null : lines.slice(titleLine + 1).join("\n");
+}
+
+// Search excerpts are cut from the title and body together, so they often
+// open with the title the row already shows, sometimes with its first words
+// cut off. Drop each copy found near the start, with any heading marks.
+export function withoutLeadingTitle(excerpt: string, title: string): string {
+  const original = excerpt.trim();
+  const needle = title.trim().toLowerCase();
+  let text = original.replace(/^(…|\.\.\.)\s*/, "");
+  for (let pass = 0; pass < 2 && needle; pass += 1) {
+    const at = text.toLowerCase().indexOf(needle);
+    if (at === -1) break;
+    // Only a short lead-in, such as heading marks or the cut-off tail of the
+    // title, may sit before the copy. Anything longer is real body text.
+    const lead = text.slice(0, at).replace(/#{1,6}\s*$/, "").trim().toLowerCase();
+    if (lead && !needle.endsWith(lead)) break;
+    text = text.slice(at + needle.length).trimStart();
+  }
+  return text === original.replace(/^(…|\.\.\.)\s*/, "") ? original : text;
 }
 
 // Readable plain text from any Markdown fragment, including the bounded

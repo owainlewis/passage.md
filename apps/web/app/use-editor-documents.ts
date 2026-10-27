@@ -11,6 +11,9 @@ import {
   seedDocs
 } from "./editor-model";
 
+// Coming back to the tab refreshes the list at most this often.
+const REFRESH_INTERVAL = 5000;
+
 export type PendingSave = {
   id: string;
   body: string;
@@ -150,6 +153,52 @@ export function useEditorDocuments({
       accountGeneration.current += 1;
     };
   }, [setBillingNotice, userId]);
+
+  // Another tab or an agent may have renamed or added documents while this
+  // one sat in the background. Coming back refreshes the newest page of the
+  // list. The open document is left alone: its body may hold edits, and a
+  // save that races a remote change is already caught as a conflict.
+  const activeIdRef = useRef(activeId);
+  const pendingSaveRef = useRef(pendingSave);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+    pendingSaveRef.current = pendingSave;
+  }, [activeId, pendingSave]);
+  useEffect(() => {
+    if (!userId) return;
+    let lastRefresh = Date.now();
+    async function refresh() {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < REFRESH_INTERVAL) return;
+      lastRefresh = Date.now();
+      const generation = accountGeneration.current;
+      let fresh: Doc[];
+      try {
+        fresh = (await apiDocsPage()).documents;
+      } catch {
+        return;
+      }
+      if (accountGeneration.current !== generation) return;
+      setDocs((prev) => {
+        const byId = new Map(fresh.map((doc) => [doc.id, doc]));
+        const known = new Set(prev.map((doc) => doc.id));
+        const updated = prev.map((doc) => {
+          const next = byId.get(doc.id);
+          if (!next || doc.id === activeIdRef.current || doc.id === pendingSaveRef.current?.id) return doc;
+          if (doc.updatedAt && next.updatedAt && Date.parse(next.updatedAt) <= Date.parse(doc.updatedAt)) return doc;
+          // The stored body is out of date; opening it fetches the new one.
+          return { ...doc, ...next, bodyLoaded: false };
+        });
+        return [...fresh.filter((doc) => !known.has(doc.id)), ...updated];
+      });
+    }
+    const onVisible = () => void refresh();
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [userId]);
 
   const loadDocBody = useCallback(async (doc: Doc) => {
     if (doc.bodyLoaded || bodyRequests.current.has(doc.id)) return;

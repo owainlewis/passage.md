@@ -3,6 +3,7 @@ import {
   plainSummary,
   snippetOf,
   titleOf,
+  withoutLeadingTitle,
   wordCount
 } from "./doc-utils";
 
@@ -90,5 +91,26 @@ describe("frontmatter", () => {
     expect(snippetOf(body)).toBe("Body");
     expect(wordCount(body)).toBe(4);
     expect(bodyWithoutFrontmatter(body)).toBe("# Launch note\n\nBody");
+  });
+});
+
+describe("withoutLeadingTitle", () => {
+  it("drops a repeated title from a search excerpt", () => {
+    expect(withoutLeadingTitle("# Morning pages Wrote before coffee", "Morning pages")).toBe("Wrote before coffee");
+    expect(withoutLeadingTitle("…Morning pages # Morning pages tea", "Morning pages")).toBe("tea");
+  });
+
+  it("keeps an excerpt that does not open with the title", () => {
+    expect(withoutLeadingTitle("…before coffee", "Morning pages")).toBe("…before coffee");
+  });
+});
+
+describe("withoutLeadingTitle with a cut-off title", () => {
+  it("drops the tail of the title and the full copy after it", () => {
+    expect(withoutLeadingTitle("…that write # Video script: agents that write Hook What if", "Video script: agents that write")).toBe("Hook What if");
+  });
+
+  it("keeps body text that happens to mention the title later", () => {
+    expect(withoutLeadingTitle("…before coffee I read Morning pages", "Morning pages")).toBe("…before coffee I read Morning pages");
   });
 });

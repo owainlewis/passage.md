@@ -1,8 +1,8 @@
 "use client";
 
 import { RefObject, useMemo, useState } from "react";
-import { plainSummary } from "./doc-utils";
-import { Doc } from "./editor-model";
+import { bodyAfterTitle, plainSummary, withoutLeadingTitle } from "./doc-utils";
+import { Doc, isShared } from "./editor-model";
 import { editorDocSearchText, editorDocTitle } from "./editor-list";
 import { CloseIcon, SearchIcon } from "./icons";
 import { normalizeEditorSearch, useEditorSearch } from "./use-editor-search";
@@ -56,13 +56,14 @@ export function DocumentDrawer({
     // contain the words as typed follow, so a partial word still finds them.
     const server = search.documents.map((doc) => {
       const known = docs.find((candidate) => candidate.id === doc.id);
-      return { doc: known ? { ...doc, body: known.body, bodyLoaded: known.bodyLoaded } : doc, excerpt: doc.matchExcerpt };
+      const merged = known ? { ...doc, body: known.body, bodyLoaded: known.bodyLoaded } : doc;
+      return { doc: merged, excerpt: withoutLeadingTitle(doc.matchExcerpt, editorDocTitle(merged)) || undefined };
     });
     const found = new Set(server.map((row) => row.doc.id));
     const local = sorted
       .filter((doc) => !found.has(doc.id))
       .filter((doc) => `${editorDocTitle(doc)}\n${editorDocSearchText(doc)}`.toLowerCase().includes(normalized))
-      .map((doc) => ({ doc, excerpt: around(editorDocSearchText(doc), normalized) }));
+      .map((doc) => ({ doc, excerpt: around(bodyAfterTitle(editorDocSearchText(doc)) ?? "", normalized) }));
     return [...server, ...local];
   }, [docs, normalized, search.documents]);
 
@@ -136,7 +137,10 @@ export function DocumentDrawer({
               onMouseEnter={() => setHighlight(index)}
               onClick={() => openRow(row)}
             >
-              <span className="wDocTitle">{editorDocTitle(row.doc)}</span>
+              <span className="wDocHead">
+                <span className="wDocTitle">{editorDocTitle(row.doc)}</span>
+                {isShared(row.doc) && <span className="wDocShared">Shared</span>}
+              </span>
               {row.excerpt
                 ? <span className="wDocExcerpt">{plainSummary(row.excerpt)}</span>
                 : <span className="wDocMeta">{relativeDate(row.doc.updatedAt)}</span>}

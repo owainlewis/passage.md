@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
 import { PendingStatus, useAuth } from "./auth";
 import { titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
@@ -145,12 +146,12 @@ export default function Editor() {
     }
   }, []);
 
+  // Focus lands in the same task as the shortcut, so the first letters typed
+  // after ⌘K go to the search box and never into the document.
   const openSearch = useCallback(() => {
-    setDrawerOpen(true);
-    requestAnimationFrame(() => {
-      searchRef.current?.focus();
-      searchRef.current?.select();
-    });
+    flushSync(() => setDrawerOpen(true));
+    searchRef.current?.focus();
+    searchRef.current?.select();
   }, []);
 
   const focusEditor = useCallback(() => {
