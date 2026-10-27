@@ -1,9 +1,5 @@
 import {
-  bodyWithTags,
   bodyWithoutFrontmatter,
-  isValidTag,
-  parseTagInput,
-  parseTags,
   plainSummary,
   snippetOf,
   titleOf,
@@ -86,41 +82,10 @@ describe("wordCount", () => {
   });
 });
 
-describe("tags", () => {
-  it("accepts lowercase words joined by hyphens", () => {
-    expect(isValidTag("notes")).toBe(true);
-    expect(isValidTag("video-script")).toBe(true);
-  });
+describe("frontmatter", () => {
+  it("is not used as content", () => {
+    const body = "---\ntags: [notes, scripts]\n---\n\n# Launch note\n\nBody";
 
-  it("rejects uppercase, numbers, underscores, and loose hyphens", () => {
-    expect(isValidTag("Notes")).toBe(false);
-    expect(isValidTag("v2")).toBe(false);
-    expect(isValidTag("video_script")).toBe(false);
-    expect(isValidTag("-notes")).toBe(false);
-    expect(isValidTag("notes-")).toBe(false);
-  });
-
-  it("parses comma and whitespace separated input", () => {
-    expect(parseTagInput("notes, scripts notes").tags).toEqual(["notes", "scripts"]);
-    expect(parseTagInput("notes, Drafts").invalid).toEqual(["Drafts"]);
-  });
-
-  it("reads and writes frontmatter tags without using them as content", () => {
-    const body = bodyWithTags("# Launch note\n\nBody", ["notes", "scripts"]);
-
-    expect(parseTags(body)).toEqual(["notes", "scripts"]);
-    expect(titleOf(body)).toBe("Launch note");
-    expect(snippetOf(body)).toBe("Body");
-    expect(wordCount(body)).toBe(4);
-    expect(bodyWithoutFrontmatter(body)).toBe("# Launch note\n\nBody");
-  });
-});
-
-describe("legacy folder frontmatter", () => {
-  it("removes folder metadata when tags are saved", () => {
-    const body = bodyWithTags("---\nfolder: scripts\n---\n\n# Launch note\n\nBody", ["notes"]);
-
-    expect(body).toBe("---\ntags: [notes]\n---\n\n# Launch note\n\nBody");
     expect(titleOf(body)).toBe("Launch note");
     expect(snippetOf(body)).toBe("Body");
     expect(wordCount(body)).toBe(4);

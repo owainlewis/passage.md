@@ -63,13 +63,13 @@ The Cloud Run service, migration job, and ephemeral production operation jobs ru
 
 ### Web app
 
-`apps/web` owns the browser interface, editor state, Markdown preview, templates interface, account screens, and calls to the JSON API.
+`apps/web` owns the browser interface, editor state, writing page, account screens, and calls to the JSON API.
 
 Document writing uses a lazily loaded Milkdown editor with CommonMark and GitHub-flavored Markdown support.
 The visual editor serializes actual edits into the existing plain-text save path.
 Opening a document or switching modes does not rewrite its source.
 Frontmatter stays outside the visual parser, and documents that cannot round-trip safely use Source mode.
-A separate document list keeps the active collection reachable while writing.
+A drawer lists every document, newest first, with search at the top.
 
 It depends on the same-origin Go API for authenticated state and persistence.
 
@@ -199,7 +199,7 @@ Document creation locks the user row before counting active documents, so concur
 ### Search documents
 
 1. A browser, CLI, or agent sends a bounded query to `GET /api/v1/docs/search`.
-2. The server validates the query, optional collection or unfiled scope, page size, and opaque cursor.
+2. The server validates the query, page size, and opaque cursor.
 3. PostgreSQL parses the parameterized input with `websearch_to_tsquery` using the `simple` configuration.
 4. A stored weighted `tsvector` and partial GIN index search the complete title and body while owner and archive predicates enforce privacy.
 5. Results use relevance, update time, and document ID for deterministic keyset pagination.

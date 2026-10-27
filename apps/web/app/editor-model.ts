@@ -7,11 +7,6 @@ export type Doc = {
   bodyLoaded?: boolean;
   title?: string;
   excerpt?: string;
-  tags?: string[];
-  pinned?: boolean;
-  starred?: boolean;
-  collectionId?: string | null;
-  collectionSlug?: string | null;
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;
@@ -19,14 +14,8 @@ export type Doc = {
   version?: number;
 };
 
-export type Mode = "write" | "edit" | "preview";
 export type ShareState = "idle" | "copied" | "toolong" | "unshared" | "error";
 export type SaveState = "loading" | "saving" | "saved" | "error";
-export type DocumentFilter = "all" | "private" | "shared";
-
-export const ALL_DOCUMENTS: DocumentFilter = "all";
-export const SHARED_DOCUMENTS: DocumentFilter = "shared";
-
 export function isShared(doc: Doc) {
   return Boolean(doc.sharedAt || doc.shareToken);
 }
@@ -52,60 +41,29 @@ export function newestTimestamp(current?: string, saved?: string) {
   return Date.parse(saved) > Date.parse(current) ? saved : current;
 }
 
-const welcomeBody = `# Markdown for agents and humans
+const welcomeBody = `# Welcome to Passage
 
-Welcome to passage. This is your sample document and quick guide.
-It is pinned, so it stays at the top, and pinned documents cannot be deleted until you unpin them.
+This is a quiet place to write. Everything you type is saved as Markdown.
 
 ## Writing
 
-Just start typing. Everything is saved to your Passage account.
+Type \`#\` and a space for a heading, \`-\` for a list, or \`>\` for a quote. Type \`/\` on an empty line for the block menu.
 
-Press **Cmd + R** (or **Ctrl + R**) to switch between **Write** and **Source**.
-Write formats Markdown as you type. Source shows the Markdown itself. Preview displays the finished document and diagrams.
+Press **⌘/** (or **Ctrl+/**) to see the raw Markdown, and again to go back.
 
-## Your documents
+## Finding things
 
-- The sidebar lists every document. Create a new one with the **+** button.
-- Use the **Filter** box to find a document by its title or text.
-- **Pin** a document to float it to the top. Pinned documents are protected, so to delete one you unpin it first. Try unpinning this guide to reveal its delete button.
+Every document is in one list, newest first. Press **⌘K** to search every word you have written, or **⌘.** to show and hide the list.
 
-## Sharing and export
+## When you are ready
 
-- **Share** copies a read-only URL you can revoke later.
-- **Export** downloads the raw \`.md\` file.
+The **…** menu copies or downloads the Markdown and shares a read-only link you can turn off later.
 
-## A finished document
-
-Inline \`code\`, **bold**, and *italic* all render cleanly. Links like [passage.md](https://passage.md) pick up the accent color.
-
-> The best tool for thinking in Markdown should disappear while you write.
-
-\`\`\`ts
-export function greet(name: string) {
-  return \`Hello, ${"${name}"}\`;
-}
-\`\`\`
-
-Diagrams render from fenced \`mermaid\` blocks:
-
-\`\`\`mermaid
-flowchart LR
-  Write([Write Markdown]) --> Preview([Preview])
-  Preview --> Share([Share link])
-  Preview --> Export([Export .md])
-\`\`\`
-
-| Surface | Audience |
-| ------- | -------- |
-| Browser | Humans   |
-| CLI     | Agents   |
-
-Dark mode lives in the sidebar, so the writing surface can stay comfortable in any light.
+> The best writing tool is the one you forget is there.
 `;
 
 export function seedDocs(): Doc[] {
-  return [{ id: "welcome", body: welcomeBody, bodyLoaded: true, pinned: true }];
+  return [{ id: "welcome", body: welcomeBody, bodyLoaded: true }];
 }
 
 export function publicIdFromPath() {

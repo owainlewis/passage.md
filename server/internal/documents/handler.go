@@ -65,7 +65,7 @@ func ActorFromContext(ctx context.Context) Actor {
 type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
 	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
-	Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error)
+	Search(ctx context.Context, ownerID string, query string, limit int, cursor *SearchCursor) ([]SearchResult, error)
 	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error)
 	Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
@@ -112,26 +112,8 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request, user auth.User)
 		return
 	}
 
-	collectionID := r.URL.Query().Get("collectionId")
-	collectionSet := r.URL.Query().Has("collectionId")
-	unfiledValue := r.URL.Query().Get("unfiled")
-	unfiledSet := r.URL.Query().Has("unfiled")
-	if collectionSet && unfiledSet {
-		writeError(w, http.StatusBadRequest, "collectionId and unfiled are mutually exclusive")
-		return
-	}
-	if collectionSet && !validUUID(collectionID) {
-		writeError(w, http.StatusBadRequest, "collection not found")
-		return
-	}
-	if unfiledSet && unfiledValue != "true" {
-		writeError(w, http.StatusBadRequest, "unfiled must be true when provided")
-		return
-	}
-	scope := SearchScope{Unfiled: unfiledSet}
-	if collectionSet {
-		scope.CollectionID = &collectionID
-	}
+	// Collections are gone. Older clients may still send collectionId or
+	// unfiled; both are ignored and every search covers all documents.
 
 	limit := defaultDocumentPageSize
 	if value := r.URL.Query().Get("limit"); value != "" {
@@ -142,19 +124,15 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request, user auth.User)
 		}
 		limit = parsed
 	}
-	fingerprint := searchFingerprint(query, scope)
+	fingerprint := searchFingerprint(query)
 	cursor, err := decodeSearchCursor(r.URL.Query().Get("cursor"), fingerprint)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid search cursor")
 		return
 	}
-	results, err := h.store.Search(r.Context(), user.ID, query, scope, limit+1, cursor)
+	results, err := h.store.Search(r.Context(), user.ID, query, limit+1, cursor)
 	if errors.Is(err, ErrEmptySearchQuery) {
 		writeError(w, http.StatusBadRequest, "q must contain a searchable term")
-		return
-	}
-	if errors.Is(err, ErrCollectionNotFound) {
-		writeError(w, http.StatusBadRequest, "collection not found")
 		return
 	}
 	if err != nil {
@@ -189,12 +167,10 @@ func normalizeSearchQuery(value string) (string, error) {
 	return normalized, nil
 }
 
-func searchFingerprint(query string, scope SearchScope) string {
-	collectionID := ""
-	if scope.CollectionID != nil {
-		collectionID = *scope.CollectionID
-	}
-	digest := sha256.Sum256([]byte(query + "\x00" + collectionID + "\x00" + strconv.FormatBool(scope.Unfiled)))
+// The trailing fields once held the collection scope. They stay fixed so
+// cursors issued before collections were removed keep working.
+func searchFingerprint(query string) string {
+	digest := sha256.Sum256([]byte(query + "\x00\x00false"))
 	return hex.EncodeToString(digest[:])
 }
 
@@ -351,15 +327,11 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if input.Body == nil && !input.CollectionID.Set && input.Starred == nil {
+	if input.Body == nil && input.CollectionID == nil && input.Starred == nil {
 		writeError(w, http.StatusBadRequest, "document update is empty")
 		return
 	}
 	if input.Body != nil && !validateDocumentBody(w, *input.Body) {
-		return
-	}
-	if input.CollectionID.Value != nil && !validUUID(*input.CollectionID.Value) {
-		writeError(w, http.StatusBadRequest, "collection not found")
 		return
 	}
 	id := r.PathValue("id")
@@ -367,13 +339,17 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
+	if input.Body == nil && input.Starred == nil {
+		// A move between collections from an older client. There is nothing
+		// left to move, so answer with the document unchanged.
+		h.Get(w, r, user)
+		return
+	}
 	doc, err := h.store.Update(r.Context(), user.ID, id, DocumentUpdate{
-		Body:            input.Body,
-		CollectionIDSet: input.CollectionID.Set,
-		CollectionID:    input.CollectionID.Value,
-		Starred:         input.Starred,
-		IfVersion:       input.Version,
-		Actor:           h.actorFor(r),
+		Body:      input.Body,
+		Starred:   input.Starred,
+		IfVersion: input.Version,
+		Actor:     h.actorFor(r),
 	})
 	if errors.Is(err, ErrVersionConflict) {
 		h.writeVersionConflict(w, r, user, id)
@@ -381,10 +357,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request, user auth.User)
 	}
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "document not found")
-		return
-	}
-	if errors.Is(err, ErrCollectionNotFound) {
-		writeError(w, http.StatusBadRequest, "collection not found")
 		return
 	}
 	if err != nil {
@@ -530,31 +502,13 @@ type bodyInput struct {
 }
 
 type documentUpdateInput struct {
-	Body         *string        `json:"body"`
-	CollectionID nullableString `json:"collectionId"`
-	Starred      *bool          `json:"starred"`
+	Body *string `json:"body"`
+	// CollectionID is accepted from older clients and ignored.
+	CollectionID json.RawMessage `json:"collectionId"`
+	Starred      *bool           `json:"starred"`
 	// Version makes the write conditional. Omitting it keeps the
 	// unconditional behaviour existing API clients depend on.
 	Version *int `json:"version"`
-}
-
-type nullableString struct {
-	Set   bool
-	Value *string
-}
-
-func (value *nullableString) UnmarshalJSON(data []byte) error {
-	value.Set = true
-	if string(data) == "null" {
-		value.Value = nil
-		return nil
-	}
-	var decoded string
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	value.Value = &decoded
-	return nil
 }
 
 type shareResponse struct {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiSearchDocs, SearchDocument, SearchScope } from "./editor-api";
+import { apiSearchDocs, SearchDocument } from "./editor-api";
 
 type SearchState = {
   key: string;
@@ -35,21 +35,17 @@ export function normalizeEditorSearch(value: string) {
 
 export function useEditorSearch({
   query,
-  scope,
   userId,
   paused = false
 }: {
   query: string;
-  scope: SearchScope;
   userId?: string;
   paused?: boolean;
 }) {
   const normalizedQuery = normalizeEditorSearch(query);
   const active = Boolean(userId && normalizedQuery);
   const invalid = [...normalizedQuery].length > 200;
-  const collectionId = scope.collectionId ?? "";
-  const unfiled = Boolean(scope.unfiled);
-  const key = active ? `${userId}\u0000${collectionId}\u0000${unfiled}\u0000${normalizedQuery}` : "";
+  const key = active ? `${userId}\u0000${normalizedQuery}` : "";
   const [state, setState] = useState<SearchState>(emptySearch);
   const [retryVersion, setRetryVersion] = useState(0);
   const currentKey = useRef(key);
@@ -73,7 +69,7 @@ export function useEditorSearch({
         loading: true,
         error: ""
       }));
-      void apiSearchDocs(normalizedQuery, { collectionId: collectionId || undefined, unfiled }, "", controller.signal)
+      void apiSearchDocs(normalizedQuery, "", controller.signal)
         .then((page) => {
           if (requestVersion.current !== version || currentKey.current !== key) return;
           setState({
@@ -102,7 +98,7 @@ export function useEditorSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [active, collectionId, invalid, key, normalizedQuery, paused, retryVersion, unfiled, userId]);
+  }, [active, invalid, key, normalizedQuery, paused, retryVersion, userId]);
 
   const loadMore = useCallback(() => {
     if (!active || invalid || !userId || state.key !== key || !state.nextCursor || state.loading) return;
@@ -112,7 +108,7 @@ export function useEditorSearch({
     requestController.current = controller;
     const cursor = state.nextCursor;
     setState((current) => ({ ...current, loading: true, error: "" }));
-    void apiSearchDocs(normalizedQuery, { collectionId: collectionId || undefined, unfiled }, cursor, controller.signal)
+    void apiSearchDocs(normalizedQuery, cursor, controller.signal)
       .then((page) => {
         if (requestVersion.current !== version || currentKey.current !== key) return;
         setState((current) => {
@@ -131,7 +127,7 @@ export function useEditorSearch({
         if (requestVersion.current !== version || currentKey.current !== key) return;
         setState((current) => ({ ...current, loading: false, error: searchError(error) }));
       });
-  }, [active, collectionId, invalid, key, normalizedQuery, state.key, state.loading, state.nextCursor, unfiled, userId]);
+  }, [active, invalid, key, normalizedQuery, state.key, state.loading, state.nextCursor, userId]);
 
   const ownsState = state.ownerId === userId;
   return {

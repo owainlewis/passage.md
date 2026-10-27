@@ -6,42 +6,20 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/auth"
 )
 
+// Collections were removed: every document lives in one list. Older CLI
+// releases and agents still call these routes, so listing answers with no
+// collections and every change explains why it no longer applies, instead
+// of a bare 404.
+
 func (a *App) listCollections(w http.ResponseWriter, r *http.Request) {
-	if !a.requireCollectionService(w) {
+	if !a.requireDocumentService(w) {
 		return
 	}
-	a.requireUserForDocs(a.collections.List)(w, r)
+	a.requireUserForDocs(func(w http.ResponseWriter, _ *http.Request, _ auth.User) {
+		writeJSON(w, http.StatusOK, map[string][]struct{}{"collections": {}})
+	})(w, r)
 }
 
-func (a *App) createCollection(w http.ResponseWriter, r *http.Request) {
-	if !a.requireCollectionService(w) {
-		return
-	}
-	a.requireUserForCollectionMutation(a.collections.Create)(w, r)
-}
-
-func (a *App) updateCollection(w http.ResponseWriter, r *http.Request) {
-	if !a.requireCollectionService(w) {
-		return
-	}
-	a.requireUserForCollectionMutation(a.collections.Update)(w, r)
-}
-
-func (a *App) deleteCollection(w http.ResponseWriter, r *http.Request) {
-	if !a.requireCollectionService(w) {
-		return
-	}
-	a.requireUserForCollectionMutation(a.collections.Delete)(w, r)
-}
-
-func (a *App) requireCollectionService(w http.ResponseWriter) bool {
-	if a.auth == nil || a.collections == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database is not configured"})
-		return false
-	}
-	return true
-}
-
-func (a *App) requireUserForCollectionMutation(next func(http.ResponseWriter, *http.Request, auth.User)) http.HandlerFunc {
-	return a.requireUserForDocumentMutation(next)
+func (a *App) collectionsRemoved(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusGone, map[string]string{"error": "collections have been removed; every document is in one list"})
 }

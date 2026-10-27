@@ -103,7 +103,6 @@ export default function Editor() {
     setDocs,
     setPendingSave,
     setSaveState,
-    setDocumentFilter,
     updateBody
   } = useEditorDocuments({
     userId,
@@ -126,8 +125,7 @@ export default function Editor() {
     showUpgrade,
     setDocs,
     setPendingSave,
-    setSaveState,
-    setDocumentFilter
+    setSaveState
   });
 
   // The drawer remembers whether it was left open, but only where it sits

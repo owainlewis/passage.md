@@ -14,11 +14,6 @@ export type SearchDocumentPage = {
   nextCursor: string;
 };
 
-export type SearchScope = {
-  collectionId?: string;
-  unfiled?: boolean;
-};
-
 export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
   const query = new URLSearchParams({ limit: "50" });
   if (cursor) query.set("cursor", cursor);
@@ -38,13 +33,10 @@ export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
 
 export async function apiSearchDocs(
   value: string,
-  scope: SearchScope,
   cursor = "",
   signal?: AbortSignal
 ): Promise<SearchDocumentPage> {
   const query = new URLSearchParams({ q: value, limit: "50" });
-  if (scope.collectionId) query.set("collectionId", scope.collectionId);
-  if (scope.unfiled) query.set("unfiled", "true");
   if (cursor) query.set("cursor", cursor);
   const res = await fetch(`/api/v1/docs/search?${query}`, {
     credentials: "include",
@@ -125,16 +117,7 @@ export async function apiUpdateDoc(id: string, body: string, version?: number): 
 }
 
 function normalizeDoc(doc: Doc, bodyLoaded: boolean): Doc {
-  const starred = typeof doc.starred === "boolean" ? doc.starred : Boolean(doc.pinned);
-  return {
-    ...doc,
-    body: typeof doc.body === "string" ? doc.body : "",
-    bodyLoaded,
-    starred,
-    pinned: starred,
-    collectionId: doc.collectionId ?? null,
-    collectionSlug: doc.collectionSlug ?? null
-  };
+  return { ...doc, body: typeof doc.body === "string" ? doc.body : "", bodyLoaded };
 }
 
 export async function apiArchiveDoc(id: string): Promise<void> {

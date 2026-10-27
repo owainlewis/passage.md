@@ -9,8 +9,6 @@ import { normalizeEditorSearch, useEditorSearch } from "./use-editor-search";
 
 type Row = { doc: Doc; excerpt?: string };
 
-const NO_SCOPE = {};
-
 /**
  * Every document in one list, newest edit first, with search at the top.
  * There are no folders: the list and the search box are the whole of
@@ -48,7 +46,7 @@ export function DocumentDrawer({
 }) {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
-  const search = useEditorSearch({ query, scope: NO_SCOPE, userId, paused: searchPaused });
+  const search = useEditorSearch({ query, userId, paused: searchPaused });
   const normalized = normalizeEditorSearch(query).toLowerCase();
 
   const rows = useMemo<Row[]>(() => {

@@ -49,28 +49,17 @@ type TestDoc = {
   publicId?: string;
   body: string;
   version?: number;
-  pinned?: boolean;
-  starred?: boolean;
-  collectionId?: string | null;
-  collectionSlug?: string | null;
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;
 };
 
-function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody, pinned: true }]) {
+function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody }]) {
   let docs: Array<TestDoc & { publicId: string }> = initialDocs.map((doc, index) => ({
     publicId: `public-${index + 1}`,
     ...doc
   }));
   let nextDoc = docs.length + 1;
-  let collections = [
-    { id: "collection-context", slug: "operating-context", title: "Operating Context", description: "Stable context.", createdAt: "2026-08-01T10:00:00Z", updatedAt: "2026-08-01T10:00:00Z" },
-    { id: "collection-content", slug: "content-studio", title: "Content Studio", description: "Content work.", createdAt: "2026-08-01T10:01:00Z", updatedAt: "2026-08-01T10:01:00Z" },
-    { id: "collection-passage", slug: "passage", title: "Passage", description: "Passage work.", createdAt: "2026-08-01T10:02:00Z", updatedAt: "2026-08-01T10:02:00Z" },
-    { id: "collection-research", slug: "research", title: "Research", description: "Research notes.", createdAt: "2026-08-01T10:03:00Z", updatedAt: "2026-08-01T10:03:00Z" }
-  ];
-  let templates: Array<{ id: string; title: string; description: string; body: string; createdAt: string; updatedAt: string }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -83,13 +72,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     if (url.startsWith("/api/v1/docs/search?") && method === "GET") {
       const requestURL = new URL(url, "http://passage.test");
       const query = requestURL.searchParams.get("q")?.toLowerCase() ?? "";
-      const collectionId = requestURL.searchParams.get("collectionId");
-      const unfiled = requestURL.searchParams.get("unfiled") === "true";
-      const matches = docs.filter((doc) => {
-        if (collectionId && doc.collectionId !== collectionId) return false;
-        if (unfiled && doc.collectionId) return false;
-        return doc.body.toLowerCase().includes(query);
-      }).map((doc) => {
+      const matches = docs.filter((doc) => doc.body.toLowerCase().includes(query)).map((doc) => {
         const title = doc.body.match(/^#\s+(.+)$/m)?.[1] ?? "Untitled";
         return {
           ...doc,
@@ -103,63 +86,6 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
     }
-    if (url === "/api/v1/collections" && method === "GET") {
-      return new Response(JSON.stringify({ collections }), { status: 200 });
-    }
-    if (url === "/api/v1/collections" && method === "POST") {
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const base = String(input.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "collection";
-      let slug = base;
-      let suffix = 2;
-      while (["all", "documents"].includes(slug) || collections.some((collection) => collection.slug === slug)) slug = `${base}-${suffix++}`;
-      const collection = { id: `collection-${collections.length + 1}`, slug, title: input.title, description: input.description, createdAt: "2026-08-01T11:00:00Z", updatedAt: "2026-08-01T11:00:00Z" };
-      collections = [...collections, collection];
-      return new Response(JSON.stringify(collection), { status: 201 });
-    }
-    if (url.startsWith("/api/v1/collections/") && method === "PATCH") {
-      const slug = url.split("/")[4];
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const current = collections.find((collection) => collection.slug === slug)!;
-      const updated = { ...current, title: input.title, description: input.description, updatedAt: "2026-08-01T11:01:00Z" };
-      collections = collections.map((collection) => collection.slug === slug ? updated : collection);
-      return new Response(JSON.stringify(updated), { status: 200 });
-    }
-    if (url.startsWith("/api/v1/collections/") && method === "DELETE") {
-      const slug = url.split("/")[4];
-      const removed = collections.find((collection) => collection.slug === slug);
-      collections = collections.filter((collection) => collection.slug !== slug);
-      docs = docs.map((doc) => doc.collectionId === removed?.id ? { ...doc, collectionId: null, collectionSlug: null } : doc);
-      return new Response(null, { status: 204 });
-    }
-    if (url === "/api/v1/templates" && method === "GET") {
-      return new Response(JSON.stringify({ templates }), { status: 200 });
-    }
-    if (url === "/api/v1/templates" && method === "POST") {
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const template = {
-        id: `template-${templates.length + 1}`,
-        title: input.title,
-        description: input.description,
-        body: input.body,
-        createdAt: "2026-08-04T10:00:00Z",
-        updatedAt: "2026-08-04T10:00:00Z"
-      };
-      templates = [template, ...templates];
-      return new Response(JSON.stringify(template), { status: 201 });
-    }
-    if (url.startsWith("/api/v1/templates/") && method === "PATCH") {
-      const id = url.split("/")[4];
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const current = templates.find((template) => template.id === id);
-      const updated = { ...current, ...input, id, updatedAt: "2026-08-04T10:01:00Z" };
-      templates = templates.map((template) => (template.id === id ? updated : template));
-      return new Response(JSON.stringify(updated), { status: 200 });
-    }
-    if (url.startsWith("/api/v1/templates/") && method === "DELETE") {
-      const id = url.split("/")[4];
-      templates = templates.filter((template) => template.id !== id);
-      return new Response(null, { status: 204 });
-    }
     if (url === "/api/v1/docs" && method === "POST") {
       const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
       const doc: TestDoc & { publicId: string } = { id: `doc-${nextDoc}`, publicId: `public-${nextDoc}`, body };
@@ -171,16 +97,9 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       const id = url.split("/")[4];
       const input = JSON.parse(String(init?.body ?? "{}"));
       const doc = docs.find((existing) => existing.id === id) ?? { id, publicId: "public-updated", body: "" };
-      const collection = Object.prototype.hasOwnProperty.call(input, "collectionId")
-        ? collections.find((candidate) => candidate.id === input.collectionId)
-        : undefined;
       const updated = {
         ...doc,
         ...(Object.prototype.hasOwnProperty.call(input, "body") ? { body: input.body } : {}),
-        ...(Object.prototype.hasOwnProperty.call(input, "starred") ? { starred: input.starred, pinned: input.starred } : {}),
-        ...(Object.prototype.hasOwnProperty.call(input, "collectionId")
-          ? { collectionId: input.collectionId, collectionSlug: collection?.slug ?? null }
-          : {})
       };
       docs = docs.map((existing) => (existing.id === id ? updated : existing));
       return new Response(JSON.stringify(updated), { status: 200 });
@@ -892,9 +811,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
         }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -937,13 +853,13 @@ describe("Write (editor)", () => {
         if (sent.version !== version) {
           return Promise.resolve(new Response(JSON.stringify({
             error: "document changed since it was loaded",
-            document: { id: "doc-shared", publicId: "shared", body: "# Shared", version, starred: false, collectionId: null, collectionSlug: null, updatedAt: "2026-08-17T12:00:00Z" }
+            document: { id: "doc-shared", publicId: "shared", body: "# Shared", version, updatedAt: "2026-08-17T12:00:00Z" }
           }), { status: 409, headers: { "Content-Type": "application/json" } }));
         }
         version += 1;
         const payload = new Response(JSON.stringify({
           id: "doc-shared", publicId: "shared", body: sent.body, version,
-          starred: false, collectionId: null, collectionSlug: null, updatedAt: "2026-08-17T12:00:00Z"
+          updatedAt: "2026-08-17T12:00:00Z"
         }), { status: 200, headers: { "Content-Type": "application/json" } });
         // Hold the first response open so the next keystroke lands while it is
         // still in flight. That is the ordinary case: typing does not stop for
@@ -987,9 +903,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
         }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1027,9 +940,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
           }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1039,9 +949,6 @@ describe("Write (editor)", () => {
           publicId: "shared",
           body: JSON.parse(String(init?.body ?? "{}")).body,
           version: 4,
-          starred: false,
-          collectionId: null,
-          collectionSlug: null,
           updatedAt: "2026-08-16T12:01:00Z"
         }), { status: 200, headers: { "Content-Type": "application/json" } }));
       }
@@ -1080,9 +987,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
           }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1092,9 +996,6 @@ describe("Write (editor)", () => {
           publicId: "shared",
           body: JSON.parse(String(init?.body ?? "{}")).body,
           version: 4,
-          starred: false,
-          collectionId: null,
-          collectionSlug: null,
           updatedAt: "2026-08-16T12:01:00Z"
         }), { status: 200, headers: { "Content-Type": "application/json" } }));
       }
@@ -1132,9 +1033,6 @@ describe("Write (editor)", () => {
             publicId: id === "doc-one" ? "one" : "two",
             body: `# ${id} from an agent`,
             version: 3,
-            starred: false,
-            collectionId: null,
-            collectionSlug: null,
             updatedAt: "2026-08-16T12:00:00Z"
           }
         }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1641,9 +1539,6 @@ describe("Write (editor)", () => {
           status: 200
         });
       }
-      if (url === "/api/v1/collections" && method === "GET") {
-        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
-      }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
 
@@ -1708,9 +1603,6 @@ describe("Write (editor)", () => {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
-      }
-      if (url === "/api/v1/collections" && method === "GET") {
-        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -2490,7 +2382,7 @@ describe("Write (editor)", () => {
   });
 });
 
-describe("visual writing and collection navigation", () => {
+describe("visual writing", () => {
   it("does not save on opening or switching modes", async () => {
     const original = "---\ntags: [writing]\n---\n\n# A draft\n\nSome **text**.\n";
     const fetchMock = stubSignedInFetch([{ id: "visual", publicId: "visual", body: original }]);
@@ -2509,9 +2401,9 @@ describe("visual writing and collection navigation", () => {
 describe("Writer", () => {
   it("lists every document newest first, with no folders, stars, or templates", async () => {
     stubSignedInFetch([
-      { id: "doc-old", publicId: "old", body: "# Older idea", updatedAt: "2026-08-01T10:00:00Z", collectionSlug: "research" },
+      { id: "doc-old", publicId: "old", body: "# Older idea", updatedAt: "2026-08-01T10:00:00Z" },
       { id: "doc-new", publicId: "new", body: "# Newest draft", updatedAt: "2026-08-03T10:00:00Z" },
-      { id: "doc-mid", publicId: "mid", body: "# Middle note", updatedAt: "2026-08-02T10:00:00Z", starred: true }
+      { id: "doc-mid", publicId: "mid", body: "# Middle note", updatedAt: "2026-08-02T10:00:00Z" }
     ]);
     await renderWrite();
 

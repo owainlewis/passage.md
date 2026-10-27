@@ -2,11 +2,8 @@
 
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc, DocumentConflictError } from "./editor-api";
-import { docMatchesFilter } from "./editor-list";
 import {
-  ALL_DOCUMENTS,
   Doc,
-  DocumentFilter,
   isShared,
   newestTimestamp,
   publicIdFromPath,
@@ -47,7 +44,6 @@ export function useEditorDocuments({
 }: EditorDocumentsOptions) {
   const [docs, setDocs] = useState<Doc[]>(seedDocs);
   const [activeId, setActiveId] = useState("welcome");
-  const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(ALL_DOCUMENTS);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   // Keyed by document id: an unresolved conflict on one document must not be
@@ -116,7 +112,6 @@ export function useEditorDocuments({
         setDocs(savedDocs);
         setNextCursor(cursor);
         setActiveId(nextActive?.id ?? "");
-        setDocumentFilter(ALL_DOCUMENTS);
         setSaveState("saved");
         setPendingSave(null);
         setLoadingMore(Boolean(cursor));
@@ -165,24 +160,11 @@ export function useEditorDocuments({
       const loaded = await apiDoc(doc.id);
       setDocs((prev) => prev.map((candidate) => {
         if (candidate.id !== loaded.id) return candidate;
-        const metadataChanged = candidate.collectionId !== doc.collectionId
-          || candidate.collectionSlug !== doc.collectionSlug
-          || candidate.starred !== doc.starred
-          || candidate.pinned !== doc.pinned;
-        const merged = {
+        return {
           ...candidate,
           ...loaded,
           updatedAt: newestTimestamp(candidate.updatedAt, loaded.updatedAt)
         };
-        return metadataChanged
-          ? {
-            ...merged,
-            collectionId: candidate.collectionId,
-            collectionSlug: candidate.collectionSlug,
-            starred: candidate.starred,
-            pinned: candidate.pinned
-          }
-          : merged;
       }));
     } catch {
       if (activeRequest.current === request) {
@@ -344,7 +326,6 @@ export function useEditorDocuments({
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       updateEditorURL(doc, "push");
-      setDocumentFilter(ALL_DOCUMENTS);
       setSaveState("saved");
       requestAnimationFrame(focusEditor);
       return doc;
@@ -388,10 +369,6 @@ export function useEditorDocuments({
               current.id === saved.id
                 ? {
                     ...saved,
-                    collectionId: current.collectionId,
-                    collectionSlug: current.collectionSlug,
-                    starred: current.starred,
-                    pinned: current.pinned,
                     updatedAt: newestTimestamp(current.updatedAt, saved.updatedAt)
                   }
                 : current
@@ -405,15 +382,9 @@ export function useEditorDocuments({
       return false;
     }
     const next = docs.filter((candidate) => candidate.id !== id);
-    const filteredDocsRemain = next.some((candidate) => docMatchesFilter(candidate, documentFilter));
-    const replacement =
-      next.find((candidate) => candidate.id === activeId) ??
-      next.find((candidate) => docMatchesFilter(candidate, documentFilter)) ??
-      next[0] ??
-      null;
+    const replacement = next.find((candidate) => candidate.id === activeId) ?? next[0] ?? null;
     setDocs((current) => current.filter((candidate) => candidate.id !== id));
     if (id === activeId) setActiveId(replacement?.id ?? "");
-    if (replacement && !filteredDocsRemain) setDocumentFilter(ALL_DOCUMENTS);
     setSaveState("saved");
     return replacement;
   }
@@ -442,12 +413,10 @@ export function useEditorDocuments({
     resolveConflict,
     saveState,
     selectDoc,
-    documentFilter,
     setBillingNotice,
     setDocs,
     setPendingSave,
     setSaveState,
-    setDocumentFilter,
     updateBody
   };
 }
