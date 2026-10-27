@@ -4,30 +4,29 @@ import Link from "next/link";
 import { AuthBoundary, useAuth } from "./auth";
 import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
+import { MoreIcon, PanelIcon, PlusIcon, SearchIcon } from "./icons";
 import { MerchantLink, SupportLink } from "./legal";
 import styles from "./landing.module.css";
 
-const workflow = [
+const principles = [
   {
-    title: "Store your knowledge",
-    body: "Goals, product notes, preferences, research, drafts. One private place for the writing you keep coming back to, instead of folders on one machine.",
-    example: "Every note in one app"
+    title: "Nothing in the way",
+    body: "One page and a blinking cursor. The few controls there are fade out as soon as you start typing, and come back when you reach for them."
   },
   {
-    title: "Group it into collections",
-    body: "A collection is the unit you hand to an agent. Put your operating context in one, a project in another, and keep the boundary clear.",
-    example: "Collections / Operating Context"
+    title: "Find anything",
+    body: "Every document in one list, newest first. Press ⌘K and search every word you have ever written. No folders to file things in."
   },
   {
-    title: "Give your agents access",
-    body: "Agents read and update the same private Markdown through the authenticated API or CLI, and search the full text of every document.",
-    example: "passage list --collection operating-context"
-  },
-  {
-    title: "Share deliberately",
-    body: "Publish a read-only page or raw Markdown URL only when another person or agent needs it. Revoke access at any time.",
-    example: "passage share <doc-id>"
+    title: "Plain Markdown",
+    body: "Write with headings, lists and quotes as you type, or flip to the raw text with ⌘/. Copy it, download it, or read it from the CLI."
   }
+];
+
+const shortcuts = [
+  { keys: "⌘K", label: "Search" },
+  { keys: "⌘/", label: "Markdown" },
+  { keys: "⌘.", label: "Documents" }
 ];
 
 const proRenewal = "Renews monthly until cancelled. Cancel through the Stripe portal.";
@@ -106,113 +105,94 @@ function LandingContent() {
         </nav>
       </header>
 
-      <main className={styles.main}>
+      <main>
         <section className={styles.hero}>
-          <div className={styles.heroCopy}>
-            <h1 className={styles.heroTitle}>A writing app built for you and your agents.</h1>
-            <p className={styles.heroSub}>
-              Keep your goals, priorities, and business context in a collection your agents can read, and your everyday
-              writing alongside it. No local Markdown files spread across machines, and nothing to sync.
-            </p>
-            <div className={styles.heroActions}>
-              <Link className={styles.primaryButton} href={primaryHref}>
-                {primaryLabel}
-              </Link>
-              <a className={styles.secondaryButton} href="#workflow">
-                See how it works
-              </a>
-            </div>
-            {statusMessage && <p className={styles.heroNote}>{statusMessage}</p>}
+          <h1 className={styles.heroTitle}>A quiet place to write.</h1>
+          <p className={styles.heroSub}>
+            Passage is a Markdown editor with nothing in the way. Open it, write, and find anything again with search.
+          </p>
+          <div className={styles.heroActions}>
+            <Link className={styles.primaryButton} href={primaryHref}>
+              {primaryLabel}
+            </Link>
           </div>
-
-          <div className={styles.heroPreview} aria-hidden="true">
-            <div className={styles.heroDoc}>
-              <div className={styles.docChrome}>
-                <span className={styles.docDots}>
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className={styles.docUrl}>Operating Context / goals.md</span>
-                <span className={styles.docStatus}>Private</span>
-              </div>
-              <div className={styles.docCanvas}>
-                <div className={styles.lineNumbers}>
-                  {Array.from({ length: 8 }, (_, index) => (
-                    <span key={index}>{String(index + 1).padStart(2, "0")}</span>
-                  ))}
-                </div>
-                <div className={`markdown ${styles.heroDocBody}`}>
-                  <h1>Operating context</h1>
-                  <p>Stable context for every agent I work with.</p>
-                  <ul>
-                    <li>Goal: ship the Passage workspace</li>
-                    <li>Product: shared Markdown for people and agents</li>
-                    <li>Preference: concise, direct writing</li>
-                  </ul>
-                  <blockquote>
-                    <p>Update this document when the plan changes.</p>
-                  </blockquote>
-                </div>
-              </div>
-              <div className={styles.terminalStrip}>$ passage list</div>
-            </div>
-          </div>
+          <p className={styles.heroNote} aria-live="polite">
+            {statusMessage}
+          </p>
         </section>
 
-        <section className={styles.features} id="workflow">
-          <div className={styles.featuresHeader}>
-            <div>
-              <h2 className={styles.sectionHeading}>Keep context and writing together.</h2>
+        <div className={styles.stage} aria-hidden="true">
+          <div className={styles.window}>
+            <div className={styles.windowBar}>
+              <span className={styles.windowIcon}><PanelIcon /></span>
+              <span className={styles.windowSpacer} />
+              <span className={styles.windowStatus}>Saved</span>
+              <span className={styles.windowIcon}><SearchIcon /></span>
+              <span className={styles.windowIcon}><PlusIcon /></span>
+              <span className={styles.windowIcon}><MoreIcon /></span>
             </div>
-            <p>Deliberately minimal. Collections to organise your context, search that reads every word, and one CLI your agents use to read and update the same Markdown.</p>
+            <div className={styles.windowPage}>
+              <h2>Morning pages</h2>
+              <p>
+                The best writing tool is the one you forget is there. No sidebar asking where this belongs, no toolbar
+                asking how it should look. Just the next sentence.
+              </p>
+              <p>Three things for today:</p>
+              <ul>
+                <li>Finish the draft before lunch</li>
+                <li>Cut the second section in half</li>
+                <li>
+                  Send it, even if it is not perfect
+                  <span className={styles.caret} />
+                </li>
+              </ul>
+            </div>
+            <div className={styles.windowFoot}>64 words</div>
           </div>
-          <div className={styles.featureList}>
-            {workflow.map((feature, index) => (
-              <article className={styles.featureRow} key={feature.title}>
-                <span className={styles.featureNumber}>{String(index + 1).padStart(2, "0")}</span>
-                <div>
-                  <h3 className={styles.featureTitle}>{feature.title}</h3>
-                  <code className={styles.featureExample}>{feature.example}</code>
-                </div>
-                <p className={styles.featureBody}>{feature.body}</p>
-              </article>
-            ))}
-          </div>
+        </div>
+
+        <section className={styles.principles} aria-label="Why Passage">
+          {principles.map((item) => (
+            <article className={styles.principle} key={item.title}>
+              <h2 className={styles.principleTitle}>{item.title}</h2>
+              <p>{item.body}</p>
+            </article>
+          ))}
         </section>
 
-        <section className={styles.story} id="story">
-          <div className={styles.storyBody}>
-            <p className={styles.storyLead}>Your agents are only as useful as the context they can reach.</p>
+        <ul className={styles.shortcuts} aria-label="Keyboard shortcuts">
+          {shortcuts.map((shortcut) => (
+            <li key={shortcut.keys}>
+              <kbd>{shortcut.keys}</kbd>
+              <span>{shortcut.label}</span>
+            </li>
+          ))}
+        </ul>
+
+        <section className={styles.agents}>
+          <div>
+            <h2 className={styles.sectionTitle}>Your agents can read it too.</h2>
             <p>
-              Goals sit in one folder. Product notes sit in another. Preferences live in a prompt you cannot find. Each new
-              agent starts cold, so you explain the same project again and paste the same files into another chat.
+              With Pro, the CLI and API give your agents the same private Markdown you write in. They can list it, read
+              it and add to it. Share a read-only page only when you choose.
             </p>
-            <p>
-              Passage gives that context one home. Collections are the parts of your world, and a collection is what you
-              hand to an agent. Star what you rely on, and find any phrase again with indexed full-text search.
-            </p>
-            <p>
-              It replaces the sprawl. Markdown files on one laptop, half of them in a folder you sync through Dropbox,
-              the rest pasted into a chat you cannot find again. One app instead, deliberately minimal, holding only
-              what you and your agents need to write each day.
-            </p>
-            <p>
-              Your agents read and update the same private Markdown through one CLI. Share a clean page or a raw
-              Markdown link only when you choose.
-            </p>
-            <p className={styles.storyClose}>Markdown is a good format. A folder on one machine is a poor shared memory.</p>
+            <Link className={styles.textLink} href="/cli">
+              Read the CLI guide
+            </Link>
           </div>
+          <pre className={styles.terminal}>
+            <code>
+              <span className={styles.prompt}>$</span> passage list{"\n"}
+              <span className={styles.prompt}>$</span> passage cat &lt;doc-id&gt;{"\n"}
+              <span className={styles.prompt}>$</span> passage append &lt;doc-id&gt; ./notes.md
+            </code>
+          </pre>
         </section>
 
         <section className={styles.pricing} id="pricing">
-          <div className={styles.pricingHeader}>
-            <div>
-              <h2 className={styles.sectionHeading}>Simple pricing</h2>
-            </div>
-            <p>Start for free. Upgrade when you need a larger context library, sharing, or private access from agents.</p>
-          </div>
-          <div className={styles.pricingGrid}>
+          <h2 className={styles.sectionTitle}>Simple pricing</h2>
+          <p className={styles.pricingSub}>Start for free. Upgrade when you want more room, sharing, or the CLI.</p>
+          <div className={styles.plans}>
             <div className={styles.plan}>
               <p className={styles.planName}>Free</p>
               <p className={styles.planPrice}>
@@ -224,18 +204,14 @@ function LandingContent() {
                 ))}
               </ul>
               <div className={styles.planFooter}>
-                <Link className={`${styles.secondaryButton} ${styles.planButton}`} href={primaryHref}>
+                <Link className={styles.secondaryButton} href={primaryHref}>
                   {primaryLabel}
                 </Link>
-                <p className={`${styles.planRenewal} ${styles.planRenewalPlaceholder}`} aria-hidden="true">
-                  {proRenewal}
-                </p>
+                <p className={styles.planRenewal}>No card required.</p>
               </div>
             </div>
             <div className={`${styles.plan} ${styles.planPro}`}>
-              <p className={styles.planName}>
-                Pro<span className={styles.planTag}>Monthly</span>
-              </p>
+              <p className={styles.planName}>Pro</p>
               <p className={styles.planPrice}>
                 $5<span className={styles.planPer}> USD / month</span>
               </p>
@@ -246,28 +222,24 @@ function LandingContent() {
                 ))}
               </ul>
               <div className={styles.planFooter}>
-                <Link className={`${styles.primaryButton} ${styles.planButton}`} href={proHref}>
+                <Link className={styles.primaryButton} href={proHref}>
                   {proLabel}
                 </Link>
                 <p className={styles.planRenewal}>{proRenewal}</p>
               </div>
             </div>
           </div>
-          <p className={styles.pricingPolicies}>
+          <p className={styles.policies}>
             See the <Link href="/cancellation">Cancellation Policy</Link> and <Link href="/refunds">Refund Policy</Link>.
           </p>
         </section>
       </main>
 
       <footer className={styles.footer}>
-        <div className={styles.footerBrand}>
+        <div className={styles.footerMeta}>
           <Brand />
-          <span className={styles.footerTag}>A writing app built for you and your agents.</span>
-          <span className={styles.footerTag}>
-            Operated by <MerchantLink />.
-          </span>
-          <span className={styles.footerTag}>
-            Support: <SupportLink />
+          <span>
+            Operated by <MerchantLink />. Support: <SupportLink />
           </span>
         </div>
         <nav className={styles.footerLinks} aria-label="Footer links">
