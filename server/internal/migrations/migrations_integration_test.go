@@ -92,7 +92,7 @@ func TestRemoveCollectionsMigrationKeepsEveryDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "028_remove_collections" {
+	if strings.Join(applied, ",") != "028_remove_collections,029_remove_templates" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	if after := snapshot(); after != before {
@@ -152,7 +152,7 @@ func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors,028_remove_collections" {
+		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors,028_remove_collections,029_remove_templates" {
 			t.Fatalf("applied migrations = %q", applied)
 		}
 		assertDocumentSearchSchema(t, db)
@@ -244,6 +244,84 @@ func isolatedMigrationDatabase(t *testing.T) *database.Pool {
 		admin.Close()
 	})
 	return db
+}
+
+func TestRemoveTemplatesMigrationTurnsTemplatesIntoDocuments(t *testing.T) {
+	db := isolatedMigrationDatabase(t)
+	ctx := context.Background()
+	applyBeforeMigration(t, db, "029_remove_templates.sql")
+
+	var ownerID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ('remove-templates@example.com', 'hash')
+		RETURNING id::text
+	`).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO documents (owner_user_id, public_id, title, body)
+		VALUES ($1, 'removetemplatesexisting000000000', 'Existing', '# Existing')
+	`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO templates (owner_user_id, title, description, body, created_at, updated_at) VALUES
+		  ($1, 'Video script', 'Plan a video.', E'## Hook\n\nOpen strong.', '2026-08-01T08:00:00Z', '2026-08-02T08:00:00Z'),
+		  ($1, 'Weekly review', '', E'- Wins\n- Misses', '2026-08-03T08:00:00Z', '2026-08-04T08:00:00Z')
+	`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	applied, err := Apply(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(applied, ",") != "029_remove_templates" {
+		t.Fatalf("applied migrations = %q", applied)
+	}
+	rows, err := db.Query(ctx, `
+		SELECT title, body, length(public_id), created_at::text, updated_at::text
+		FROM documents
+		WHERE owner_user_id = $1
+		ORDER BY created_at, title
+	`, ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var title, body, created, updated string
+		var publicIDLength int
+		if err := rows.Scan(&title, &body, &publicIDLength, &created, &updated); err != nil {
+			t.Fatal(err)
+		}
+		if publicIDLength != 32 {
+			t.Fatalf("public id length = %d", publicIDLength)
+		}
+		got = append(got, fmt.Sprintf("%s|%q|%s|%s", title, body, created[:10], updated[:10]))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`Hook|"## Hook\n\nOpen strong."|2026-08-01|2026-08-02`,
+		`Weekly review|"# Weekly review\n\n- Wins\n- Misses"|2026-08-03|2026-08-04`,
+	}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || !strings.HasPrefix(got[2], "Existing|") {
+		t.Fatalf("documents = %#v", got)
+	}
+	var table bool
+	if err := db.QueryRow(ctx, `SELECT to_regclass('templates') IS NOT NULL`).Scan(&table); err != nil {
+		t.Fatal(err)
+	}
+	if table {
+		t.Fatal("templates table still exists")
+	}
+	if again, err := Apply(ctx, db); err != nil || len(again) != 0 {
+		t.Fatalf("second apply = %q, %v", again, err)
+	}
 }
 
 func applyBeforeMigration(t *testing.T, db *database.Pool, stopBefore string) {

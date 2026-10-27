@@ -2481,4 +2481,26 @@ describe("Writer", () => {
     await waitFor(() => expect(editor).toHaveFocus());
     expect(window.location.pathname).toBe("/write/public-2");
   });
+
+  it("reuses a blank page and discards it when left empty", async () => {
+    const requests: string[] = [];
+    const baseFetch = stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (method === "POST" || method === "DELETE") requests.push(`${method} ${String(input)}`);
+      return baseFetch(input, init);
+    }));
+    await renderWrite();
+
+    fireEvent.click(newDocumentButton());
+    await screen.findByRole("textbox", { name: "Visual editor" });
+    await waitFor(() => expect(newDocumentButton()).toBeEnabled());
+    fireEvent.click(newDocumentButton());
+    await waitFor(() => expect(newDocumentButton()).toBeEnabled());
+    expect(requests).toEqual(["POST /api/v1/docs"]);
+
+    await openDocumentNamed("Existing");
+    await waitFor(() => expect(requests).toEqual(["POST /api/v1/docs", "DELETE /api/v1/docs/doc-2"]));
+    expect(within(openDrawer()).queryByRole("button", { name: /^Untitled/ })).not.toBeInTheDocument();
+  });
 });

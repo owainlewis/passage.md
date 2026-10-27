@@ -321,7 +321,7 @@ Returns ranked metadata for active documents owned by the authenticated user.
 
 Search covers the server-derived title and complete current Markdown body, including frontmatter stored in the body.
 
-It does not search archived documents, templates, anonymous content, public documents owned by another account, or historical document versions.
+It does not search archived documents, anonymous content, public documents owned by another account, or historical document versions.
 
 Parameters:
 
