@@ -1,35 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PendingStatus, useAuth } from "./auth";
-import { bodyWithoutFrontmatter, titleOf, wordCount } from "./doc-utils";
+import { titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
-import { EditorSidebar } from "./editor-sidebar";
-import { isShared, Mode, publicIdFromPath } from "./editor-model";
-import { EditorControls } from "./editor-controls";
-import { EditorStatusBar } from "./editor-status-bar";
-import { EditorWorkspace, WorkspaceModal, WorkspaceSearch } from "./editor-workspace";
-import { currentWorkspaceLocation, workspacePath } from "./editor-workspace-location";
-import { collectionForDoc, collectionLabel, WORKSPACE_COLLECTIONS, WorkspaceView } from "./editor-workspace-model";
+import { DocumentDrawer } from "./editor-drawer";
+import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
+import { currentWorkspaceLocation } from "./editor-workspace-location";
 import { useEntitlements } from "./entitlements";
-import { FolderIcon, ListIcon, PlusIcon, SidebarIcon, StarIcon, UserIcon } from "./icons";
-import { CollectionDocumentList } from "./collection-document-list";
-import { VisualEditor } from "./visual-editor";
-import { MarkdownView } from "./markdown-view";
-import { TemplateWorkspace } from "./template-workspace";
-import { useEditorDocuments } from "./use-editor-documents";
-import { useEditorCollections } from "./use-editor-collections";
-import { useEditorSharing } from "./use-editor-sharing";
-import { useEditorTemplates } from "./use-editor-templates";
+import { MoreIcon, PanelIcon, PlusIcon, SearchIcon, UserIcon } from "./icons";
+import { MenuButton, MenuItem } from "./menu-button";
+import { Modal } from "./modal";
 import { useTheme } from "./theme";
+import { useEditorDocuments } from "./use-editor-documents";
+import { useEditorSharing } from "./use-editor-sharing";
+import { VisualEditor } from "./visual-editor";
+import "./writer.css";
 
-const EMPTY_ASSIGNMENTS: Record<string, string> = {};
-const NO_DELETED_COLLECTIONS: string[] = [];
-// These match the CSS breakpoints. Below the first, the collection list is an
-// overlay. Below the second, the sidebar overlays and a bottom nav appears.
-const LIST_OVERLAY_QUERY = "(max-width: 1100px)";
-const MOBILE_QUERY = "(max-width: 720px)";
+// Matches the CSS breakpoint. Below it the document list opens over the page
+// instead of beside it.
+const OVERLAY_QUERY = "(max-width: 1023px)";
+const DRAWER_KEY = "passage.drawer.v1";
+// Pointer travel that counts as "the writer reached for the mouse" and brings
+// the chrome back. Smaller movements are trackpad noise while typing.
+const WAKE_DISTANCE = 6;
 
 function useMediaQuery(query: string) {
   return useSyncExternalStore(
@@ -43,41 +38,45 @@ function useMediaQuery(query: string) {
   );
 }
 
+function storedDrawer() {
+  try {
+    return localStorage.getItem(DRAWER_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+
+function isMac() {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+}
+
+/**
+ * The writer. One page of Markdown, a list of every document behind a single
+ * button, and nothing else on screen while you type.
+ */
 export default function Editor() {
-  const [mode, setMode] = useState<Mode>("write");
-  const [focusEnabled, setFocusEnabled] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [documentListOpen, setDocumentListOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [source, setSource] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
   const [shareDialogDocId, setShareDialogDocId] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [activeTemplateId, setActiveTemplateId] = useState("");
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => currentWorkspaceLocation().view);
-  const [newDocumentCollection, setNewDocumentCollection] = useState<string | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchScope, setSearchScope] = useState("all");
-  const [searchTrigger, setSearchTrigger] = useState<HTMLElement | null>(null);
-  const [documentCopied, setDocumentCopied] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [creatingDocument, setCreatingDocument] = useState(false);
+  const [authError, setAuthError] = useState("");
+  // The document the address bar asks for. It can name a document the list
+  // has not reached yet, so the page waits for it rather than showing another.
+  const [routePublicId, setRoutePublicId] = useState(() => publicIdFromPath());
+  const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const visualRef = useRef<{ focus: () => void }>(null);
-  const writingPaneRef = useRef<HTMLElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const focusNewDocument = useRef(false);
-  const workspaceViewRef = useRef(workspaceView);
-  workspaceViewRef.current = workspaceView;
-  const narrowLayout = useMediaQuery(LIST_OVERLAY_QUERY);
-  const mobileLayout = useMediaQuery(MOBILE_QUERY);
-  // The list only overlays at narrow widths. Wider, it sits beside the sidebar
-  // and shows and hides with it, so the open flag does not apply there.
-  const listOverlayOpen = narrowLayout && documentListOpen && !focusEnabled;
+  const overlay = useMediaQuery(OVERLAY_QUERY);
+  const mod = isMac() ? "⌘" : "Ctrl+";
 
   const auth = useAuth();
   const userId = auth.user?.id;
   const entitlements = useEntitlements();
-  const { darkActive } = useTheme();
-  const templateState = useEditorTemplates(userId);
+  const { darkActive, toggleDarkMode } = useTheme();
   const {
     active,
     activeLoadError,
@@ -85,7 +84,7 @@ export default function Editor() {
     activeId,
     billingNotice,
     billingNoticeAction,
-    createDoc: createDocument,
+    createDoc,
     deleteDoc: archiveDocument,
     docs,
     documentIndexComplete,
@@ -109,34 +108,12 @@ export default function Editor() {
     userId,
     maxSavedDocs: entitlements.maxSavedDocs,
     plan: entitlements.plan,
-    focusEditor: () => mode === "write" ? visualRef.current?.focus() : textareaRef.current?.focus()
-  });
-
-  const collectionNotice = useRef("");
-  const setCollectionNotice = useCallback<Dispatch<SetStateAction<string>>>((notice) => {
-    const message = typeof notice === "function" ? notice(collectionNotice.current) : notice;
-    collectionNotice.current = message;
-    setBillingNotice(message);
-  }, [setBillingNotice]);
-
-  const collectionState = useEditorCollections({
-    userId,
-    docs,
-    setDocs,
-    setNotice: setCollectionNotice
+    focusEditor: () => (source ? textareaRef.current?.focus() : visualRef.current?.focus())
   });
 
   const activeShared = active ? isShared(active) : false;
   const shareDialogOpen = Boolean(active && shareDialogDocId === active.id);
-  const {
-    copyShareLink,
-    exportDoc,
-    publicDocPath,
-    shareButtonLabel,
-    shareDoc,
-    shareState,
-    unshareDoc
-  } = useEditorSharing({
+  const { copyShareLink, exportDoc, publicDocPath, shareDoc, shareState, unshareDoc } = useEditorSharing({
     active,
     activeShared,
     pendingSave,
@@ -149,133 +126,192 @@ export default function Editor() {
     setDocumentFilter
   });
 
+  // The drawer remembers whether it was left open, but only where it sits
+  // beside the page. Over the page it always starts closed.
   useEffect(() => {
-    if (window.matchMedia?.(MOBILE_QUERY).matches) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSidebarOpen(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!window.matchMedia?.(OVERLAY_QUERY).matches && storedDrawer()) setDrawerOpen(true);
+  }, []);
+
+  const setDrawer = useCallback((open: boolean) => {
+    setDrawerOpen(open);
+    if (window.matchMedia?.(OVERLAY_QUERY).matches) return;
+    try {
+      localStorage.setItem(DRAWER_KEY, open ? "open" : "closed");
+    } catch {
+      // Storage may be unavailable; the drawer still works for this visit.
     }
   }, []);
 
-  // A document created from the New document control should be ready to type
-  // into. This runs after the editor has actually mounted, which is why it is
-  // an effect rather than a call at creation time.
-  useEffect(() => {
-    if (!focusNewDocument.current || mode === "preview") return;
-    const element = mode === "write" ? visualRef.current : textareaRef.current;
-    if (!element) return;
-    focusNewDocument.current = false;
-    element.focus();
-  }, [mode, activeId, active?.bodyLoaded]);
+  const openSearch = useCallback(() => {
+    setDrawerOpen(true);
+    requestAnimationFrame(() => {
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    });
+  }, []);
 
-  useEffect(() => {
-    const element = textareaRef.current;
-    if (!element || mode !== "edit") return;
-    if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content")) return;
-    element.style.height = "auto";
-    element.style.height = `${element.scrollHeight}px`;
-  }, [active?.body, mode, activeId]);
+  const focusEditor = useCallback(() => {
+    requestAnimationFrame(() => (source ? textareaRef.current?.focus() : visualRef.current?.focus()));
+  }, [source]);
 
-  const toggleMode = useCallback(() => {
-    setMode((current) => (current === "write" ? "edit" : "write"));
+  // The chrome steps back while you type and returns when you reach for the
+  // pointer. It is written to the DOM directly so typing never re-renders the
+  // page just to hide a toolbar.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let lastX = -1;
+    let lastY = -1;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".wPage")) return;
+      root!.dataset.typing = "true";
+    }
+    function onPointerMove(event: PointerEvent) {
+      if (lastX >= 0 && Math.hypot(event.clientX - lastX, event.clientY - lastY) < WAKE_DISTANCE) return;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      delete root!.dataset.typing;
+    }
+    function onFocusIn(event: FocusEvent) {
+      if (!(event.target as HTMLElement | null)?.closest(".wPage")) delete root!.dataset.typing;
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("focusin", onFocusIn);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("focusin", onFocusIn);
+    };
   }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && listOverlayOpen && !searchOpen) {
-        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-        setDocumentListOpen(false);
-        document.querySelector<HTMLButtonElement>(".collectionListToggle")?.focus();
+      const modifier = event.metaKey || event.ctrlKey;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (modifier && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        openSearch();
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (modifier && event.key === "/") {
         event.preventDefault();
-        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-        if (!searchOpen) {
-          setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-        }
-        setSearchScope("all");
-        setSearchQuery("");
-        setSearchOpen(true);
+        setSource((current) => !current);
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
+      if (modifier && event.key === ".") {
         event.preventDefault();
-        toggleMode();
+        setDrawer(!drawerOpen);
+        return;
+      }
+      if (event.key === "Escape" && drawerOpen && overlay) {
+        setDrawerOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [listOverlayOpen, searchOpen, toggleMode]);
+  }, [drawerOpen, openSearch, overlay, setDrawer]);
+
+  // Older links carried view and collection queries. Those views are gone.
+  useEffect(() => {
+    const location = currentWorkspaceLocation();
+    if (location.shouldReplace) window.history.replaceState(null, "", location.canonicalPath);
+  }, []);
+
+  // A document created from New should be ready to type into. This runs after
+  // the editor has actually mounted, which is why it is an effect.
+  useEffect(() => {
+    if (!focusNewDocument.current) return;
+    const element = source ? textareaRef.current : visualRef.current;
+    if (!element) return;
+    focusNewDocument.current = false;
+    element.focus();
+  }, [source, activeId, active?.bodyLoaded]);
+
+  // Textareas without field-sizing grow by hand.
+  useEffect(() => {
+    const element = textareaRef.current;
+    if (!element || !source) return;
+    if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content")) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [active?.body, source, activeId]);
 
   useEffect(() => {
     function onPopState() {
-      setFocusEnabled(false);
       setDeleteDialogDocId("");
       setShareDialogDocId("");
-      setDocumentListOpen(false);
-      const location = currentWorkspaceLocation();
-      setActiveTemplateId("");
-      if (location.shouldReplace) {
-        window.history.replaceState(null, "", location.canonicalPath);
-      }
-      if (location.view.type !== "document") {
-        setWorkspaceView(location.view);
-        return;
-      }
-      setWorkspaceView({ type: "document" });
+      setRoutePublicId(publicIdFromPath());
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  async function createDoc(body = "", collection: string | null = newDocumentCollection) {
-    const created = await createDocument(body);
-    if (!created) return false;
-    if (collection) {
-      await collectionState.assignCollection(created.id, collection);
-    }
-    setNewDocumentCollection(null);
-    setActiveTemplateId("");
-    setMode("write");
-    setWorkspaceView({ type: "document" });
-    // Focus after the new document mounts, including async visual-editor setup.
-    focusNewDocument.current = true;
-    return true;
-  }
-
-  async function deleteDoc(id: string) {
-    const document = docs.find((candidate) => candidate.id === id);
-    if (!document) return;
-    const startingLocation = `${window.location.pathname}${window.location.search}`;
-    const replacement = await archiveDocument(id);
-    if (replacement === false) return;
-    const currentLocation = `${window.location.pathname}${window.location.search}`;
-    if (workspaceViewRef.current.type !== "document" || currentLocation !== startingLocation) return;
-    if (replacement) {
-      setWorkspaceView({ type: "document" });
-      selectDoc(replacement, "replace");
+  // Opens the document the address asks for once the list has it. A link to
+  // a document that does not exist falls back to the newest one after the
+  // whole index has been checked.
+  useEffect(() => {
+    if (!routePublicId) return;
+    const requested = docs.find((doc) => doc.publicId === routePublicId);
+    if (requested) {
+      if (requested.id !== activeId) selectDoc(requested, "none");
       return;
     }
-    openWorkspaceView({ type: "home" }, "replace");
-  }
+    if (!documentIndexComplete) return;
+    setBillingNotice("That document could not be found.");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoutePublicId("");
+    window.history.replaceState(null, "", "/write");
+  }, [activeId, docs, documentIndexComplete, routePublicId, selectDoc, setBillingNotice]);
 
-  // Writing is the common case. Templates are the exception, and they have
-  // their own destination in the sidebar, so the new-document control creates
-  // a blank page and puts the cursor in it rather than asking a question first.
-  // The collection is passed explicitly because the state set here would not
-  // be readable until the next render.
-  function createBlankDocument() {
-    // The control used to open a dialog, so pressing it twice was harmless.
-    // Now it writes, and each press would create its own document and take
-    // over the active document and history.
+  // The URL follows the open document, so a refresh or a copied address
+  // returns to it.
+  useEffect(() => {
+    if (!active?.publicId || saveState === "loading" || routePublicId) return;
+    const path = `/write/${encodeURIComponent(active.publicId)}`;
+    if (window.location.pathname === "/write" && !window.location.search) {
+      window.history.replaceState(null, "", path);
+    }
+  }, [active?.publicId, routePublicId, saveState]);
+
+  function newDocument() {
+    // Each press would otherwise create its own document.
     if (creatingDocument) return;
     setCreatingDocument(true);
-    void createDoc("", workspaceView.type === "collection" ? workspaceView.slug : workspaceView.type === "document" ? active?.collectionSlug ?? "documents" : null)
+    void createDoc("")
+      .then((created) => {
+        if (!created) return;
+        setRoutePublicId(created.publicId ?? "");
+        focusNewDocument.current = true;
+        if (overlay) setDrawerOpen(false);
+      })
       .finally(() => setCreatingDocument(false));
   }
 
-  // Copies the Markdown itself, which is the form the document is written and
-  // stored in and the form another tool expects.
+  function openDocument(doc: Doc) {
+    const existing = docs.find((candidate) => candidate.id === doc.id);
+    if (!existing) setDocs((current) => [doc, ...current]);
+    setRoutePublicId(doc.publicId ?? "");
+    selectDoc(existing ?? doc, "push");
+    if (overlay) setDrawerOpen(false);
+    focusEditor();
+  }
+
+  async function deleteDoc(id: string) {
+    const replacement = await archiveDocument(id);
+    if (replacement === false) return;
+    setRoutePublicId(replacement ? replacement.publicId ?? "" : "");
+    if (replacement) {
+      selectDoc(replacement, "replace");
+    } else {
+      window.history.replaceState(null, "", "/write");
+    }
+  }
+
+  // Copies the Markdown itself, the form another tool expects.
   async function copyDocument() {
     if (!active?.bodyLoaded) return;
     try {
@@ -284,108 +320,8 @@ export default function Editor() {
       window.prompt("Copy this document", active.body);
       return;
     }
-    setDocumentCopied(true);
-    window.setTimeout(() => setDocumentCopied(false), 1800);
-  }
-
-  function openTemplates() {
-    if (workspaceView.type !== "templates") {
-      setNewDocumentCollection(workspaceView.type === "collection" ? workspaceView.slug : null);
-    }
-    openWorkspaceView({ type: "templates" });
-  }
-
-  function selectDocument(doc: Parameters<typeof selectDoc>[0]) {
-    setActiveTemplateId("");
-    setWorkspaceView({ type: "document" });
-    selectDoc(doc, "push");
-    if (window.matchMedia?.(MOBILE_QUERY).matches) setSidebarOpen(false);
-  }
-
-  function selectSearchDocument(doc: Parameters<typeof selectDoc>[0]) {
-    const existing = docs.find((candidate) => candidate.id === doc.id);
-    const selected = existing
-      ? { ...doc, body: existing.body, bodyLoaded: existing.bodyLoaded }
-      : doc;
-    setDocs((current) => {
-      const known = current.some((candidate) => candidate.id === selected.id);
-      return known
-        ? current.map((candidate) => candidate.id === selected.id ? { ...candidate, ...selected } : candidate)
-        : [selected, ...current];
-    });
-    setSearchOpen(false);
-    selectDocument(selected);
-    requestAnimationFrame(() => writingPaneRef.current?.focus());
-  }
-
-  function openWorkspaceView(view: WorkspaceView, history: "push" | "replace" = "push") {
-    if (view.type === "document") return;
-    setActiveTemplateId("");
-    setFocusEnabled(false);
-    setWorkspaceView(view);
-    // Choosing a collection opens its list straight away. Narrow layouts open
-    // the overlay. Wide ones show it beside the sidebar, so a hidden sidebar
-    // comes back with it.
-    const overlayList = Boolean(window.matchMedia?.(LIST_OVERLAY_QUERY).matches);
-    setDocumentListOpen(view.type === "collection" && overlayList);
-    if (view.type === "collection" && !overlayList) setSidebarOpen(true);
-    const nextPath = workspacePath(view);
-    if (`${window.location.pathname}${window.location.search}` !== nextPath) {
-      window.history[history === "push" ? "pushState" : "replaceState"](null, "", nextPath);
-    }
-    if (window.matchMedia?.(MOBILE_QUERY).matches) setSidebarOpen(false);
-  }
-
-  function openCollection(slug: string) {
-    openWorkspaceView({ type: "collection", slug });
-  }
-
-  function openSearch(scope = "all") {
-    if (!searchOpen) {
-      setSearchTrigger(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    }
-    setSearchScope(scope);
-    setSearchQuery("");
-    setSearchOpen(true);
-  }
-
-  async function createCollection(title: string, description: string) {
-    const collection = await collectionState.createCollection(title, description);
-    if (!collection) {
-      const error = collectionNotice.current || "Collection could not be created";
-      setCollectionNotice("");
-      return error;
-    }
-    openCollection(collection.slug);
-    requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>("[data-collection-dialog-focus-destination]")?.focus();
-    });
-    return null;
-  }
-
-  async function updateCollection(slug: string, title: string, description: string) {
-    const saved = await collectionState.updateCollection(slug, title, description);
-    if (saved) return null;
-    const error = collectionNotice.current || "Collection could not be saved";
-    setCollectionNotice("");
-    return error;
-  }
-
-  async function deleteCollection(slug: string) {
-    if (slug === "documents") return false;
-    const collection = collections.find((candidate) => candidate.slug === slug);
-    if (!collection) return false;
-    if (!await collectionState.deleteCollection(slug)) {
-      setBillingNotice("");
-      return false;
-    }
-    setSearchScope("all");
-    setBillingNotice(`“${collection.title}” was deleted. Its documents are now in Documents.`);
-    openWorkspaceView({ type: "collections" }, "replace");
-    requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>("[data-collection-dialog-focus-fallback]")?.focus();
-    });
-    return true;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   }
 
   async function signOut() {
@@ -397,419 +333,205 @@ export default function Editor() {
     }
   }
 
-  function closeMenu() {
-    setMenuOpen(false);
-  }
-
   const words = active ? wordCount(active.body) : 0;
-  const title = active ? titleOf(active.body) : "";
-  const docsReady = saveState !== "loading" && !collectionState.loading;
-  const showSaveState = saveState !== "saved";
+  const docsReady = saveState !== "loading";
   const savedDocs = auth.account?.usage.savedDocs ?? 0;
-  const nearDocumentLimit =
-    entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
-  const nearDocumentLimitNotice = `You're using ${formatDocumentCount(savedDocs)} of ${formatDocumentCount(entitlements.maxSavedDocs)} saved documents.`;
-  const collections = useMemo(
-    () => [...collectionState.collections, ...WORKSPACE_COLLECTIONS],
-    [collectionState.collections]
-  );
+  const nearDocumentLimit = entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
+  const canDeleteActive = Boolean(active && !activeShared);
+  const status = copied || shareState === "copied"
+    ? "Copied"
+    : shareState === "unshared"
+      ? "Sharing off"
+      : shareState === "error"
+        ? "Share failed"
+        : saveState === "saved" || saveState === "loading" ? "" : saveLabel(saveState);
+  const routeUnresolved = Boolean(routePublicId && active?.publicId !== routePublicId);
+  const ready = docsReady && active?.bodyLoaded && !routeUnresolved;
 
-  useEffect(() => {
-    const location = currentWorkspaceLocation();
-    if (location.shouldReplace) {
-      window.history.replaceState(null, "", location.canonicalPath);
-    }
-  }, []);
+  const documentItems: MenuItem[] = active ? [
+    { label: source ? "Show formatted" : "Show Markdown", hint: `${mod}/`, onSelect: () => setSource(!source) },
+    { kind: "separator" },
+    { label: "Copy Markdown", onSelect: () => void copyDocument() },
+    { label: "Download .md", onSelect: exportDoc },
+    activeShared && publicDocPath
+      ? { label: "Copy share link", onSelect: () => void copyShareLink() }
+      : { label: "Share…", onSelect: () => {
+        if (!entitlements.can("shareLinks")) { void shareDoc(); return; }
+        setShareDialogDocId(active.id);
+      } },
+    ...(activeShared ? [{ label: "Sharing settings…", onSelect: () => setShareDialogDocId(active.id) }] : []),
+    ...(canDeleteActive ? [
+      { kind: "separator" as const },
+      { label: "Delete", danger: true, onSelect: () => setDeleteDialogDocId(active.id) }
+    ] : [])
+  ] : [];
 
-  useEffect(() => {
-    if (workspaceView.type !== "document") return;
-    const publicId = publicIdFromPath();
-    if (!publicId && !/^\/write\/[^/]+$/.test(window.location.pathname)) return;
-    const requestedDocument = docs.find((doc) => doc.publicId === publicId);
-    if (requestedDocument) {
-      if (requestedDocument.id !== activeId) selectDoc(requestedDocument, "none");
-      return;
-    }
-    if (!documentIndexComplete) return;
-    setBillingNotice("Document could not be found");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWorkspaceView({ type: "home" });
-    window.history.replaceState(null, "", "/write");
-  }, [activeId, docs, documentIndexComplete, selectDoc, setBillingNotice, workspaceView.type]);
-
-  useEffect(() => {
-    if (!collectionState.available || workspaceView.type !== "collection") return;
-    if (collections.some((collection) => collection.slug === workspaceView.slug)) return;
-    setBillingNotice("Collection could not be found");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWorkspaceView({ type: "collections" });
-    window.history.replaceState(null, "", workspacePath({ type: "collections" }));
-  }, [collectionState.available, collections, setBillingNotice, workspaceView]);
-
-  const activeCollection = active ? collectionForDoc(active, EMPTY_ASSIGNMENTS) : "documents";
-  const listedCollection = workspaceView.type === "collection" ? workspaceView.slug : activeCollection;
-  const templatesOpen = workspaceView.type === "templates";
-  const hasDocumentRoute = workspaceView.type === "document"
-    && typeof window !== "undefined"
-    && /^\/write\/[^/]+$/.test(window.location.pathname);
-  const requestedDocumentPublicId = workspaceView.type === "document" ? publicIdFromPath() : "";
-  const documentRouteResolved = workspaceView.type !== "document"
-    || !hasDocumentRoute
-    || active?.publicId === requestedDocumentPublicId;
-  const workspaceTitle = templatesOpen
-    ? "Templates"
-    : workspaceView.type === "document"
-      ? title
-      : workspaceView.type === "collection"
-        ? collectionLabel(workspaceView.slug, collections)
-        : workspaceView.type === "home"
-          ? "Home"
-          : workspaceView.type.charAt(0).toUpperCase() + workspaceView.type.slice(1);
-  const showDocument = !templatesOpen && workspaceView.type === "document";
-  const showResolvedDocument = showDocument && documentRouteResolved;
-  const showTopBarTitle = docsReady && (templatesOpen || (showResolvedDocument && mode === "edit"));
-  const hasCollectionList = (workspaceView.type === "collection" && workspaceView.slug !== "documents" && collections.some((collection) => collection.slug === workspaceView.slug))
-    || (showResolvedDocument && Boolean(active));
-  const focusMode = focusEnabled && showResolvedDocument && Boolean(active);
-  const canDeleteActive = Boolean(active && !isShared(active));
-  // What is actually on screen. Duplicate controls are only dropped when the
-  // equivalent in the list or sidebar can be seen.
-  const collectionListVisible = !focusMode && hasCollectionList && (narrowLayout ? documentListOpen : sidebarOpen);
-  const sidebarSearchVisible = sidebarOpen || mobileLayout;
-  const hasPageCreateAction = workspaceView.type === "home"
-    || (workspaceView.type === "collection" && workspaceView.slug === "documents");
-
-  const documentControls = showResolvedDocument && docsReady && active?.bodyLoaded && <EditorControls
-    key={active.id}
-    mode={mode}
-    onModeChange={setMode}
-    focusMode={focusMode}
-    onToggleFocus={() => { closeMenu(); setFocusEnabled(!focusMode); }}
-    onCopy={() => void copyDocument()}
-    onExport={exportDoc}
-    onDelete={canDeleteActive ? () => setDeleteDialogDocId(active.id) : undefined}
-    deleteDisabled={collectionState.pendingDocIds.has(active.id)}
-    onCopyLink={activeShared && publicDocPath ? () => void copyShareLink() : undefined}
-    onShare={() => {
-      if (!activeShared && !entitlements.can("shareLinks")) { void shareDoc(); return; }
-      setShareDialogDocId(active.id);
-    }}
-    shareLabel={shareButtonLabel}
-    shareState={shareState}
-    shareOpen={shareDialogOpen}
-  />;
+  const accountItems: MenuItem[] = [
+    { kind: "note", label: "Signed in as", detail: auth.user?.email },
+    { kind: "separator" },
+    { label: darkActive ? "Light mode" : "Dark mode", onSelect: toggleDarkMode },
+    { kind: "link", label: "Account", href: "/account" },
+    { label: "Sign out", onSelect: () => void signOut() }
+  ];
 
   return (
-    <div className={`workspace ${sidebarOpen && !focusMode ? "withSidebar" : ""} ${focusMode ? "focusMode" : ""}`}>
-      {!focusMode && <EditorSidebar
-        activeCollection={showResolvedDocument ? activeCollection : undefined}
-        accountEmail={auth.user?.email}
-        assignments={EMPTY_ASSIGNMENTS}
-        collections={collections}
-        deletedCollections={NO_DELETED_COLLECTIONS}
-        docs={docs}
-        onOpenCollection={openCollection}
-        onOpenSearch={() => openSearch()}
-        onOpenTemplates={openTemplates}
-        onOpenView={(view) => openWorkspaceView(view)}
-        sidebarOpen={sidebarOpen}
-        templateCount={templateState.templates.length}
-        templatesActive={templatesOpen}
-        view={workspaceView}
-      />}
+    <div ref={rootRef} className="writer" data-drawer={drawerOpen && !overlay ? "beside" : undefined}>
+      <DocumentDrawer
+        activeId={active?.id ?? ""}
+        docs={docsReady ? docs : []}
+        hasMore={hasMoreDocs}
+        loadingMore={loadingMore}
+        loadError={documentIndexError}
+        open={drawerOpen}
+        overlay={overlay}
+        searchInput={searchRef}
+        searchPaused={Boolean(userId && pendingSave)}
+        userId={userId}
+        onClose={() => setDrawer(false)}
+        onLoadMore={() => void loadMoreDocs()}
+        onOpen={openDocument}
+      />
 
-      {collectionListVisible && (
-        <div className="collectionListPane" aria-hidden={searchOpen ? true : undefined} inert={searchOpen ? true : undefined}>
-          <CollectionDocumentList
-            key={listedCollection}
-            collection={collections.find((collection) => collection.slug === listedCollection)}
-            onDeleteCollection={deleteCollection}
-            deleteDisabled={collectionState.pendingCollectionSlugs.has(listedCollection)}
-            title={collectionLabel(listedCollection, collections)}
-            docs={docs.filter((doc) => collectionForDoc(doc, EMPTY_ASSIGNMENTS) === listedCollection)}
-            activeId={showResolvedDocument ? active?.id ?? "" : ""}
-            mobileOpen={listOverlayOpen}
-            hasMore={hasMoreDocs}
-            loadingMore={loadingMore}
-            loadError={documentIndexError}
-            onOpen={(doc) => { selectDocument(doc); setDocumentListOpen(false); }}
-            onOverview={() => { openCollection(listedCollection); setDocumentListOpen(false); }}
-            newDisabled={!docsReady || creatingDocument}
-            onNew={() => { createBlankDocument(); setDocumentListOpen(false); }}
-            onSearch={() => openSearch(listedCollection)}
-            onLoadMore={() => void loadMoreDocs()}
-          />
-        </div>
-      )}
-      <div className="main" inert={searchOpen ? true : undefined}>
-        <header className={`topBar ${focusMode ? "topBarFocus" : showResolvedDocument ? "topBarDocument" : ""}`}>
-          {!focusMode && <>
-            <div className="topCluster">
-              <button
-                type="button"
-                className="iconButton"
-                aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                aria-pressed={sidebarOpen}
-                onClick={() => {
-                  // On phones the sidebar and the list both overlay the page.
-                  if (!sidebarOpen && mobileLayout) setDocumentListOpen(false);
-                  setSidebarOpen(!sidebarOpen);
-                }}
-              >
-                <SidebarIcon />
+      <div className="wMain">
+        <header className="wBar">
+          <div className="wBarGroup">
+            <button
+              type="button"
+              className="wIconButton"
+              aria-label="Documents"
+              title={`Documents  ${mod}.`}
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawer(!drawerOpen)}
+            >
+              <PanelIcon />
+            </button>
+            {source && (
+              <button type="button" className="wModePill" onClick={() => setSource(false)} title={`Show formatted  ${mod}/`}>
+                Markdown
               </button>
-              {!collectionListVisible && (!hasPageCreateAction || !docsReady || collectionState.loading) && (
-                <button
-                  type="button"
-                  className="iconButton"
-                  aria-label="New document"
-                  disabled={!docsReady || creatingDocument}
-                  onClick={createBlankDocument}
-                >
-                  <PlusIcon />
-                </button>
-              )}
-            </div>
-
-            {showTopBarTitle
-              ? <h1 className="docTitle" title={workspaceTitle}>{workspaceTitle}</h1>
-              : <span className="docTitle" aria-hidden="true" />}
-
-            <div className="topCluster end">
-              {hasCollectionList && narrowLayout && (
-                <button
-                  type="button"
-                  className="iconButton collectionListToggle"
-                  aria-label="Document list"
-                  aria-expanded={documentListOpen}
-                  aria-controls={documentListOpen ? "collection-document-list" : undefined}
-                  title={documentListOpen ? "Hide document list" : "Show document list"}
-                  onClick={() => {
-                    if (!documentListOpen && mobileLayout) setSidebarOpen(false);
-                    setDocumentListOpen(!documentListOpen);
-                  }}
-                >
-                  <ListIcon />
-                </button>
-              )}
-              {showResolvedDocument && active && (
-                <>
-                  <span className="topBarCollection" title="Move to collection">
-                    <FolderIcon />
-                    <select
-                      className="topBarCollectionSelect"
-                      aria-label={`Collection for ${title}`}
-                      value={activeCollection}
-                      disabled={!collectionState.available || collectionState.pendingDocIds.has(active.id)}
-                      onChange={(event) => void collectionState.assignCollection(active.id, event.target.value)}
-                    >
-                      {collections.map((collection) => <option key={collection.slug} value={collection.slug}>{collection.title}</option>)}
-                    </select>
-                  </span>
-                  <button
-                    type="button"
-                    className="iconButton"
-                    aria-label={active.pinned ? "Unstar document" : "Star document"}
-                    disabled={collectionState.pendingDocIds.has(active.id)}
-                    onClick={() => void collectionState.toggleStar(active.id)}
-                  >
-                    <StarIcon filled={Boolean(active.pinned)} />
-                  </button>
-
-                </>
-              )}
-              <div className="userMenuWrap">
-                <button
-                  type="button"
-                  className="iconButton userButton"
-                  aria-label="Account"
-                  aria-haspopup="menu"
-                  aria-expanded={menuOpen}
-                  onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
-                >
-                  <UserIcon />
-                </button>
-                {menuOpen && (
-                  <>
-                    <div className="menuOverlay" onClick={closeMenu} aria-hidden="true" />
-                    <div className="userMenu" role="menu">
-                      <div className="menuAccount">
-                        <span className="menuAccountLabel">Signed in</span>
-                        <span className="menuAccountEmail">{auth.user?.email}</span>
-                      </div>
-                      {authError && <p className="authError">{authError}</p>}
-                      <Link className="menuItem" role="menuitem" href="/account" onClick={closeMenu}>
-                        Account settings
-                      </Link>
-                      <button type="button" className="menuItem" role="menuitem" onClick={() => void signOut()}>
-                        Sign out
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </>}
-          {documentControls}
+            )}
+          </div>
+          <div className="wBarGroup">
+            <span className="wStatus" role="status" data-error={saveState === "error" || undefined}>{status}</span>
+            <button type="button" className="wIconButton" aria-label="Search" title={`Search  ${mod}K`} onClick={openSearch}>
+              <SearchIcon />
+            </button>
+            <button
+              type="button"
+              className="wIconButton"
+              aria-label="New document"
+              title="New document"
+              disabled={!docsReady || creatingDocument}
+              onClick={newDocument}
+            >
+              <PlusIcon />
+            </button>
+            {ready && <MenuButton label="Document actions" icon={<MoreIcon />} items={documentItems} />}
+            <MenuButton label="Account" icon={<UserIcon />} items={accountItems} />
+          </div>
         </header>
 
-        {saveConflict && active && saveConflict.id === active.id && (
-          <div className="conflictNotice" role="alert">
-            <div className="conflictNoticeText">
-              <strong>This document changed somewhere else</strong>
-              <span>
-                An agent or another session saved it while you were writing. Your draft is still here and nothing has
-                been overwritten.
-              </span>
-            </div>
-            <div className="conflictNoticeActions">
+        {(saveConflict && active && saveConflict.id === active.id) ? (
+          <div className="wNotice" role="alert">
+            <p>
+              <strong>This document changed somewhere else.</strong>{" "}
+              An agent or another window saved it while you were writing. Nothing has been overwritten.
+            </p>
+            <div className="wNoticeActions">
               <button type="button" onClick={() => resolveConflict("latest")}>Discard mine, load theirs</button>
-              <button type="button" className="conflictNoticePrimary" onClick={() => resolveConflict("overwrite")}>
-                Keep mine, overwrite theirs
-              </button>
+              <button type="button" data-primary onClick={() => resolveConflict("overwrite")}>Keep mine, overwrite theirs</button>
             </div>
           </div>
-        )}
-
-        {billingNotice ? (
-          <div className="billingNotice">
-            <span>{billingNotice}</span>
-            {billingNoticeAction === "limit" ? (
-              <Link href="/account#document-limit">Request more</Link>
-            ) : billingNoticeAction === "upgrade" ? (
-              <Link href="/account">Upgrade</Link>
-            ) : null}
+        ) : billingNotice ? (
+          <div className="wNotice" role="status">
+            <p>{billingNotice}</p>
+            <div className="wNoticeActions">
+              {billingNoticeAction === "limit" && <Link href="/account#document-limit">Request more</Link>}
+              {billingNoticeAction === "upgrade" && <Link href="/account">Upgrade</Link>}
+              <button type="button" onClick={() => setBillingNotice("")}>Dismiss</button>
+            </div>
           </div>
         ) : nearDocumentLimit ? (
-          <div className="billingNotice">
-            <span>{nearDocumentLimitNotice}</span>
-            <Link href="/account#document-limit">Request more</Link>
+          <div className="wNotice" role="status">
+            <p>You&apos;re using {formatDocumentCount(savedDocs)} of {formatDocumentCount(entitlements.maxSavedDocs)} saved documents.</p>
+            <div className="wNoticeActions">
+              <Link href="/account#document-limit">Request more</Link>
+            </div>
           </div>
         ) : null}
 
-        {templatesOpen ? (
-          <TemplateWorkspace
-            activeTemplateId={activeTemplateId}
-            darkActive={darkActive}
-            error={templateState.error}
-            loading={templateState.loading}
-            saving={templateState.saving}
-            templates={templateState.templates}
-            onCreateDocument={createDoc}
-            onCreateTemplate={templateState.createTemplate}
-            onDeleteTemplate={templateState.deleteTemplate}
-            onEditTemplate={setActiveTemplateId}
-            onShowLibrary={() => setActiveTemplateId("")}
-            onUpdateTemplate={templateState.updateTemplate}
-          />
-        ) : showDocument ? <section ref={writingPaneRef} tabIndex={-1} className={`writingPane ${active && documentRouteResolved ? "" : "writingPaneEmpty"}`} aria-label="Markdown editor">
-          {!documentRouteResolved ? (
-            documentIndexError ? (
-              <div className="emptyDocuments" role="alert">
-                <h2>Document could not be checked.</h2>
-                <p>Your document URL has been kept. Reload to try again.</p>
+        <section className="wPage" aria-label="Markdown editor">
+          <div className="wColumn">
+            {saveState === "loading" ? (
+              <PendingStatus label={routePublicId ? "Loading document" : "Opening your writing"} />
+            ) : routeUnresolved ? (
+              documentIndexError ? (
+                <div className="wEmpty" role="alert">
+                  <h1>Document could not be checked.</h1>
+                  <p>The address has been kept. Reload to try again.</p>
+                </div>
+              ) : <PendingStatus label="Loading document" />
+            ) : activeLoading ? (
+              <PendingStatus label="Opening your writing" />
+            ) : documentIndexError && !active ? (
+              <div className="wEmpty" role="alert">
+                <h1>Your documents could not be loaded.</h1>
+                <p>Nothing has changed. Reload to try again.</p>
               </div>
-            ) : <PendingStatus label="Loading document" />
-          ) : saveState === "loading" || activeLoading ? (
-            <PendingStatus label="Loading saved docs" />
-          ) : activeLoadError ? (
-            <div className="emptyDocuments" role="alert">
-              <h2>Document could not be loaded.</h2>
-              <p>Your saved Markdown has not been changed.</p>
-              <button type="button" className="emptyDocumentsCreate" onClick={retryActive}>
-                Try again
-              </button>
-            </div>
-          ) : !active ? (
-            <div className="emptyDocuments">
-              <h2>No documents yet.</h2>
-              <p>Create a document to start writing.</p>
-              <button type="button" className="emptyDocumentsCreate" onClick={openTemplates}>
-                <PlusIcon />
-                <span>Create document</span>
-              </button>
-            </div>
-          ) : mode === "write" ? (
-            <VisualEditor
-              key={active.id}
-              ref={visualRef}
-              source={active.body}
-              onChange={updateBody}
-              onSource={() => setMode("edit")}
-            />
-          ) : mode === "edit" ? (
-            <textarea
-              ref={textareaRef}
-              className="editor"
-              aria-label="Markdown editor"
-              aria-multiline="true"
-              spellCheck
-              placeholder="Start writing Markdown."
-              value={active.body}
-              onChange={(event) => updateBody(event.target.value)}
-            />
-          ) : (
-            <MarkdownView source={bodyWithoutFrontmatter(active.body)} theme={darkActive ? "dark" : "light"} />
-          )}
-        </section> : (
-          <EditorWorkspace
-            assignments={EMPTY_ASSIGNMENTS}
-            collectionAvailable={collectionState.available}
-            collectionListVisible={collectionListVisible}
-            collections={collections}
-            deletedCollections={NO_DELETED_COLLECTIONS}
-            docs={docs}
-            saveState={collectionState.loading ? "loading" : saveState}
-            searchVisible={sidebarSearchVisible}
-            view={workspaceView}
-            onNewDocument={createBlankDocument}
-            newDocumentDisabled={!docsReady || creatingDocument}
-            onCreateCollection={createCollection}
-            onDeleteCollection={deleteCollection}
-            onOpenCollection={openCollection}
-            onOpenDocument={selectDocument}
-            onOpenSearch={openSearch}
-            onOpenView={(view) => openWorkspaceView(view)}
-            hasMoreDocs={hasMoreDocs}
-            loadingMore={loadingMore}
-            onLoadMoreDocs={() => void loadMoreDocs()}
-            onToggleStar={collectionState.toggleStar}
-            onUpdateCollection={updateCollection}
-            pendingCollectionSlugs={collectionState.pendingCollectionSlugs}
-            pendingDocIds={collectionState.pendingDocIds}
-          />
-        )}
+            ) : activeLoadError ? (
+              <div className="wEmpty" role="alert">
+                <h1>This document could not be opened.</h1>
+                <p>Your Markdown has not been changed.</p>
+                <button type="button" className="wButton" onClick={retryActive}>Try again</button>
+              </div>
+            ) : !active ? (
+              <div className="wEmpty">
+                <h1>A blank page.</h1>
+                <p>Everything you write is saved as plain Markdown.</p>
+                <button type="button" className="wButton" disabled={creatingDocument} onClick={newDocument}>
+                  Start writing
+                </button>
+              </div>
+            ) : source ? (
+              <textarea
+                key={active.id}
+                ref={textareaRef}
+                className="wSource"
+                aria-label="Markdown editor"
+                spellCheck
+                placeholder="Start writing."
+                value={active.body}
+                onChange={(event) => updateBody(event.target.value)}
+              />
+            ) : (
+              <VisualEditor
+                key={active.id}
+                ref={visualRef}
+                source={active.body}
+                onChange={updateBody}
+                onSource={() => setSource(true)}
+              />
+            )}
+          </div>
+        </section>
 
-        {showResolvedDocument && docsReady && active?.bodyLoaded && (
-          <EditorStatusBar saveState={saveState} showSaveState={showSaveState} words={words} copied={documentCopied || shareState === "copied"} />
+        {ready && (
+          <footer className="wFooter" aria-label="Document details">
+            <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
+            {words >= 200 && <span>{Math.max(1, Math.round(words / 230))} min read</span>}
+            {activeShared && <span>Shared</span>}
+          </footer>
         )}
       </div>
-      {searchOpen && (
-        <WorkspaceSearch
-          assignments={EMPTY_ASSIGNMENTS}
-          collections={collections}
-          deletedCollections={NO_DELETED_COLLECTIONS}
-          docs={docs}
-          query={searchQuery}
-          scope={searchScope}
-          trigger={searchTrigger}
-          userId={userId}
-          searchPaused={Boolean(userId && pendingSave)}
-          searchPauseError={Boolean(userId && pendingSave && saveState === "error")}
-          onClose={() => setSearchOpen(false)}
-          onOpenDocument={selectSearchDocument}
-          onQueryChange={setSearchQuery}
-          onRetryPendingSave={() => setPendingSave((current) => current ? { ...current } : current)}
-          onScopeChange={setSearchScope}
-        />
-      )}
+
+      {authError && <p className="wToast" role="alert">{authError}</p>}
+
       {shareDialogOpen && active && (
         <DocumentShareDialog
           activeShared={activeShared}
           publicDocPath={publicDocPath}
           title={titleOf(active.body)}
           onClose={() => setShareDialogDocId("")}
-          onCopy={() => shareDoc()}
           onPublish={() => shareDoc()}
           onUnshare={() => unshareDoc()}
         />
@@ -830,7 +552,6 @@ function DocumentShareDialog({
   publicDocPath,
   title,
   onClose,
-  onCopy,
   onPublish,
   onUnshare
 }: {
@@ -838,7 +559,6 @@ function DocumentShareDialog({
   publicDocPath: string;
   title: string;
   onClose: () => void;
-  onCopy: () => Promise<boolean>;
   onPublish: () => Promise<boolean>;
   onUnshare: () => Promise<boolean>;
 }) {
@@ -848,49 +568,44 @@ function DocumentShareDialog({
     : "";
 
   return (
-    <WorkspaceModal ariaLabel="Share document" initialFocus={cancelButton} onClose={onClose}>
+    <Modal ariaLabel="Share document" initialFocus={cancelButton} onClose={onClose}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
           // Publishing keeps the dialog open so the link is actually shown.
-          // Closing first copied a URL the writer never saw and gave them no
-          // way back to it.
-          void (activeShared ? onCopy() : onPublish());
+          void onPublish();
         }}
       >
-        <header>
-          <h2>{activeShared ? "Sharing is on" : "Share document"}</h2>
-          <p>
-            {activeShared
-              ? `“${title}” is public to anyone with the link.`
-              : `Make “${title}” public to anyone with the link.`}
-          </p>
-        </header>
+        <h2>{activeShared ? "Shared" : "Share this document"}</h2>
+        <p>
+          {activeShared
+            ? `Anyone with the link can read “${title}”.`
+            : `Anyone with the link will be able to read “${title}”. You can turn it off at any time.`}
+        </p>
         {activeShared && publicDocPath && (
-          <div className="workspaceDialogShareLink">
+          <div className="wShareLink">
             <code>{shareURL}</code>
-            <Link className="workspaceDialogPublicLink" href={publicDocPath} target="_blank" rel="noreferrer">
-              Open
-            </Link>
+            <Link href={publicDocPath} target="_blank" rel="noreferrer">Open</Link>
           </div>
         )}
         <footer>
-          <button ref={cancelButton} type="button" onClick={onClose}>Close</button>
           {activeShared && (
             <button
               type="button"
+              data-quiet
               onClick={() => {
                 onClose();
                 void onUnshare();
               }}
             >
-              Make private
+              Stop sharing
             </button>
           )}
-          <button type="submit">{activeShared ? "Copy link" : "Publish and copy link"}</button>
+          <button ref={cancelButton} type="button" onClick={onClose}>Close</button>
+          <button type="submit" data-primary>{activeShared ? "Copy link" : "Create link"}</button>
         </footer>
       </form>
-    </WorkspaceModal>
+    </Modal>
   );
 }
 
@@ -906,7 +621,7 @@ function DeleteDocumentDialog({
   const cancelButton = useRef<HTMLButtonElement>(null);
 
   return (
-    <WorkspaceModal ariaLabel="Delete document" initialFocus={cancelButton} onClose={onClose}>
+    <Modal ariaLabel="Delete document" initialFocus={cancelButton} onClose={onClose}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -914,15 +629,13 @@ function DeleteDocumentDialog({
           void onDelete();
         }}
       >
-        <header>
-          <h2>Delete document</h2>
-          <p>Delete “{title}”? You will no longer be able to access it from Passage.</p>
-        </header>
+        <h2>Delete “{title}”?</h2>
+        <p>It will be removed from Passage, and its share link will stop working.</p>
         <footer>
           <button ref={cancelButton} type="button" onClick={onClose}>Cancel</button>
-          <button className="workspaceCollectionDialogDanger" type="submit">Delete document</button>
+          <button type="submit" data-danger>Delete</button>
         </footer>
       </form>
-    </WorkspaceModal>
+    </Modal>
   );
 }

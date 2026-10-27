@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Libre_Baskerville, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Libre_Baskerville, Inter, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import { AppProviders } from "./app-providers";
 import { THEME_BOOT_SCRIPT } from "./theme";
 import "./globals.css";
@@ -15,6 +15,15 @@ const serif = Libre_Baskerville({
   weight: ["400", "700"],
   style: ["normal", "italic"],
   variable: "--font-serif",
+  display: "swap"
+});
+
+// The writing face. Optical sizes keep body text sturdy and headings fine.
+const prose = Newsreader({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  axes: ["opsz"],
+  variable: "--font-prose",
   display: "swap"
 });
 
@@ -58,7 +67,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable} ${prose.variable}`}>
       <head>
         {/* Applies the saved theme before the first paint, so a dark-theme
             reader never sees a light flash while React hydrates. */}
