@@ -268,6 +268,17 @@
   font-size: 12px;
 }
 
+/* Marks a Pro feature on the Free plan; choosing it explains the upgrade. */
+.wMenuBadge {
+  padding: 1px 6px;
+  border: 1px solid var(--w-rule);
+  border-radius: 999px;
+  color: var(--w-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
 .wMenuRule {
   height: 1px;
   margin: var(--w-1) var(--w-3);

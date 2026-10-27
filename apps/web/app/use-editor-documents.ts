@@ -78,6 +78,11 @@ export function useEditorDocuments({
     setBillingNoticeMessage(value);
   }, []);
 
+  const showUpgrade = useCallback((message: string) => {
+    setBillingNoticeAction("upgrade");
+    setBillingNoticeMessage(message);
+  }, []);
+
   useEffect(() => {
     initialURLPublicId.current = publicIdFromPath();
   }, []);
@@ -420,6 +425,7 @@ export function useEditorDocuments({
     activeId,
     billingNotice,
     billingNoticeAction,
+    showUpgrade,
     createDoc,
     deleteDoc,
     docs,
