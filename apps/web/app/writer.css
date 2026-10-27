@@ -27,7 +27,7 @@
   --w-bar: 56px;
   --w-control: 36px;
   --w-drawer: 304px;
-  --w-measure: 680px;
+  --w-measure: 640px;
   --w-radius: 8px;
   --w-radius-lg: 14px;
 
@@ -595,8 +595,8 @@
   scroll-padding-block: var(--w-9);
   /* Text softens into the bar and the footer instead of being cut off at a
      hard edge as it scrolls past them. */
-  -webkit-mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-6)), transparent);
-  mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-6)), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-8)), transparent calc(100% - var(--w-2)));
+  mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-8)), transparent calc(100% - var(--w-2)));
 }
 
 .wPage:focus {
@@ -661,9 +661,12 @@
   font-family: var(--w-prose);
   font-size: 21px;
   font-optical-sizing: auto;
-  line-height: 1.6;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures contextual;
+  line-height: 1.62;
   letter-spacing: 0;
   text-wrap: pretty;
+  hanging-punctuation: first allow-end;
 }
 
 .writer .visualEditorContent {
@@ -673,7 +676,7 @@
 }
 
 .writer .markdown > * {
-  margin: 0 0 0.85em;
+  margin: 0 0 0.9em;
 }
 
 .writer .markdown > :first-child {
@@ -686,38 +689,41 @@
   text-wrap: balance;
 }
 
+/* Headings step down by weight as well as size: the title is large and
+   light, section heads are medium, and only the smallest lean on bold. */
 .writer .markdown h1 {
-  margin: 1.4em 0 0.5em;
-  font-size: 2.1em;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  line-height: 1.12;
+  margin: 1.4em 0 0.55em;
+  font-size: 2.15em;
+  font-weight: 450;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
 }
 
 .writer .markdown h2 {
-  margin: 1.6em 0 0.45em;
-  font-size: 1.4em;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  margin: 1.75em 0 0.5em;
+  font-size: 1.42em;
+  font-weight: 520;
+  letter-spacing: -0.012em;
   line-height: 1.25;
 }
 
 .writer .markdown h3 {
-  margin: 1.4em 0 0.4em;
-  font-size: 1.15em;
+  margin: 1.6em 0 0.4em;
+  font-size: 1.12em;
   font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.35;
 }
 
 .writer .markdown :is(h4, h5, h6) {
-  margin: 1.3em 0 0.35em;
+  margin: 1.4em 0 0.35em;
   font-size: 1em;
   font-weight: 600;
   line-height: 1.4;
 }
 
 .writer .markdown p {
-  margin: 0 0 0.85em;
+  margin: 0 0 0.9em;
 }
 
 .writer .markdown strong {
@@ -743,6 +749,7 @@
 
 .writer .markdown li::marker {
   color: var(--w-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .writer .markdown li p {
@@ -754,8 +761,8 @@
 }
 
 .writer .markdown blockquote {
-  margin: 1.2em 0;
-  padding: 0 0 0 1em;
+  margin: 1.3em 0;
+  padding: 0 0 0 1.1em;
   border-left: 2px solid var(--w-rule);
   color: var(--w-muted);
   font-style: italic;
@@ -773,20 +780,22 @@
 }
 
 .writer .markdown code {
-  padding: 0.1em 0.3em;
+  padding: 0.12em 0.32em;
   border-radius: 4px;
   background: var(--w-code);
+  color: var(--w-ink);
   font-family: var(--w-mono);
-  font-size: 0.78em;
+  font-size: 0.8em;
 }
 
 .writer .markdown pre {
   overflow-x: auto;
+  margin: 1.3em 0;
   padding: var(--w-4) var(--w-5);
-  border-radius: var(--w-radius-lg);
+  border-radius: var(--w-radius);
   background: var(--w-code);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .writer .markdown pre code {
@@ -795,17 +804,33 @@
   font-size: inherit;
 }
 
+/* Tables stay in the writing face, with figures that line up in columns,
+   and start on the same left edge as the text around them. */
 .writer .markdown table {
   width: 100%;
+  margin: 1.3em 0;
   border-collapse: collapse;
-  font-family: var(--w-ui);
-  font-size: 15px;
+  font-size: 0.86em;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 1.45;
 }
 
 .writer .markdown :is(th, td) {
-  padding: var(--w-2) var(--w-3);
+  padding: 0.55em 1em 0.55em 0;
   border-bottom: 1px solid var(--w-rule);
   text-align: left;
+  vertical-align: top;
+}
+
+/* The visual editor wraps each cell in a paragraph. */
+.writer .markdown :is(th, td) > p {
+  margin: 0;
+}
+
+.writer .markdown th {
+  border-bottom-color: var(--w-faint);
+  color: var(--w-ink);
+  font-weight: 600;
 }
 
 .writer .markdown img {
@@ -1071,6 +1096,10 @@
 
   .writer .markdown h1 {
     font-size: 1.85em;
+  }
+
+  .writer .markdown h2 {
+    font-size: 1.32em;
   }
 
   .wEmpty {
