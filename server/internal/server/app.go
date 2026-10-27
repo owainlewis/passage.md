@@ -13,7 +13,6 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/database"
 	"github.com/owainlewis/passage.md/server/internal/documents"
 	"github.com/owainlewis/passage.md/server/internal/httpx"
-	"github.com/owainlewis/passage.md/server/internal/templates"
 )
 
 type Options struct {
@@ -34,7 +33,6 @@ type App struct {
 	databaseHealth      databasePinger
 	auth                *auth.Service
 	docs                *documents.Handler
-	templates           *templates.Handler
 	billing             *billing.Service
 	community           *community.Service
 	stripe              *billing.StripeClient
@@ -87,7 +85,6 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 		})
 		app.community = community.NewService(community.NewPGStore(db), app.auth)
 		app.docs = documents.NewHandler(documents.NewStore(db), nil)
-		app.templates = templates.NewHandler(templates.NewStore(db))
 		app.billing = billing.NewService(billing.NewPGStore(db), options.Billing)
 	}
 	return app
@@ -135,11 +132,6 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/collections", a.collectionsRemoved)
 	mux.HandleFunc("PATCH /api/v1/collections/{slug}", a.collectionsRemoved)
 	mux.HandleFunc("DELETE /api/v1/collections/{slug}", a.collectionsRemoved)
-	mux.HandleFunc("GET /api/v1/templates", a.listTemplates)
-	mux.HandleFunc("POST /api/v1/templates", a.createTemplate)
-	mux.HandleFunc("GET /api/v1/templates/{id}", a.getTemplate)
-	mux.HandleFunc("PATCH /api/v1/templates/{id}", a.updateTemplate)
-	mux.HandleFunc("DELETE /api/v1/templates/{id}", a.deleteTemplate)
 	mux.HandleFunc("GET /d/{token}", a.limitPublicDocument(a.publicDoc))
 	mux.HandleFunc("GET /write", a.write)
 	mux.HandleFunc("GET /write/{$}", a.write)

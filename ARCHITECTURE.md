@@ -47,7 +47,7 @@ The Cloud Run service, migration job, and ephemeral production operation jobs ru
 
 ## 3. Architectural invariants
 
-1. Saved documents and templates belong to one user and are filtered by that owner in PostgreSQL.
+1. Saved documents belong to one user and are filtered by that owner in PostgreSQL.
 2. Saved documents are private until their owner explicitly creates a public share.
 3. Cross-user document access returns `404` so the server does not reveal that a private document exists.
 4. Browser clients use an opaque server-backed session cookie.
@@ -83,7 +83,7 @@ The generated files are copied into the Go package and embedded in the server bi
 
 `server/internal/server` owns route registration and cross-cutting request policy.
 
-It connects authentication, documents, templates, billing, community access, rate limits, static files, and operational fences.
+It connects authentication, documents, billing, community access, rate limits, static files, and operational fences.
 
 It depends on the domain packages below.
 
@@ -110,14 +110,6 @@ It does not decide document access or plan entitlement.
 It depends on authenticated user identity supplied by the server composition layer and on PostgreSQL.
 
 It does not decide a user's plan or saved-document allowance.
-
-### Templates
-
-`server/internal/templates` owns private Markdown templates, their descriptions, validation, ownership, and the ten-template limit.
-
-It depends on session-authenticated user identity and PostgreSQL.
-
-It does not create documents itself or expose templates through the public document API.
 
 ### Billing and entitlements
 
@@ -216,14 +208,6 @@ Document creation locks the user row before counting active documents, so concur
 
 Public responses use restrictive security headers, disable caching, and ask search engines not to index the page.
 
-### Create a document from a template
-
-1. A signed-in browser user loads owner-scoped templates.
-2. Creating or updating a template validates its title, optional description, and Markdown body.
-3. Template creation locks the user row before enforcing the ten-template limit.
-4. Creating a document from a template is a browser workflow that copies the template body into a normal document request.
-5. The new document has no live link to its source template.
-
 ### Upgrade through Stripe
 
 1. A session user starts Checkout through a same-origin request.
@@ -251,7 +235,7 @@ The same Go server exposes four public interface groups:
 
 - Static browser routes such as `/`, `/write`, `/account`, `/login`, and legal pages.
 - Session and account routes under `/api/v1`.
-- Authenticated document and template JSON routes under `/api/v1`.
+- Authenticated document JSON routes under `/api/v1`.
 - Public document routes at `/d/{publicId}` and `/d/{publicId}.md`.
 
 The stable document contract, pagination fields, compatibility behavior, and errors are documented in [`docs/document-api.md`](docs/document-api.md).
@@ -265,7 +249,6 @@ PostgreSQL is the source of truth for:
 - billing accounts and Stripe reconciliation state;
 - community referrals and grants;
 - application abuse-rate counters;
-- templates and descriptions;
 - applied migration versions.
 
 Important current limits are:
@@ -275,8 +258,6 @@ Important current limits are:
 - 200 characters per search query and 100 search results per page;
 - 5 active saved documents for Free by default;
 - 2,000 active saved documents for Pro by default;
-- 10 templates per user;
-- 120 bytes per template title, 240 characters per description, and 512 KiB per template body.
 
 Environment variables can change account limits, request limits, connection-pool size, trusted proxy handling, signup state, billing state, and the recovery write fence.
 
@@ -290,7 +271,7 @@ JSON mutation helpers enforce content type, body limits, one JSON value, and sam
 
 Sessions and API tokens are checked server-side.
 
-Owner IDs are included in private document and template queries.
+Owner IDs are included in private document queries.
 
 Administrative HTTP access requires a valid browser session and membership in the owner-email list, which has a built-in default when the environment variable is unset.
 
@@ -336,7 +317,7 @@ The main automated evidence is:
 
 - React and browser-state tests under `apps/web/app`;
 - Go unit and HTTP tests under `server/internal`;
-- PostgreSQL integration tests for auth, documents, templates, rate limits, billing, community access, account data, and migrations;
+- PostgreSQL integration tests for auth, documents, rate limits, billing, community access, account data, and migrations;
 - deployment contract tests under `scripts`;
 - monitoring configuration validation under `ops/monitoring`;
 - the CI workflow in `.github/workflows/ci.yml`.
@@ -376,7 +357,6 @@ Production backup settings and freshness, actual restore duration, Stripe delive
 - [`server/internal/accountdata/accountdata.go`](server/internal/accountdata/accountdata.go): account export, permanent deletion, and Stripe-cleanup records.
 - [`server/internal/documents/handler.go`](server/internal/documents/handler.go): document HTTP contract and limits.
 - [`server/internal/documents/store.go`](server/internal/documents/store.go): document ownership, pagination, quotas, and sharing persistence.
-- [`server/internal/templates/handler.go`](server/internal/templates/handler.go): template contract and validation.
 - [`server/internal/billing/billing.go`](server/internal/billing/billing.go): effective plans and entitlements.
 - [`server/internal/migrations`](server/internal/migrations): schema history and migration runner.
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml): continuous integration and production deployment authority.

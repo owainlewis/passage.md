@@ -20,6 +20,11 @@ export function isShared(doc: Doc) {
   return Boolean(doc.sharedAt || doc.shareToken);
 }
 
+// Nothing written yet: no text, or only an empty heading left behind.
+export function isBlankDoc(doc: Doc) {
+  return doc.bodyLoaded !== false && doc.body.replace(/^#{1,6}[ \t]*$/gm, "").trim() === "";
+}
+
 export function saveLabel(state: SaveState) {
   switch (state) {
     case "loading":

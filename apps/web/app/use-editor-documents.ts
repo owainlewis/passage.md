@@ -4,6 +4,7 @@ import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } fr
 import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc, DocumentConflictError } from "./editor-api";
 import {
   Doc,
+  isBlankDoc,
   isShared,
   newestTimestamp,
   publicIdFromPath,
@@ -164,6 +165,22 @@ export function useEditorDocuments({
     activeIdRef.current = activeId;
     pendingSaveRef.current = pendingSave;
   }, [activeId, pendingSave]);
+  // A document left without a word in it is discarded rather than kept as
+  // another "Untitled" row. Shared documents are never touched.
+  const previousActiveId = useRef(activeId);
+  useEffect(() => {
+    const leftId = previousActiveId.current;
+    previousActiveId.current = activeId;
+    if (!userId || leftId === activeId) return;
+    const left = docsRef.current.find((doc) => doc.id === leftId);
+    if (!left || !isBlankDoc(left) || isShared(left)) return;
+    const generation = accountGeneration.current;
+    setDocs((prev) => prev.filter((doc) => doc.id !== leftId));
+    apiArchiveDoc(leftId).catch(() => {
+      // Still on the server: put it back so the list tells the truth.
+      if (accountGeneration.current === generation) setDocs((prev) => (prev.some((doc) => doc.id === leftId) ? prev : [left, ...prev]));
+    });
+  }, [activeId, userId]);
   useEffect(() => {
     if (!userId) return;
     let lastRefresh = Date.now();
@@ -364,6 +381,11 @@ export function useEditorDocuments({
   }
 
   async function createDoc(body = "") {
+    // A blank page is already open: write there instead of making another.
+    if (!body && active && userId && isBlankDoc(active) && !isShared(active)) {
+      requestAnimationFrame(focusEditor);
+      return active;
+    }
     if (docs.length >= maxSavedDocs) {
       showDocumentLimit();
       return;
