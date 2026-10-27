@@ -109,41 +109,23 @@ func TestStoreSearchCoversFullBodiesRankingScopesAndIsolation(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = db.Exec(context.Background(), `DELETE FROM users WHERE id = ANY($1::uuid[])`, []string{ownerID, otherID})
 	})
-	var researchID string
-	if err := db.QueryRow(ctx, `
-		INSERT INTO collections (owner_user_id, slug, title)
-		VALUES ($1, 'research', 'Research')
-		RETURNING id::text
-	`, ownerID).Scan(&researchID); err != nil {
-		t.Fatal(err)
-	}
-	var otherCollectionID string
-	if err := db.QueryRow(ctx, `
-		INSERT INTO collections (owner_user_id, slug, title)
-		VALUES ($1, 'research', 'Research')
-		RETURNING id::text
-	`, otherID).Scan(&otherCollectionID); err != nil {
-		t.Fatal(err)
-	}
-
 	updatedAt := time.Now().UTC().Truncate(time.Microsecond)
 	type insertedDocument struct {
-		id           string
-		title        string
-		body         string
-		ownerID      string
-		collectionID *string
-		archived     bool
-		updated      time.Time
+		id       string
+		title    string
+		body     string
+		ownerID  string
+		archived bool
+		updated  time.Time
 	}
 	documents := []insertedDocument{
 		{title: "Agent workflow", body: "# Different heading\n\nRelease checklist.", ownerID: ownerID, updated: updatedAt},
-		{title: "Body match", body: "# Body match\n\nThe agent workflow is documented here.", ownerID: ownerID, collectionID: &researchID, updated: updatedAt},
-		{title: "Deep match", body: "---\ntags: [deepmarker, notes]\n---\n\n# Deep match\n\n" + strings.Repeat("padding ", 700) + "Hidden agent workflow marker.", ownerID: ownerID, collectionID: &researchID, updated: updatedAt.Add(-time.Minute)},
+		{title: "Body match", body: "# Body match\n\nThe agent workflow is documented here.", ownerID: ownerID, updated: updatedAt},
+		{title: "Deep match", body: "---\ntags: [deepmarker, notes]\n---\n\n# Deep match\n\n" + strings.Repeat("padding ", 700) + "Hidden agent workflow marker.", ownerID: ownerID, updated: updatedAt.Add(-time.Minute)},
 		{title: "Split terms", body: "# Split terms\n\nAgent flexible workflow notes.", ownerID: ownerID, updated: updatedAt.Add(-2 * time.Minute)},
 		{title: "Retired workflow", body: "# Retired\n\nAgent workflow retired.", ownerID: ownerID, updated: updatedAt.Add(-3 * time.Minute)},
 		{title: "Archived match", body: "# Archived\n\nAgent workflow hidden.", ownerID: ownerID, archived: true, updated: updatedAt},
-		{title: "Other owner", body: "# Other owner\n\nAgent workflow private.", ownerID: otherID, collectionID: &otherCollectionID, updated: updatedAt},
+		{title: "Other owner", body: "# Other owner\n\nAgent workflow private.", ownerID: otherID, updated: updatedAt},
 	}
 	for index := range documents {
 		document := &documents[index]
@@ -152,16 +134,16 @@ func TestStoreSearchCoversFullBodiesRankingScopesAndIsolation(t *testing.T) {
 			archivedAt = &document.updated
 		}
 		if err := db.QueryRow(ctx, `
-			INSERT INTO documents (owner_user_id, public_id, title, body, collection_id, archived_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO documents (owner_user_id, public_id, title, body, archived_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
 			RETURNING id::text
-		`, document.ownerID, fmt.Sprintf("search%016d%02d", stamp%1_000_000_000_000_0000, index), document.title, document.body, document.collectionID, archivedAt, document.updated).Scan(&document.id); err != nil {
+		`, document.ownerID, fmt.Sprintf("search%016d%02d", stamp%1_000_000_000_000_0000, index), document.title, document.body, archivedAt, document.updated).Scan(&document.id); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	store := NewStore(db)
-	global, err := store.Search(ctx, ownerID, "agent workflow", SearchScope{}, 20, nil)
+	global, err := store.Search(ctx, ownerID, "agent workflow", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,53 +164,26 @@ func TestStoreSearchCoversFullBodiesRankingScopesAndIsolation(t *testing.T) {
 		t.Fatalf("deep tags = %q", deep.Tags)
 	}
 
-	collectionResults, err := store.Search(ctx, ownerID, "agent workflow", SearchScope{CollectionID: &researchID}, 20, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := searchResultIDs(collectionResults); len(got) != 2 || got[0] != documents[1].id || got[1] != documents[2].id {
-		t.Fatalf("collection result IDs = %v", got)
-	}
-	unfiledResults, err := store.Search(ctx, ownerID, "agent workflow", SearchScope{Unfiled: true}, 20, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(unfiledResults) != 3 {
-		t.Fatalf("unfiled result IDs = %v", searchResultIDs(unfiledResults))
-	}
-	for _, result := range unfiledResults {
-		if result.CollectionID != nil {
-			t.Fatalf("unfiled result %q has collection %v", result.ID, result.CollectionID)
-		}
-	}
-
-	phraseResults, err := store.Search(ctx, ownerID, `"agent workflow"`, SearchScope{}, 20, nil)
+	phraseResults, err := store.Search(ctx, ownerID, `"agent workflow"`, 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if searchResultByID(phraseResults, documents[3].id) != nil {
 		t.Fatalf("phrase query matched split terms: %v", searchResultIDs(phraseResults))
 	}
-	exclusionResults, err := store.Search(ctx, ownerID, "agent -retired", SearchScope{}, 20, nil)
+	exclusionResults, err := store.Search(ctx, ownerID, "agent -retired", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if searchResultByID(exclusionResults, documents[4].id) != nil || len(exclusionResults) != 4 {
 		t.Fatalf("exclusion result IDs = %v", searchResultIDs(exclusionResults))
 	}
-	tagResults, err := store.Search(ctx, ownerID, "deepmarker", SearchScope{}, 20, nil)
+	tagResults, err := store.Search(ctx, ownerID, "deepmarker", 20, nil)
 	if err != nil || len(tagResults) != 1 || tagResults[0].ID != documents[2].id {
 		t.Fatalf("frontmatter tag results/error = %v/%v", searchResultIDs(tagResults), err)
 	}
 
-	if _, err := store.Search(ctx, ownerID, "agent", SearchScope{CollectionID: &otherCollectionID}, 20, nil); !errors.Is(err, ErrCollectionNotFound) {
-		t.Fatalf("cross-owner collection error = %v", err)
-	}
-	missingCollectionID := "99999999-9999-9999-9999-999999999999"
-	if _, err := store.Search(ctx, ownerID, "agent", SearchScope{CollectionID: &missingCollectionID}, 20, nil); !errors.Is(err, ErrCollectionNotFound) {
-		t.Fatalf("missing collection error = %v", err)
-	}
-	if _, err := store.Search(ctx, ownerID, "!!!", SearchScope{}, 20, nil); !errors.Is(err, ErrEmptySearchQuery) {
+	if _, err := store.Search(ctx, ownerID, "!!!", 20, nil); !errors.Is(err, ErrEmptySearchQuery) {
 		t.Fatalf("empty parsed query error = %v", err)
 	}
 }
@@ -264,7 +219,7 @@ func TestStoreSearchUsesDeterministicKeysetPaginationAndTracksWrites(t *testing.
 	var all []SearchResult
 	var cursor *SearchCursor
 	for {
-		page, err := store.Search(ctx, ownerID, "stable marker", SearchScope{}, 3, cursor)
+		page, err := store.Search(ctx, ownerID, "stable marker", 3, cursor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,17 +248,17 @@ func TestStoreSearchUsesDeterministicKeysetPaginationAndTracksWrites(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if results, err := store.Search(ctx, ownerID, "original", SearchScope{}, 10, nil); err != nil || searchResultByID(results, document.ID) == nil {
+	if results, err := store.Search(ctx, ownerID, "original", 10, nil); err != nil || searchResultByID(results, document.ID) == nil {
 		t.Fatalf("created search results/error = %v/%v", searchResultIDs(results), err)
 	}
 	replacement := "# Generated vector\n\nReplacement marker."
 	if _, err := store.Update(ctx, ownerID, document.ID, DocumentUpdate{Body: &replacement}); err != nil {
 		t.Fatal(err)
 	}
-	if results, err := store.Search(ctx, ownerID, "original", SearchScope{}, 10, nil); err != nil || searchResultByID(results, document.ID) != nil {
+	if results, err := store.Search(ctx, ownerID, "original", 10, nil); err != nil || searchResultByID(results, document.ID) != nil {
 		t.Fatalf("stale vector results/error = %v/%v", searchResultIDs(results), err)
 	}
-	if results, err := store.Search(ctx, ownerID, "replacement", SearchScope{}, 10, nil); err != nil || searchResultByID(results, document.ID) == nil {
+	if results, err := store.Search(ctx, ownerID, "replacement", 10, nil); err != nil || searchResultByID(results, document.ID) == nil {
 		t.Fatalf("updated vector results/error = %v/%v", searchResultIDs(results), err)
 	}
 }

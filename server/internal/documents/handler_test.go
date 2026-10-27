@@ -132,7 +132,7 @@ func TestHandlerRejectsInvalidDocumentPagination(t *testing.T) {
 	}
 }
 
-func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
+func TestHandlerSearchesBoundedMetadataIgnoringRetiredScopeWithOpaqueCursor(t *testing.T) {
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	collectionID := "22222222-2222-2222-2222-222222222222"
 	store := &fakeStore{search: []SearchResult{
@@ -149,8 +149,8 @@ func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if store.ownerID != "user-1" || store.searchQuery != "agent work" || store.searchScope.CollectionID == nil || *store.searchScope.CollectionID != collectionID || store.searchLimit != 3 {
-		t.Fatalf("search inputs = owner %q query %q scope %+v limit %d", store.ownerID, store.searchQuery, store.searchScope, store.searchLimit)
+	if store.ownerID != "user-1" || store.searchQuery != "agent work" || store.searchLimit != 3 {
+		t.Fatalf("search inputs = owner %q query %q limit %d", store.ownerID, store.searchQuery, store.searchLimit)
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "private, no-store" {
 		t.Fatalf("Cache-Control = %q", got)
@@ -165,7 +165,7 @@ func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `"body"`) || strings.Contains(rec.Body.String(), `"rank"`) {
 		t.Fatalf("search response exposed internal fields: %s", rec.Body.String())
 	}
-	fingerprint := searchFingerprint("agent work", SearchScope{CollectionID: &collectionID})
+	fingerprint := searchFingerprint("agent work")
 	cursor, err := decodeSearchCursor(response.NextCursor, fingerprint)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
 	}
 
 	mismatch := httptest.NewRecorder()
-	mismatchReq := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=agent+work&unfiled=true&cursor="+response.NextCursor, nil)
+	mismatchReq := httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs/search?q=other+work&cursor="+response.NextCursor, nil)
 	handler.Search(mismatch, mismatchReq, auth.User{ID: "user-1"})
 	if mismatch.Code != http.StatusBadRequest {
 		t.Fatalf("mismatched cursor status = %d, body = %s", mismatch.Code, mismatch.Body.String())
@@ -191,7 +191,6 @@ func TestHandlerSearchesBoundedMetadataWithScopeAndOpaqueCursor(t *testing.T) {
 
 func TestHandlerRejectsInvalidSearchInputsWithoutCallingStore(t *testing.T) {
 	invalidUTF8 := string([]byte{0xff})
-	collectionID := "22222222-2222-2222-2222-222222222222"
 	tests := []struct {
 		name   string
 		target string
@@ -201,9 +200,6 @@ func TestHandlerRejectsInvalidSearchInputsWithoutCallingStore(t *testing.T) {
 		{name: "long query", target: "http://passage.test/api/v1/docs/search?q=" + strings.Repeat("a", 201)},
 		{name: "invalid unicode", target: "http://passage.test/api/v1/docs/search?q=" + invalidUTF8},
 		{name: "zero byte", target: "http://passage.test/api/v1/docs/search?q=%00"},
-		{name: "invalid collection", target: "http://passage.test/api/v1/docs/search?q=agent&collectionId=not-a-uuid"},
-		{name: "invalid unfiled", target: "http://passage.test/api/v1/docs/search?q=agent&unfiled=false"},
-		{name: "conflicting scope", target: "http://passage.test/api/v1/docs/search?q=agent&collectionId=" + collectionID + "&unfiled=true"},
 		{name: "zero limit", target: "http://passage.test/api/v1/docs/search?q=agent&limit=0"},
 		{name: "large limit", target: "http://passage.test/api/v1/docs/search?q=agent&limit=101"},
 		{name: "invalid limit", target: "http://passage.test/api/v1/docs/search?q=agent&limit=many"},
@@ -226,14 +222,13 @@ func TestHandlerRejectsInvalidSearchInputsWithoutCallingStore(t *testing.T) {
 	}
 }
 
-func TestHandlerReportsParsedQueryAndCollectionErrors(t *testing.T) {
+func TestHandlerReportsParsedQueryErrors(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		err  error
 		want string
 	}{
 		{name: "empty parsed query", err: ErrEmptySearchQuery, want: "searchable term"},
-		{name: "missing collection", err: ErrCollectionNotFound, want: "collection not found"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := &fakeStore{searchErr: test.err}
@@ -319,36 +314,43 @@ func TestHandlerKeepsBodyOnlyUpdatesCompatibleAndSupportsMetadataOnlyUpdates(t *
 	if bodyOnly.Code != http.StatusOK || store.update.Body == nil || *store.update.Body != "# Updated" {
 		t.Fatalf("body-only status/update = %d/%#v", bodyOnly.Code, store.update)
 	}
-	if store.update.CollectionIDSet || store.update.Starred != nil {
+	if store.update.Starred != nil {
 		t.Fatalf("body-only update changed metadata: %#v", store.update)
 	}
 
 	collectionID := "22222222-2222-2222-2222-222222222222"
+	store.update = DocumentUpdate{}
 	metadataOnly := httptest.NewRecorder()
 	metadataRequest := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(`{"collectionId":"`+collectionID+`","starred":true}`))
 	metadataRequest.Header.Set("Content-Type", "application/json")
 	metadataRequest.SetPathValue("id", id)
 	handler.Update(metadataOnly, metadataRequest, user)
-	if metadataOnly.Code != http.StatusOK || store.update.Body != nil || !store.update.CollectionIDSet || store.update.CollectionID == nil || *store.update.CollectionID != collectionID || store.update.Starred == nil || !*store.update.Starred {
+	if metadataOnly.Code != http.StatusOK || store.update.Body != nil || store.update.Starred == nil || !*store.update.Starred {
 		t.Fatalf("metadata-only status/update = %d/%#v", metadataOnly.Code, store.update)
 	}
 
-	unfiled := httptest.NewRecorder()
-	unfiledRequest := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(`{"collectionId":null}`))
-	unfiledRequest.Header.Set("Content-Type", "application/json")
-	unfiledRequest.SetPathValue("id", id)
-	handler.Update(unfiled, unfiledRequest, user)
-	if unfiled.Code != http.StatusOK || !store.update.CollectionIDSet || store.update.CollectionID != nil {
-		t.Fatalf("unfiled status/update = %d/%#v", unfiled.Code, store.update)
+	// Moving a document between collections from an older client answers
+	// with the document and writes nothing.
+	for _, input := range []string{`{"collectionId":null}`, `{"collectionId":"` + collectionID + `"}`, `{"collectionId":"not-a-uuid"}`} {
+		store.update = DocumentUpdate{}
+		store.updated = false
+		moved := httptest.NewRecorder()
+		moveRequest := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(input))
+		moveRequest.Header.Set("Content-Type", "application/json")
+		moveRequest.SetPathValue("id", id)
+		handler.Update(moved, moveRequest, user)
+		if moved.Code != http.StatusOK || store.updated {
+			t.Fatalf("input %s status/updated = %d/%v, body = %s", input, moved.Code, store.updated, moved.Body.String())
+		}
 	}
 }
 
-func TestHandlerRejectsEmptyAndInvalidCollectionUpdates(t *testing.T) {
+func TestHandlerRejectsEmptyUpdates(t *testing.T) {
 	store := &fakeStore{}
 	handler := NewHandler(store, nil)
 	user := auth.User{ID: "user-1"}
 	id := "11111111-1111-1111-1111-111111111111"
-	for _, input := range []string{`{}`, `{"collectionId":"another-owner"}`} {
+	for _, input := range []string{`{}`} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPatch, "http://passage.test/api/v1/docs/"+id, strings.NewReader(input))
 		request.Header.Set("Content-Type", "application/json")
@@ -640,15 +642,14 @@ type fakeStore struct {
 	search       []SearchResult
 	searchErr    error
 	searchQuery  string
-	searchScope  SearchScope
 	searchLimit  int
 	searchCursor *SearchCursor
+	updated      bool
 }
 
-func (s *fakeStore) Search(ctx context.Context, ownerID string, query string, scope SearchScope, limit int, cursor *SearchCursor) ([]SearchResult, error) {
+func (s *fakeStore) Search(ctx context.Context, ownerID string, query string, limit int, cursor *SearchCursor) ([]SearchResult, error) {
 	s.ownerID = ownerID
 	s.searchQuery = query
-	s.searchScope = scope
 	s.searchLimit = limit
 	s.searchCursor = cursor
 	return s.search, s.searchErr
@@ -692,6 +693,7 @@ func (s *fakeStore) Get(ctx context.Context, ownerID string, id string) (Documen
 func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error) {
 	s.ownerID = ownerID
 	s.update = update
+	s.updated = true
 	if update.Body != nil {
 		s.body = *update.Body
 	}

@@ -1,12 +1,9 @@
 import {
-  bodyWithTags,
   bodyWithoutFrontmatter,
-  isValidTag,
-  parseTagInput,
-  parseTags,
   plainSummary,
   snippetOf,
   titleOf,
+  withoutLeadingTitle,
   wordCount
 } from "./doc-utils";
 
@@ -86,29 +83,10 @@ describe("wordCount", () => {
   });
 });
 
-describe("tags", () => {
-  it("accepts lowercase words joined by hyphens", () => {
-    expect(isValidTag("notes")).toBe(true);
-    expect(isValidTag("video-script")).toBe(true);
-  });
+describe("frontmatter", () => {
+  it("is not used as content", () => {
+    const body = "---\ntags: [notes, scripts]\n---\n\n# Launch note\n\nBody";
 
-  it("rejects uppercase, numbers, underscores, and loose hyphens", () => {
-    expect(isValidTag("Notes")).toBe(false);
-    expect(isValidTag("v2")).toBe(false);
-    expect(isValidTag("video_script")).toBe(false);
-    expect(isValidTag("-notes")).toBe(false);
-    expect(isValidTag("notes-")).toBe(false);
-  });
-
-  it("parses comma and whitespace separated input", () => {
-    expect(parseTagInput("notes, scripts notes").tags).toEqual(["notes", "scripts"]);
-    expect(parseTagInput("notes, Drafts").invalid).toEqual(["Drafts"]);
-  });
-
-  it("reads and writes frontmatter tags without using them as content", () => {
-    const body = bodyWithTags("# Launch note\n\nBody", ["notes", "scripts"]);
-
-    expect(parseTags(body)).toEqual(["notes", "scripts"]);
     expect(titleOf(body)).toBe("Launch note");
     expect(snippetOf(body)).toBe("Body");
     expect(wordCount(body)).toBe(4);
@@ -116,14 +94,23 @@ describe("tags", () => {
   });
 });
 
-describe("legacy folder frontmatter", () => {
-  it("removes folder metadata when tags are saved", () => {
-    const body = bodyWithTags("---\nfolder: scripts\n---\n\n# Launch note\n\nBody", ["notes"]);
+describe("withoutLeadingTitle", () => {
+  it("drops a repeated title from a search excerpt", () => {
+    expect(withoutLeadingTitle("# Morning pages Wrote before coffee", "Morning pages")).toBe("Wrote before coffee");
+    expect(withoutLeadingTitle("…Morning pages # Morning pages tea", "Morning pages")).toBe("tea");
+  });
 
-    expect(body).toBe("---\ntags: [notes]\n---\n\n# Launch note\n\nBody");
-    expect(titleOf(body)).toBe("Launch note");
-    expect(snippetOf(body)).toBe("Body");
-    expect(wordCount(body)).toBe(4);
-    expect(bodyWithoutFrontmatter(body)).toBe("# Launch note\n\nBody");
+  it("keeps an excerpt that does not open with the title", () => {
+    expect(withoutLeadingTitle("…before coffee", "Morning pages")).toBe("…before coffee");
+  });
+});
+
+describe("withoutLeadingTitle with a cut-off title", () => {
+  it("drops the tail of the title and the full copy after it", () => {
+    expect(withoutLeadingTitle("…that write # Video script: agents that write Hook What if", "Video script: agents that write")).toBe("Hook What if");
+  });
+
+  it("keeps body text that happens to mention the title later", () => {
+    expect(withoutLeadingTitle("…before coffee I read Morning pages", "Morning pages")).toBe("…before coffee I read Morning pages");
   });
 });

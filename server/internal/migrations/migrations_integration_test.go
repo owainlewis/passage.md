@@ -15,76 +15,106 @@ import (
 	"github.com/owainlewis/passage.md/server/internal/database"
 )
 
-func TestCollectionMigrationsPreservePopulatedDataAndStopDefaults(t *testing.T) {
+func TestRemoveCollectionsMigrationKeepsEveryDocument(t *testing.T) {
 	db := isolatedMigrationDatabase(t)
 	ctx := context.Background()
-	applyBeforeCollections(t, db)
+	applyBeforeMigration(t, db, "028_remove_collections.sql")
 
 	var ownerID string
 	if err := db.QueryRow(ctx, `
 		INSERT INTO users (email, password_hash)
-		VALUES ('before-collections@example.com', 'hash')
+		VALUES ('remove-collections@example.com', 'hash')
 		RETURNING id::text
 	`).Scan(&ownerID); err != nil {
 		t.Fatal(err)
 	}
-	const documentID = "11111111-1111-1111-1111-111111111111"
-	const publicID = "abcdefghijklmnopqrstuv"
-	const shareToken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	const body = "---\ntags: [research]\n---\n\n# Unchanged Markdown"
-	if _, err := db.Exec(ctx, `
-		INSERT INTO documents (
-			id, owner_user_id, public_id, title, body, share_token, shared_at
-		) VALUES ($1, $2, $3, 'Unchanged Markdown', $4, $5, now())
-	`, documentID, ownerID, publicID, body, shareToken); err != nil {
+	var collectionID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO collections (owner_user_id, slug, title)
+		VALUES ($1, 'research', 'Research')
+		RETURNING id::text
+	`, ownerID).Scan(&collectionID); err != nil {
 		t.Fatal(err)
 	}
+	for index, document := range []struct {
+		collectionID *string
+		starred      bool
+		shared       bool
+		archived     bool
+	}{
+		{collectionID: &collectionID, starred: true, shared: true},
+		{collectionID: &collectionID, archived: true},
+		{},
+	} {
+		sharedAt, shareToken, archivedAt := "NULL", "NULL", "NULL"
+		if document.shared {
+			sharedAt, shareToken = "'2026-08-14T08:30:00Z'::timestamptz", fmt.Sprintf("'remove-collections-share-%02d'", index)
+		}
+		if document.archived {
+			archivedAt = "'2026-08-14T09:00:00Z'::timestamptz"
+		}
+		if _, err := db.Exec(ctx, fmt.Sprintf(`
+			INSERT INTO documents (
+				owner_user_id, public_id, title, body, collection_id, starred,
+				share_token, shared_at, archived_at, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, %s, %s, %s,
+				'2026-08-13T08:00:00Z', '2026-08-14T08:00:00Z'
+			)
+		`, shareToken, sharedAt, archivedAt),
+			ownerID,
+			fmt.Sprintf("removecollections%05d", index),
+			fmt.Sprintf("Document %d", index),
+			fmt.Sprintf("---\nkeep: %d\n---\n\n# Document %d\n\nEvery byte stays.\n", index, index),
+			document.collectionID,
+			document.starred,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot := func() string {
+		t.Helper()
+		var value string
+		if err := db.QueryRow(ctx, `
+			SELECT string_agg(concat_ws('|', id, public_id, title, md5(body), starred,
+			                            share_token, shared_at, archived_at,
+			                            created_at, updated_at, content_version), E'\n' ORDER BY public_id)
+			FROM documents
+			WHERE owner_user_id = $1
+		`, ownerID).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := snapshot()
 
 	applied, err := Apply(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "023_collections,024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors" {
+	if strings.Join(applied, ",") != "028_remove_collections" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
-	assertNoCollections(t, db, ownerID)
-
-	var gotOwnerID, gotPublicID, gotBody string
-	var gotShareToken *string
-	var collectionID *string
-	var starred bool
+	if after := snapshot(); after != before {
+		t.Fatalf("documents changed:\nbefore %s\nafter  %s", before, after)
+	}
+	var table, column, function bool
 	if err := db.QueryRow(ctx, `
-		SELECT owner_user_id::text, public_id, body, share_token, collection_id::text, starred
-		FROM documents
-		WHERE id = $1
-	`, documentID).Scan(&gotOwnerID, &gotPublicID, &gotBody, &gotShareToken, &collectionID, &starred); err != nil {
+		SELECT to_regclass('collections') IS NOT NULL,
+		       EXISTS (
+		         SELECT 1 FROM information_schema.columns
+		         WHERE table_schema = current_schema() AND table_name = 'documents' AND column_name = 'collection_id'
+		       ),
+		       to_regprocedure('keep_collection_slug_immutable()') IS NOT NULL
+	`).Scan(&table, &column, &function); err != nil {
 		t.Fatal(err)
 	}
-	if gotOwnerID != ownerID || gotPublicID != publicID || gotBody != body || gotShareToken == nil || *gotShareToken != shareToken {
-		t.Fatalf("migrated document changed: owner=%q public=%q body=%q share=%v", gotOwnerID, gotPublicID, gotBody, gotShareToken)
+	if table || column || function {
+		t.Fatalf("collection schema left behind: table %v, column %v, function %v", table, column, function)
 	}
-	if collectionID != nil || starred {
-		t.Fatalf("pre-migration metadata = collection %v, starred %v", collectionID, starred)
+	if applied, err = Apply(ctx, db); err != nil || len(applied) != 0 {
+		t.Fatalf("repeated migration applied %q: %v", applied, err)
 	}
-
-	applied, err = Apply(ctx, db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(applied) != 0 {
-		t.Fatalf("repeated migration applied %q", applied)
-	}
-	assertNoCollections(t, db, ownerID)
-
-	var newOwnerID string
-	if err := db.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash)
-		VALUES ('after-collections@example.com', 'hash')
-		RETURNING id::text
-	`).Scan(&newOwnerID); err != nil {
-		t.Fatal(err)
-	}
-	assertNoCollections(t, db, newOwnerID)
 }
 
 func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T) {
@@ -122,7 +152,7 @@ func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors" {
+		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors,028_remove_collections" {
 			t.Fatalf("applied migrations = %q", applied)
 		}
 		assertDocumentSearchSchema(t, db)
@@ -216,10 +246,6 @@ func isolatedMigrationDatabase(t *testing.T) *database.Pool {
 	return db
 }
 
-func applyBeforeCollections(t *testing.T, db *database.Pool) {
-	applyBeforeMigration(t, db, "023_collections.sql")
-}
-
 func applyBeforeMigration(t *testing.T, db *database.Pool, stopBefore string) {
 	t.Helper()
 	ctx := context.Background()
@@ -260,30 +286,5 @@ func applyBeforeMigration(t *testing.T, db *database.Pool, stopBefore string) {
 		if err := tx.Commit(ctx); err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-func assertNoCollections(t *testing.T, db *database.Pool, ownerID string) {
-	t.Helper()
-	rows, err := db.Query(context.Background(), `
-		SELECT slug FROM collections WHERE owner_user_id = $1 ORDER BY slug
-	`, ownerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var slugs []string
-	for rows.Next() {
-		var slug string
-		if err := rows.Scan(&slug); err != nil {
-			t.Fatal(err)
-		}
-		slugs = append(slugs, slug)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if len(slugs) != 0 {
-		t.Fatalf("stored collection slugs = %q, want none", strings.Join(slugs, ","))
 	}
 }

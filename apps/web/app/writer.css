@@ -419,7 +419,25 @@
   color: var(--w-ink);
 }
 
+.wDocHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--w-2);
+  min-width: 0;
+}
+
+/* A quiet mark, so a public document is never a surprise. */
+.wDocShared {
+  flex: none;
+  color: var(--w-accent);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
 .wDocTitle {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   font-size: 14px;
   font-weight: 500;
@@ -575,6 +593,10 @@
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
   scroll-padding-block: var(--w-9);
+  /* Text softens into the bar and the footer instead of being cut off at a
+     hard edge as it scrolls past them. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-6)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-6)), transparent);
 }
 
 .wPage:focus {
@@ -806,11 +828,18 @@
   accent-color: var(--w-accent);
 }
 
-.writer .visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+.writer .visualEditorContent > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+.writer .visualEditorContent > h1:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+.writer .visualEditorContent > h1:first-child + p:last-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
   content: "Start writing, or type / for headings and lists";
   position: absolute;
   color: var(--w-faint);
   pointer-events: none;
+}
+
+/* A new document opens on its title. */
+.writer .visualEditorContent > h1:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "Title";
 }
 
 .writer .visualEditorNotice {

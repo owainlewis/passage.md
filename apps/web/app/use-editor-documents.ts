@@ -2,17 +2,17 @@
 
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc, DocumentConflictError } from "./editor-api";
-import { docMatchesFilter } from "./editor-list";
 import {
-  ALL_DOCUMENTS,
   Doc,
-  DocumentFilter,
   isShared,
   newestTimestamp,
   publicIdFromPath,
   SaveState,
   seedDocs
 } from "./editor-model";
+
+// Coming back to the tab refreshes the list at most this often.
+const REFRESH_INTERVAL = 5000;
 
 export type PendingSave = {
   id: string;
@@ -47,7 +47,6 @@ export function useEditorDocuments({
 }: EditorDocumentsOptions) {
   const [docs, setDocs] = useState<Doc[]>(seedDocs);
   const [activeId, setActiveId] = useState("welcome");
-  const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(ALL_DOCUMENTS);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   // Keyed by document id: an unresolved conflict on one document must not be
@@ -116,7 +115,6 @@ export function useEditorDocuments({
         setDocs(savedDocs);
         setNextCursor(cursor);
         setActiveId(nextActive?.id ?? "");
-        setDocumentFilter(ALL_DOCUMENTS);
         setSaveState("saved");
         setPendingSave(null);
         setLoadingMore(Boolean(cursor));
@@ -156,6 +154,52 @@ export function useEditorDocuments({
     };
   }, [setBillingNotice, userId]);
 
+  // Another tab or an agent may have renamed or added documents while this
+  // one sat in the background. Coming back refreshes the newest page of the
+  // list. The open document is left alone: its body may hold edits, and a
+  // save that races a remote change is already caught as a conflict.
+  const activeIdRef = useRef(activeId);
+  const pendingSaveRef = useRef(pendingSave);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+    pendingSaveRef.current = pendingSave;
+  }, [activeId, pendingSave]);
+  useEffect(() => {
+    if (!userId) return;
+    let lastRefresh = Date.now();
+    async function refresh() {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < REFRESH_INTERVAL) return;
+      lastRefresh = Date.now();
+      const generation = accountGeneration.current;
+      let fresh: Doc[];
+      try {
+        fresh = (await apiDocsPage()).documents;
+      } catch {
+        return;
+      }
+      if (accountGeneration.current !== generation) return;
+      setDocs((prev) => {
+        const byId = new Map(fresh.map((doc) => [doc.id, doc]));
+        const known = new Set(prev.map((doc) => doc.id));
+        const updated = prev.map((doc) => {
+          const next = byId.get(doc.id);
+          if (!next || doc.id === activeIdRef.current || doc.id === pendingSaveRef.current?.id) return doc;
+          if (doc.updatedAt && next.updatedAt && Date.parse(next.updatedAt) <= Date.parse(doc.updatedAt)) return doc;
+          // The stored body is out of date; opening it fetches the new one.
+          return { ...doc, ...next, bodyLoaded: false };
+        });
+        return [...fresh.filter((doc) => !known.has(doc.id)), ...updated];
+      });
+    }
+    const onVisible = () => void refresh();
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [userId]);
+
   const loadDocBody = useCallback(async (doc: Doc) => {
     if (doc.bodyLoaded || bodyRequests.current.has(doc.id)) return;
     bodyRequests.current.add(doc.id);
@@ -165,24 +209,11 @@ export function useEditorDocuments({
       const loaded = await apiDoc(doc.id);
       setDocs((prev) => prev.map((candidate) => {
         if (candidate.id !== loaded.id) return candidate;
-        const metadataChanged = candidate.collectionId !== doc.collectionId
-          || candidate.collectionSlug !== doc.collectionSlug
-          || candidate.starred !== doc.starred
-          || candidate.pinned !== doc.pinned;
-        const merged = {
+        return {
           ...candidate,
           ...loaded,
           updatedAt: newestTimestamp(candidate.updatedAt, loaded.updatedAt)
         };
-        return metadataChanged
-          ? {
-            ...merged,
-            collectionId: candidate.collectionId,
-            collectionSlug: candidate.collectionSlug,
-            starred: candidate.starred,
-            pinned: candidate.pinned
-          }
-          : merged;
       }));
     } catch {
       if (activeRequest.current === request) {
@@ -344,7 +375,6 @@ export function useEditorDocuments({
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       updateEditorURL(doc, "push");
-      setDocumentFilter(ALL_DOCUMENTS);
       setSaveState("saved");
       requestAnimationFrame(focusEditor);
       return doc;
@@ -388,10 +418,6 @@ export function useEditorDocuments({
               current.id === saved.id
                 ? {
                     ...saved,
-                    collectionId: current.collectionId,
-                    collectionSlug: current.collectionSlug,
-                    starred: current.starred,
-                    pinned: current.pinned,
                     updatedAt: newestTimestamp(current.updatedAt, saved.updatedAt)
                   }
                 : current
@@ -405,15 +431,9 @@ export function useEditorDocuments({
       return false;
     }
     const next = docs.filter((candidate) => candidate.id !== id);
-    const filteredDocsRemain = next.some((candidate) => docMatchesFilter(candidate, documentFilter));
-    const replacement =
-      next.find((candidate) => candidate.id === activeId) ??
-      next.find((candidate) => docMatchesFilter(candidate, documentFilter)) ??
-      next[0] ??
-      null;
+    const replacement = next.find((candidate) => candidate.id === activeId) ?? next[0] ?? null;
     setDocs((current) => current.filter((candidate) => candidate.id !== id));
     if (id === activeId) setActiveId(replacement?.id ?? "");
-    if (replacement && !filteredDocsRemain) setDocumentFilter(ALL_DOCUMENTS);
     setSaveState("saved");
     return replacement;
   }
@@ -442,12 +462,10 @@ export function useEditorDocuments({
     resolveConflict,
     saveState,
     selectDoc,
-    documentFilter,
     setBillingNotice,
     setDocs,
     setPendingSave,
     setSaveState,
-    setDocumentFilter,
     updateBody
   };
 }

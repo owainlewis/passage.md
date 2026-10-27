@@ -64,8 +64,8 @@ export async function createVisualEditor(
           "aria-multiline": "true",
           spellcheck: "true"
         },
-        // Keep a small breathing space around the caret while scrolling.
-        scrollMargin: { top: 24, right: 5, bottom: 24, left: 5 },
+        // Keep the caret clear of the page's faded top and bottom edges.
+        scrollMargin: { top: 48, right: 5, bottom: 64, left: 5 },
         dispatchTransaction(this: EditorView, transaction) {
           if (!ready || destroyed) return;
           dispatchDepth += 1;
@@ -167,6 +167,14 @@ export async function createVisualEditor(
     }
   }
 
+  // A blank document opens on an empty title, so the first words typed
+  // become its heading. Nothing is saved until something is typed.
+  function startWithTitle(view: EditorView) {
+    const { schema } = view.state;
+    const doc = schema.nodes.doc.create(null, schema.nodes.heading.create({ level: 1 }));
+    view.updateState(EditorState.create({ schema, doc, plugins: view.state.plugins }));
+  }
+
   function assertCompatible(input: string, serialized: string) {
     const remark = editor.ctx.get(remarkCtx);
     if (JSON.stringify(semanticTree(remark.parse(input))) !== JSON.stringify(semanticTree(remark.parse(serialized)))) {
@@ -178,6 +186,7 @@ export async function createVisualEditor(
     await editor.create();
     const view = editor.ctx.get(editorViewCtx);
     assertCompatible(markdown, editor.ctx.get(serializerCtx)(view.state.doc));
+    if (!markdown.trim()) startWithTitle(view);
     ready = true;
     const reposition = () => reportBlocks(view);
     window.addEventListener("scroll", reposition, true);
@@ -241,6 +250,7 @@ export async function createVisualEditor(
         ready = false;
         dismissedBlock = null;
         view.updateState(EditorState.create({ schema: view.state.schema, doc, plugins: view.state.plugins }));
+        if (!next.markdown.trim()) startWithTitle(view);
         ready = true;
         prefix = next.prefix;
         markdown = next.markdown;
