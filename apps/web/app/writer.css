@@ -27,7 +27,7 @@
   --w-bar: 56px;
   --w-control: 36px;
   --w-drawer: 304px;
-  --w-measure: 640px;
+  --w-measure: 580px;
   --w-radius: 8px;
   --w-radius-lg: 14px;
 
@@ -659,7 +659,7 @@
 .writer .markdown {
   color: var(--w-ink-2);
   font-family: var(--w-prose);
-  font-size: 21px;
+  font-size: 19px;
   font-optical-sizing: auto;
   font-kerning: normal;
   font-variant-ligatures: common-ligatures contextual;
@@ -693,7 +693,7 @@
    light, section heads are medium, and only the smallest lean on bold. */
 .writer .markdown h1 {
   margin: 1.4em 0 0.55em;
-  font-size: 2.15em;
+  font-size: 2em;
   font-weight: 450;
   letter-spacing: -0.022em;
   line-height: 1.1;
@@ -901,7 +901,7 @@
   color: var(--w-ink-2);
   caret-color: var(--w-accent);
   font-family: var(--w-mono);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.75;
   tab-size: 2;
 }
@@ -1091,7 +1091,7 @@
   }
 
   .writer .markdown {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .writer .markdown h1 {
