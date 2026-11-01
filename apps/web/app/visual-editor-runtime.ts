@@ -3,7 +3,7 @@ import {
   parserCtx, remarkCtx, rootCtx, serializerCtx
 } from "@milkdown/kit/core";
 import { $view } from "@milkdown/kit/utils";
-import { listItemSchema, commonmark } from "@milkdown/kit/preset/commonmark";
+import { imageSchema, listItemSchema, commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { history } from "@milkdown/kit/plugin/history";
 import { cursor } from "@milkdown/kit/plugin/cursor";
@@ -39,6 +39,22 @@ function semanticTree(value: unknown): unknown {
 }
 
 export class UnsupportedMarkdown extends Error {}
+
+// Milkdown's image attrs must be strings, but remark gives an untitled image
+// `title: null`. The parser then logs and drops the image, so every
+// `![alt](url)` without a title would force Source mode.
+const imageWithOptionalTitle = imageSchema.extendSchema((prev) => (ctx) => {
+  const schema = prev(ctx);
+  return {
+    ...schema,
+    parseMarkdown: {
+      ...schema.parseMarkdown,
+      runner: (state, node, type) => {
+        state.addNode(type, { src: node.url ?? "", alt: node.alt ?? "", title: node.title ?? "" });
+      }
+    }
+  };
+});
 
 export async function createVisualEditor(
   root: HTMLElement,
@@ -109,6 +125,7 @@ export async function createVisualEditor(
     })
     .use(commonmark)
     .use(gfm)
+    .use(imageWithOptionalTitle)
     .use(history)
     .use(cursor)
     .use($view(listItemSchema.node, () => (node, view, getPos) => {
