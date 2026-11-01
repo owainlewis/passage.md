@@ -31,7 +31,10 @@ describe("visual Markdown storage", () => {
     "- [ ] Task\n- [x] Done\n\n1. One\n2. Two\n",
     "| A | B |\n| :-- | --: |\n| One | Two |\n",
     "```mermaid\nflowchart LR\n  A --> B\n```\n",
-    "> A quote\n\n[Link](https://example.com)\n\n---\n"
+    "> A quote\n\n[Link](https://example.com)\n\n---\n",
+    "![Diagram](https://example.com/a.png)\n\nText ![icon](icon.png) inline.\n",
+    "[![Badge](https://example.com/b.svg)](https://example.com)\n",
+    "![Titled](a.png \"Caption\")\n"
   ])("opens GFM without rewriting or saving: %s", async (source) => {
     const { handle, change } = await open(source);
     expect(handle.source()).toBe(source);
@@ -65,6 +68,12 @@ describe("visual Markdown storage", () => {
     expect(saved).toMatch(/^---\ntags: \[writing\]\ncustom: keep\n---\n\n# Updated draft/);
     expect(saved).toContain("```mermaid\nflowchart LR\n  A --> B\n```");
     expect(error).not.toHaveBeenCalled();
+  });
+
+  it("keeps an untitled image through a visual edit", async () => {
+    const { handle, change } = await open("Intro\n\n![Diagram](https://example.com/a.png)\n");
+    handle.heading(1);
+    expect(change).toHaveBeenLastCalledWith("# Intro\n\n![Diagram](https://example.com/a.png)\n");
   });
 
   it("applies H1/H2/H3 and paragraph styles as Markdown and supports undo", async () => {
