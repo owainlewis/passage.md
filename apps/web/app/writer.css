@@ -261,6 +261,14 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   transform-origin: top right;
 }
 
+/* Opened at the pointer, so it sits on the viewport rather than a button. */
+.wContextMenu {
+  position: fixed;
+  right: auto;
+  min-width: 180px;
+  transform-origin: top left;
+}
+
 @keyframes wMenuIn {
   from {
     opacity: 0;
@@ -427,7 +435,8 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.wDocRow:hover {
+.wDocRow:hover,
+.wDocRow[data-menu-open] {
   background: var(--w-hover);
   color: var(--w-ink);
 }
@@ -774,6 +783,28 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   letter-spacing: 0;
   text-wrap: pretty;
   hanging-punctuation: first allow-end;
+}
+
+/* The sans face. Inter sets larger than Newsreader at the same size, so the
+   body steps down a little and headings tighten to match. */
+:root[data-font="sans"] .writer {
+  --w-prose: var(--w-ui);
+}
+
+:root[data-font="sans"] .writer .markdown {
+  font-size: 17px;
+  line-height: 1.65;
+  letter-spacing: -0.006em;
+}
+
+:root[data-font="sans"] .writer .markdown h1 {
+  font-weight: 600;
+  letter-spacing: -0.028em;
+}
+
+:root[data-font="sans"] .writer .markdown h2 {
+  font-weight: 600;
+  letter-spacing: -0.018em;
 }
 
 .writer .visualEditorContent {

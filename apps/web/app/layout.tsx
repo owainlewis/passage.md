@@ -60,7 +60,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${prose.variable}`}>
+    // The boot script sets data-theme and data-font before React hydrates,
+    // so the root's attributes are expected to differ from the server HTML.
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${prose.variable}`} suppressHydrationWarning>
       <head>
         {/* Applies the saved theme before the first paint, so a dark-theme
             reader never sees a light flash while React hydrates. */}

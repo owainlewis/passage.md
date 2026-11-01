@@ -4,13 +4,17 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { Theme } from "./editor-model";
 
 export const THEME_KEY = "passage.theme.v1";
+export const FONT_KEY = "passage.font.v1";
+
+/** The face documents are written and read in. The interface stays sans. */
+export type Font = "serif" | "sans";
 
 /**
  * Applies the stored theme before the first paint. Inlined in the document
  * head so a dark-theme reader never sees a light flash while React hydrates.
  * Kept in sync with THEME_KEY and the useLayoutEffect below.
  */
-export const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(THEME_KEY)});if(t==="dark")document.documentElement.dataset.theme="dark"}catch(e){}`;
+export const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(THEME_KEY)});if(t==="dark")document.documentElement.dataset.theme="dark";var f=localStorage.getItem(${JSON.stringify(FONT_KEY)});if(f==="sans")document.documentElement.dataset.font="sans"}catch(e){}`;
 
 function storedTheme(): Theme | null {
   try {
@@ -18,6 +22,15 @@ function storedTheme(): Theme | null {
     return value === "dark" || value === "light" ? value : null;
   } catch {
     // Storage may be blocked; fall back to the default theme.
+    return null;
+  }
+}
+
+function storedFont(): Font | null {
+  try {
+    const value = localStorage.getItem(FONT_KEY);
+    return value === "serif" || value === "sans" ? value : null;
+  } catch {
     return null;
   }
 }
@@ -34,6 +47,8 @@ function blockThemeTransitionsForNextPaint() {
 
 type ThemeContextValue = {
   darkActive: boolean;
+  font: Font;
+  setFont: (next: Font) => void;
   theme: Theme;
   setTheme: (next: Theme) => void;
   toggleDarkMode: () => void;
@@ -43,13 +58,25 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
+  const [font, setFontState] = useState<Font>("serif");
   const darkActive = theme === "dark";
 
   useEffect(() => {
     const stored = storedTheme();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored) setThemeState(stored);
+    const savedFont = storedFont();
+    if (savedFont) setFontState(savedFont);
   }, []);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (font === "sans") {
+      root.dataset.font = "sans";
+    } else {
+      delete root.dataset.font;
+    }
+  }, [font]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -72,14 +99,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setFont = useCallback((next: Font) => {
+    setFontState(next);
+    try {
+      localStorage.setItem(FONT_KEY, next);
+    } catch {
+      // Storage may be unavailable; the choice stays in memory for this session.
+    }
+  }, []);
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       darkActive,
+      font,
+      setFont,
       theme,
       setTheme,
       toggleDarkMode: () => setTheme(darkActive ? "light" : "dark")
     }),
-    [darkActive, setTheme, theme]
+    [darkActive, font, setFont, setTheme, theme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

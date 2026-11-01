@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Doc, isShared } from "./editor-model";
 import { editorDocTitle } from "./editor-list";
 import { CloseIcon, SearchIcon } from "./icons";
+import { ContextMenu, MenuItem } from "./menu-button";
+
+type RowMenu = { doc: Doc; x: number; y: number; row: HTMLElement };
 
 /**
  * Every document in one list, newest edit first. There are no folders: the
  * list and search are the whole of navigation. Search lives in its own
  * dialog, which the field at the top of the list opens, as does ⌘K.
+ * Right-clicking a row, or its menu key, opens a small menu for that row.
  */
 export function DocumentDrawer({
   activeId,
@@ -20,6 +24,7 @@ export function DocumentDrawer({
   overlay,
   searchHint,
   onClose,
+  onDelete,
   onLoadMore,
   onOpen,
   onSearch
@@ -33,11 +38,24 @@ export function DocumentDrawer({
   overlay: boolean;
   searchHint: string;
   onClose: () => void;
+  onDelete?: (doc: Doc) => void;
   onLoadMore: () => void;
   onOpen: (doc: Doc) => void;
   onSearch: () => void;
 }) {
   const sorted = useMemo(() => sortByUpdated(docs), [docs]);
+  const [rowMenu, setRowMenu] = useState<RowMenu | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
+
+  const rowMenuItems: MenuItem[] = rowMenu ? [
+    { label: "Open", onSelect: () => onOpen(rowMenu.doc) },
+    ...(onDelete ? [
+      { kind: "separator" as const },
+      isShared(rowMenu.doc)
+        ? { kind: "note" as const, label: "Stop sharing to delete" }
+        : { label: "Delete", danger: true, onSelect: () => onDelete(rowMenu.doc) }
+    ] : [])
+  ] : [];
 
   return (
     <>
@@ -69,7 +87,22 @@ export function DocumentDrawer({
               type="button"
               className="wDocRow"
               aria-current={doc.id === activeId ? "page" : undefined}
+              data-menu-open={rowMenu?.doc.id === doc.id || undefined}
               onClick={() => onOpen(doc)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                const row = event.currentTarget;
+                // The keyboard's menu key reports no pointer, so the menu
+                // opens under the row instead.
+                const fromKeyboard = event.clientX === 0 && event.clientY === 0;
+                const box = row.getBoundingClientRect();
+                setRowMenu({
+                  doc,
+                  row,
+                  x: fromKeyboard ? box.left + 12 : event.clientX,
+                  y: fromKeyboard ? box.bottom : event.clientY
+                });
+              }}
             >
               <span className="wDocTitle">{editorDocTitle(doc)}</span>
               <span className="wDocMeta">
@@ -86,6 +119,16 @@ export function DocumentDrawer({
           )}
         </nav>
       </aside>
+      {rowMenu && (
+        <ContextMenu
+          label={`Actions for ${editorDocTitle(rowMenu.doc)}`}
+          items={rowMenuItems}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          returnFocus={rowMenu.row}
+          onClose={closeRowMenu}
+        />
+      )}
     </>
   );
 }
