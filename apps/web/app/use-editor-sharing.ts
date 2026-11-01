@@ -1,10 +1,13 @@
 "use client";
 
 import { Dispatch, SetStateAction, useRef, useState } from "react";
-import { apiShareDoc, apiUnshareDoc, apiUpdateDoc } from "./editor-api";
+import { apiShareDoc, apiUnshareDoc, apiUpdateDoc, ProRequiredError } from "./editor-api";
 import { titleOf } from "./doc-utils";
 import { ALL_DOCUMENTS, Doc, DocumentFilter, newestTimestamp, SaveState, ShareState } from "./editor-model";
 import { PendingSave } from "./use-editor-documents";
+
+const SHARE_PRO = "Share links are part of Passage Pro.";
+const EXPORT_PRO = "Downloading Markdown is part of Passage Pro.";
 
 type EditorSharingOptions = {
   active: Doc | null;
@@ -13,6 +16,7 @@ type EditorSharingOptions = {
   canExport: boolean;
   canShare: boolean;
   setBillingNotice: Dispatch<SetStateAction<string>>;
+  showUpgrade: (message: string) => void;
   setDocs: Dispatch<SetStateAction<Doc[]>>;
   setPendingSave: Dispatch<SetStateAction<PendingSave | null>>;
   setSaveState: Dispatch<SetStateAction<SaveState>>;
@@ -26,6 +30,7 @@ export function useEditorSharing({
   canExport,
   canShare,
   setBillingNotice,
+  showUpgrade,
   setDocs,
   setPendingSave,
   setSaveState,
@@ -51,7 +56,7 @@ export function useEditorSharing({
   function exportDoc() {
     if (!active) return;
     if (!canExport) {
-      setBillingNotice("Export is a Pro feature.");
+      showUpgrade(EXPORT_PRO);
       return;
     }
     setBillingNotice("");
@@ -67,7 +72,7 @@ export function useEditorSharing({
   async function shareDoc() {
     if (!active) return false;
     if (!canShare) {
-      setBillingNotice("Sharing and raw .md URLs are Pro features.");
+      showUpgrade(SHARE_PRO);
       return false;
     }
     setBillingNotice("");
@@ -111,7 +116,11 @@ export function useEditorSharing({
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof ProRequiredError) {
+        showUpgrade(SHARE_PRO);
+        return false;
+      }
       setShareState("error");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 2400);
       return false;
