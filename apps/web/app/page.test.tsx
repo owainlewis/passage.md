@@ -1713,17 +1713,22 @@ describe("Write (editor)", () => {
     expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
     expect(screen.queryByRole("menuitem", { name: "Light mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("menuitem", { name: "Account" })).toHaveAttribute("href", "/account");
   });
 
   it("toggles the theme from the sun and moon button in the editor bar", async () => {
     await renderWrite();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Switch to dark mode" }));
+    const toggle = await screen.findByRole("button", { name: "Dark mode" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Switch to light mode" }));
+    fireEvent.click(toggle);
     await waitFor(() => expect(document.documentElement.dataset.theme).toBeUndefined());
     expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });

@@ -123,6 +123,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--w-4);
+  min-width: 0;
   padding: 0 var(--w-3);
 }
 
@@ -131,6 +132,11 @@
   align-items: center;
   gap: var(--w-1);
   min-width: 0;
+}
+
+/* The controls keep their size; only the details on the left give way. */
+.wBarGroup:last-child {
+  flex: none;
 }
 
 .wIconButton {
@@ -170,7 +176,8 @@
   outline-offset: 2px;
 }
 
-.wStatus {
+.wStatus,
+.wDetails {
   padding: 0 var(--w-2);
   color: var(--w-faint);
   font-size: 13px;
@@ -182,21 +189,30 @@
   display: none;
 }
 
+/* Truncates rather than pushing into the buttons on a narrow bar. */
 .wDetails {
-  display: flex;
-  align-items: center;
-  gap: var(--w-2);
   min-width: 0;
-  padding: 0 var(--w-2);
-  color: var(--w-faint);
-  font-size: 13px;
+  overflow: hidden;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .wDetails span + span::before {
   content: "·";
-  margin-right: var(--w-2);
+  margin: 0 var(--w-2);
+}
+
+.wThemeIcon {
+  display: grid;
+}
+
+.wThemeIcon[data-icon="sun"],
+html[data-theme="dark"] .wThemeIcon[data-icon="moon"] {
+  display: none;
+}
+
+html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
+  display: grid;
 }
 
 .wStatus[data-error] {
@@ -604,12 +620,15 @@
 
 /* ------------------------------------------------------------------- page */
 
+/* Pinned to the flexible row so it fills the height whether or not a
+   notice takes the row above it. */
 .wPage {
+  grid-row: 3;
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
   scroll-padding-block: var(--w-9);
-  /* Text softens into the bar and the footer instead of being cut off at a
-     hard edge as it scrolls past them. */
+  /* Text softens into the bar and the bottom edge instead of being cut off
+     hard as it scrolls past them. */
   -webkit-mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-8)), transparent calc(100% - var(--w-2)));
   mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-8)), transparent calc(100% - var(--w-2)));
 }

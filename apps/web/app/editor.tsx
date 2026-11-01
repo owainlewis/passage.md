@@ -412,7 +412,7 @@ export default function Editor() {
               </button>
             )}
             {ready && (
-              <div className="wDetails" aria-label="Document details">
+              <div className="wDetails" role="group" aria-label="Document details">
                 <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
                 {words >= 200 && <span className="wDetailsExtra">{Math.max(1, Math.round(words / 230))} min read</span>}
                 {activeShared && <span>Shared</span>}
@@ -438,11 +438,16 @@ export default function Editor() {
             <button
               type="button"
               className="wIconButton"
-              aria-label={darkActive ? "Switch to light mode" : "Switch to dark mode"}
-              title={darkActive ? "Light mode" : "Dark mode"}
+              aria-label="Dark mode"
+              aria-pressed={darkActive}
+              title="Dark mode"
               onClick={toggleDarkMode}
             >
-              {darkActive ? <SunIcon /> : <MoonIcon />}
+              {/* Both icons render and CSS picks one from the document theme,
+                  which the boot script sets before paint, so a dark reader
+                  never sees the moon flash while React catches up. */}
+              <span className="wThemeIcon" data-icon="moon"><MoonIcon /></span>
+              <span className="wThemeIcon" data-icon="sun"><SunIcon /></span>
             </button>
             <MenuButton label="Account" icon={<UserIcon />} items={accountItems} />
           </div>
