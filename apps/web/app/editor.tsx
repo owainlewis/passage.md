@@ -6,6 +6,7 @@ import { PendingStatus, useAuth } from "./auth";
 import { titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { DocumentDrawer } from "./editor-drawer";
+import { editorDocTitle } from "./editor-list";
 import { SearchDialog } from "./editor-search-dialog";
 import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
 import { currentWorkspaceLocation } from "./editor-workspace-location";
@@ -77,7 +78,7 @@ export default function Editor() {
   const auth = useAuth();
   const userId = auth.user?.id;
   const entitlements = useEntitlements();
-  const { darkActive, toggleDarkMode } = useTheme();
+  const { darkActive, font, setFont, toggleDarkMode } = useTheme();
   const {
     active,
     activeLoadError,
@@ -304,8 +305,9 @@ export default function Editor() {
   }
 
   async function deleteDoc(id: string) {
+    const wasActive = id === activeId;
     const replacement = await archiveDocument(id);
-    if (replacement === false) return;
+    if (replacement === false || !wasActive) return;
     setRoutePublicId(replacement ? replacement.publicId ?? "" : "");
     if (replacement) {
       selectDoc(replacement, "replace");
@@ -348,6 +350,7 @@ export default function Editor() {
       : shareState === "error"
         ? "Share failed"
         : saveState === "saved" || saveState === "loading" ? "" : saveLabel(saveState);
+  const deleteDialogDoc = deleteDialogDocId ? docs.find((doc) => doc.id === deleteDialogDocId) : undefined;
   const routeUnresolved = Boolean(routePublicId && active?.publicId !== routePublicId);
   const ready = docsReady && active?.bodyLoaded && !routeUnresolved;
 
@@ -371,6 +374,8 @@ export default function Editor() {
   const accountItems: MenuItem[] = [
     { kind: "note", label: "Signed in as", detail: auth.user?.email },
     { kind: "separator" },
+    { label: font === "sans" ? "Use serif font" : "Use sans font", onSelect: () => setFont(font === "sans" ? "serif" : "sans") },
+    { kind: "separator" },
     { kind: "link", label: "Account", href: "/account" },
     { label: "Sign out", onSelect: () => void signOut() }
   ];
@@ -387,6 +392,7 @@ export default function Editor() {
         overlay={overlay}
         searchHint={`${mod}K`}
         onClose={() => setDrawer(false)}
+        onDelete={(doc) => setDeleteDialogDocId(doc.id)}
         onLoadMore={() => void loadMoreDocs()}
         onOpen={openDocument}
         onSearch={openSearch}
@@ -561,9 +567,9 @@ export default function Editor() {
           onUnshare={() => unshareDoc()}
         />
       )}
-      {deleteDialogDocId === active?.id && active && !activeShared && (
+      {deleteDialogDoc && !isShared(deleteDialogDoc) && (
         <DeleteDocumentDialog
-          title={titleOf(active.body)}
+          title={editorDocTitle(deleteDialogDoc)}
           onClose={() => setDeleteDialogDocId("")}
           onDelete={() => deleteDoc(deleteDialogDocId)}
         />

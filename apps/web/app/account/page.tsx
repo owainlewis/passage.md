@@ -8,7 +8,7 @@ import { formatDocumentCount, isNearDocumentLimit } from "../document-limits";
 import { documentLimitSupportHref, SupportLink } from "../legal";
 import { claudeCodeCommand } from "../mcp";
 import { Theme } from "../editor-model";
-import { useTheme } from "../theme";
+import { Font, useTheme } from "../theme";
 
 type APIToken = {
   id: string;
@@ -220,6 +220,7 @@ function AccountPage() {
             </div>
             <div className="accountPanelBody">
               <ThemeChoice />
+              <FontChoice />
             </div>
           </div>
 
@@ -284,6 +285,37 @@ function ThemeChoice() {
               <i />
             </span>
           </span>
+          <span className="themeChoiceText">
+            <strong>{choice.label}</strong>
+            <small>{choice.hint}</small>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const FONT_CHOICES: { value: Font; label: string; hint: string }[] = [
+  { value: "serif", label: "Serif", hint: "Bookish and warm" },
+  { value: "sans", label: "Sans", hint: "Plain and modern" }
+];
+
+function FontChoice() {
+  const { font, setFont } = useTheme();
+
+  return (
+    <div className="themeChoice" role="radiogroup" aria-label="Font">
+      {FONT_CHOICES.map((choice) => (
+        <button
+          type="button"
+          key={choice.value}
+          role="radio"
+          aria-checked={font === choice.value}
+          className="themeChoiceOption"
+          data-selected={font === choice.value}
+          onClick={() => setFont(choice.value)}
+        >
+          <span className="fontChoicePreview" data-font-preview={choice.value} aria-hidden="true">Aa</span>
           <span className="themeChoiceText">
             <strong>{choice.label}</strong>
             <small>{choice.hint}</small>

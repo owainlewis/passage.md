@@ -213,6 +213,7 @@ beforeEach(() => {
   localStorage.clear();
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themeTransitionBlocked;
+  delete document.documentElement.dataset.font;
   window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
   stubSignedInFetch();
@@ -1424,6 +1425,70 @@ describe("Write (editor)", () => {
 
     await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
+  });
+
+  it("deletes a document from the list's right-click menu without opening it", async () => {
+    const fetchMock = stubSignedInFetch([
+      { id: "doc-open", body: "# Open note", updatedAt: "2026-07-10T08:00:00Z" },
+      { id: "doc-other", body: "# Other note", updatedAt: "2026-07-09T08:00:00Z" }
+    ]);
+
+    await renderWrite();
+    expect((await screen.findAllByRole("heading", { name: "Open note", level: 1 })).length).toBeGreaterThan(0);
+    const row = within(openDrawer()).getByRole("button", { name: /^Other note/ });
+    fireEvent.contextMenu(row, { clientX: 40, clientY: 80 });
+
+    const menu = screen.getByRole("menu", { name: "Actions for Other note" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Delete" }));
+    expect(screen.queryByRole("menu", { name: "Actions for Other note" })).not.toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Delete document" });
+    expect(within(dialog).getByRole("heading", { name: "Delete “Other note”?" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/docs/doc-other",
+      expect.objectContaining({ method: "DELETE" })
+    ));
+    await waitFor(() => expect(within(openDrawer()).queryByRole("button", { name: /^Other note/ })).not.toBeInTheDocument());
+    expect(screen.getAllByRole("heading", { name: "Open note", level: 1 }).length).toBeGreaterThan(0);
+  });
+
+  it("closes the right-click menu on Escape without deleting", async () => {
+    const fetchMock = stubSignedInFetch([{ id: "doc-private", body: "# Private note" }]);
+
+    await renderWrite();
+    const row = within(openDrawer()).getByRole("button", { name: /^Private note/ });
+    fireEvent.contextMenu(row, { clientX: 40, clientY: 80 });
+    const menu = screen.getByRole("menu", { name: "Actions for Private note" });
+    fireEvent.keyDown(menu, { key: "Escape" });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(row).toHaveFocus();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+  });
+
+  it("offers no delete in the right-click menu for shared documents", async () => {
+    stubSignedInFetch([{ id: "doc-1", body: "# Lead magnet", shareToken: "share-token" }]);
+
+    await renderWrite();
+    fireEvent.contextMenu(within(openDrawer()).getByRole("button", { name: /^Lead magnet/ }), { clientX: 40, clientY: 80 });
+
+    const menu = screen.getByRole("menu", { name: "Actions for Lead magnet" });
+    expect(within(menu).queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument();
+    expect(within(menu).getByText("Stop sharing to delete")).toBeInTheDocument();
+  });
+
+  it("switches documents to the sans font from the account menu", async () => {
+    await renderWrite();
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Use sans font" }));
+
+    expect(document.documentElement.dataset.font).toBe("sans");
+    expect(localStorage.getItem("passage.font.v1")).toBe("sans");
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Use serif font" }));
+    expect(document.documentElement.dataset.font).toBeUndefined();
   });
 
   it("does not show delete for shared documents", async () => {
