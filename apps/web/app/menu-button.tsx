@@ -13,7 +13,17 @@ export type MenuItem =
  * An icon button that opens a small menu. Arrow keys move through the items,
  * Escape returns focus to the button, and a press outside closes it.
  */
-export function MenuButton({ label, icon, items }: { label: string; icon: ReactNode; items: MenuItem[] }) {
+export function MenuButton({
+  disabled = false,
+  label,
+  icon,
+  items
+}: {
+  disabled?: boolean;
+  label: string;
+  icon: ReactNode;
+  items: MenuItem[];
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const wrap = useRef<HTMLDivElement>(null);
@@ -51,6 +61,7 @@ export function MenuButton({ label, icon, items }: { label: string; icon: ReactN
         title={label}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={disabled}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => {
@@ -62,7 +73,7 @@ export function MenuButton({ label, icon, items }: { label: string; icon: ReactN
       >
         {icon}
       </button>
-      {open && (
+      {open && !disabled && (
         <div
           ref={menu}
           id={id}

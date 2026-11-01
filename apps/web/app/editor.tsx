@@ -6,10 +6,11 @@ import { PendingStatus, useAuth } from "./auth";
 import { titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { DocumentDrawer } from "./editor-drawer";
+import { SearchDialog } from "./editor-search-dialog";
 import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
 import { currentWorkspaceLocation } from "./editor-workspace-location";
 import { useEntitlements } from "./entitlements";
-import { MoreIcon, PanelIcon, PlusIcon, SearchIcon, UserIcon } from "./icons";
+import { MoonIcon, MoreIcon, PanelIcon, PlusIcon, SearchIcon, SunIcon, UserIcon } from "./icons";
 import { MenuButton, MenuItem } from "./menu-button";
 import { Modal } from "./modal";
 import { useTheme } from "./theme";
@@ -57,6 +58,7 @@ function isMac() {
 export default function Editor() {
   const [source, setSource] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
   const [shareDialogDocId, setShareDialogDocId] = useState("");
   const [copied, setCopied] = useState(false);
@@ -68,8 +70,7 @@ export default function Editor() {
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const visualRef = useRef<{ focus: () => void }>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const focusNewDocument = useRef(false);
+  const focusOnOpen = useRef(false);
   const overlay = useMediaQuery(OVERLAY_QUERY);
   const mod = isMac() ? "⌘" : "Ctrl+";
 
@@ -103,7 +104,6 @@ export default function Editor() {
     setDocs,
     setPendingSave,
     setSaveState,
-    setDocumentFilter,
     updateBody
   } = useEditorDocuments({
     userId,
@@ -126,8 +126,7 @@ export default function Editor() {
     showUpgrade,
     setDocs,
     setPendingSave,
-    setSaveState,
-    setDocumentFilter
+    setSaveState
   });
 
   // The drawer remembers whether it was left open, but only where it sits
@@ -147,16 +146,14 @@ export default function Editor() {
     }
   }, []);
 
-  const openSearch = useCallback(() => {
-    setDrawerOpen(true);
-    requestAnimationFrame(() => {
-      searchRef.current?.focus();
-      searchRef.current?.select();
-    });
-  }, []);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
 
+  // Two frames, so a dialog that just closed has handed focus back to its
+  // trigger before the editor takes it.
   const focusEditor = useCallback(() => {
-    requestAnimationFrame(() => (source ? textareaRef.current?.focus() : visualRef.current?.focus()));
+    requestAnimationFrame(() => requestAnimationFrame(() => (
+      source ? textareaRef.current?.focus() : visualRef.current?.focus()
+    )));
   }, [source]);
 
   // The chrome steps back while you type and returns when you reach for the
@@ -225,15 +222,16 @@ export default function Editor() {
     if (location.shouldReplace) window.history.replaceState(null, "", location.canonicalPath);
   }, []);
 
-  // A document created from New should be ready to type into. This runs after
-  // the editor has actually mounted, which is why it is an effect.
+  // A document created from New, or opened from the list or search, should be
+  // ready to type into. Its body may still be loading, so this runs once the
+  // editor has actually mounted, which is why it is an effect.
   useEffect(() => {
-    if (!focusNewDocument.current) return;
+    if (!focusOnOpen.current || activeLoading || !active?.bodyLoaded) return;
     const element = source ? textareaRef.current : visualRef.current;
     if (!element) return;
-    focusNewDocument.current = false;
+    focusOnOpen.current = false;
     element.focus();
-  }, [source, activeId, active?.bodyLoaded]);
+  }, [source, activeId, active?.bodyLoaded, activeLoading]);
 
   // Textareas without field-sizing grow by hand.
   useEffect(() => {
@@ -289,7 +287,7 @@ export default function Editor() {
       .then((created) => {
         if (!created) return;
         setRoutePublicId(created.publicId ?? "");
-        focusNewDocument.current = true;
+        focusOnOpen.current = true;
         if (overlay) setDrawerOpen(false);
       })
       .finally(() => setCreatingDocument(false));
@@ -301,6 +299,7 @@ export default function Editor() {
     setRoutePublicId(doc.publicId ?? "");
     selectDoc(existing ?? doc, "push");
     if (overlay) setDrawerOpen(false);
+    focusOnOpen.current = true;
     focusEditor();
   }
 
@@ -372,7 +371,6 @@ export default function Editor() {
   const accountItems: MenuItem[] = [
     { kind: "note", label: "Signed in as", detail: auth.user?.email },
     { kind: "separator" },
-    { label: darkActive ? "Light mode" : "Dark mode", onSelect: toggleDarkMode },
     { kind: "link", label: "Account", href: "/account" },
     { label: "Sign out", onSelect: () => void signOut() }
   ];
@@ -387,12 +385,11 @@ export default function Editor() {
         loadError={documentIndexError}
         open={drawerOpen}
         overlay={overlay}
-        searchInput={searchRef}
-        searchPaused={Boolean(userId && pendingSave)}
-        userId={userId}
+        searchHint={`${mod}K`}
         onClose={() => setDrawer(false)}
         onLoadMore={() => void loadMoreDocs()}
         onOpen={openDocument}
+        onSearch={openSearch}
       />
 
       <div className="wMain">
@@ -413,6 +410,13 @@ export default function Editor() {
                 Markdown
               </button>
             )}
+            {ready && (
+              <div className="wDetails" role="group" aria-label="Document details">
+                <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
+                {words >= 200 && <span className="wDetailsExtra">{Math.max(1, Math.round(words / 230))} min read</span>}
+                {activeShared && <span>Shared</span>}
+              </div>
+            )}
           </div>
           <div className="wBarGroup">
             <span className="wStatus" role="status" data-error={saveState === "error" || undefined}>{status}</span>
@@ -429,7 +433,23 @@ export default function Editor() {
             >
               <PlusIcon />
             </button>
-            {ready && <MenuButton label="Document actions" icon={<MoreIcon />} items={documentItems} />}
+            {/* Always in the bar, so the buttons beside it never shift as a
+                document loads. */}
+            <MenuButton label="Document actions" icon={<MoreIcon />} items={documentItems} disabled={!ready} />
+            <button
+              type="button"
+              className="wIconButton"
+              aria-label="Dark mode"
+              aria-pressed={darkActive}
+              title="Dark mode"
+              onClick={toggleDarkMode}
+            >
+              {/* Both icons render and CSS picks one from the document theme,
+                  which the boot script sets before paint, so a dark reader
+                  never sees the moon flash while React catches up. */}
+              <span className="wThemeIcon" data-icon="moon"><MoonIcon /></span>
+              <span className="wThemeIcon" data-icon="sun"><SunIcon /></span>
+            </button>
             <MenuButton label="Account" icon={<UserIcon />} items={accountItems} />
           </div>
         </header>
@@ -518,17 +538,19 @@ export default function Editor() {
           </div>
         </section>
 
-        {ready && (
-          <footer className="wFooter" aria-label="Document details">
-            <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
-            {words >= 200 && <span>{Math.max(1, Math.round(words / 230))} min read</span>}
-            {activeShared && <span>Shared</span>}
-          </footer>
-        )}
       </div>
 
       {authError && <p className="wToast" role="alert">{authError}</p>}
 
+      {searchOpen && (
+        <SearchDialog
+          docs={docsReady ? docs : []}
+          searchPaused={Boolean(userId && pendingSave)}
+          userId={userId}
+          onClose={() => setSearchOpen(false)}
+          onOpen={openDocument}
+        />
+      )}
       {shareDialogOpen && active && (
         <DocumentShareDialog
           activeShared={activeShared}

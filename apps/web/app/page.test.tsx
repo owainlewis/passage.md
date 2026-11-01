@@ -49,28 +49,17 @@ type TestDoc = {
   publicId?: string;
   body: string;
   version?: number;
-  pinned?: boolean;
-  starred?: boolean;
-  collectionId?: string | null;
-  collectionSlug?: string | null;
   shareToken?: string | null;
   sharedAt?: string | null;
   updatedAt?: string;
 };
 
-function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody, pinned: true }]) {
+function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody }]) {
   let docs: Array<TestDoc & { publicId: string }> = initialDocs.map((doc, index) => ({
     publicId: `public-${index + 1}`,
     ...doc
   }));
   let nextDoc = docs.length + 1;
-  let collections = [
-    { id: "collection-context", slug: "operating-context", title: "Operating Context", description: "Stable context.", createdAt: "2026-08-01T10:00:00Z", updatedAt: "2026-08-01T10:00:00Z" },
-    { id: "collection-content", slug: "content-studio", title: "Content Studio", description: "Content work.", createdAt: "2026-08-01T10:01:00Z", updatedAt: "2026-08-01T10:01:00Z" },
-    { id: "collection-passage", slug: "passage", title: "Passage", description: "Passage work.", createdAt: "2026-08-01T10:02:00Z", updatedAt: "2026-08-01T10:02:00Z" },
-    { id: "collection-research", slug: "research", title: "Research", description: "Research notes.", createdAt: "2026-08-01T10:03:00Z", updatedAt: "2026-08-01T10:03:00Z" }
-  ];
-  let templates: Array<{ id: string; title: string; description: string; body: string; createdAt: string; updatedAt: string }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -83,13 +72,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     if (url.startsWith("/api/v1/docs/search?") && method === "GET") {
       const requestURL = new URL(url, "http://passage.test");
       const query = requestURL.searchParams.get("q")?.toLowerCase() ?? "";
-      const collectionId = requestURL.searchParams.get("collectionId");
-      const unfiled = requestURL.searchParams.get("unfiled") === "true";
-      const matches = docs.filter((doc) => {
-        if (collectionId && doc.collectionId !== collectionId) return false;
-        if (unfiled && doc.collectionId) return false;
-        return doc.body.toLowerCase().includes(query);
-      }).map((doc) => {
+      const matches = docs.filter((doc) => doc.body.toLowerCase().includes(query)).map((doc) => {
         const title = doc.body.match(/^#\s+(.+)$/m)?.[1] ?? "Untitled";
         return {
           ...doc,
@@ -103,63 +86,6 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
       return new Response(JSON.stringify({ documents: docs }), { status: 200 });
     }
-    if (url === "/api/v1/collections" && method === "GET") {
-      return new Response(JSON.stringify({ collections }), { status: 200 });
-    }
-    if (url === "/api/v1/collections" && method === "POST") {
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const base = String(input.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "collection";
-      let slug = base;
-      let suffix = 2;
-      while (["all", "documents"].includes(slug) || collections.some((collection) => collection.slug === slug)) slug = `${base}-${suffix++}`;
-      const collection = { id: `collection-${collections.length + 1}`, slug, title: input.title, description: input.description, createdAt: "2026-08-01T11:00:00Z", updatedAt: "2026-08-01T11:00:00Z" };
-      collections = [...collections, collection];
-      return new Response(JSON.stringify(collection), { status: 201 });
-    }
-    if (url.startsWith("/api/v1/collections/") && method === "PATCH") {
-      const slug = url.split("/")[4];
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const current = collections.find((collection) => collection.slug === slug)!;
-      const updated = { ...current, title: input.title, description: input.description, updatedAt: "2026-08-01T11:01:00Z" };
-      collections = collections.map((collection) => collection.slug === slug ? updated : collection);
-      return new Response(JSON.stringify(updated), { status: 200 });
-    }
-    if (url.startsWith("/api/v1/collections/") && method === "DELETE") {
-      const slug = url.split("/")[4];
-      const removed = collections.find((collection) => collection.slug === slug);
-      collections = collections.filter((collection) => collection.slug !== slug);
-      docs = docs.map((doc) => doc.collectionId === removed?.id ? { ...doc, collectionId: null, collectionSlug: null } : doc);
-      return new Response(null, { status: 204 });
-    }
-    if (url === "/api/v1/templates" && method === "GET") {
-      return new Response(JSON.stringify({ templates }), { status: 200 });
-    }
-    if (url === "/api/v1/templates" && method === "POST") {
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const template = {
-        id: `template-${templates.length + 1}`,
-        title: input.title,
-        description: input.description,
-        body: input.body,
-        createdAt: "2026-08-04T10:00:00Z",
-        updatedAt: "2026-08-04T10:00:00Z"
-      };
-      templates = [template, ...templates];
-      return new Response(JSON.stringify(template), { status: 201 });
-    }
-    if (url.startsWith("/api/v1/templates/") && method === "PATCH") {
-      const id = url.split("/")[4];
-      const input = JSON.parse(String(init?.body ?? "{}"));
-      const current = templates.find((template) => template.id === id);
-      const updated = { ...current, ...input, id, updatedAt: "2026-08-04T10:01:00Z" };
-      templates = templates.map((template) => (template.id === id ? updated : template));
-      return new Response(JSON.stringify(updated), { status: 200 });
-    }
-    if (url.startsWith("/api/v1/templates/") && method === "DELETE") {
-      const id = url.split("/")[4];
-      templates = templates.filter((template) => template.id !== id);
-      return new Response(null, { status: 204 });
-    }
     if (url === "/api/v1/docs" && method === "POST") {
       const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
       const doc: TestDoc & { publicId: string } = { id: `doc-${nextDoc}`, publicId: `public-${nextDoc}`, body };
@@ -171,16 +97,9 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       const id = url.split("/")[4];
       const input = JSON.parse(String(init?.body ?? "{}"));
       const doc = docs.find((existing) => existing.id === id) ?? { id, publicId: "public-updated", body: "" };
-      const collection = Object.prototype.hasOwnProperty.call(input, "collectionId")
-        ? collections.find((candidate) => candidate.id === input.collectionId)
-        : undefined;
       const updated = {
         ...doc,
         ...(Object.prototype.hasOwnProperty.call(input, "body") ? { body: input.body } : {}),
-        ...(Object.prototype.hasOwnProperty.call(input, "starred") ? { starred: input.starred, pinned: input.starred } : {}),
-        ...(Object.prototype.hasOwnProperty.call(input, "collectionId")
-          ? { collectionId: input.collectionId, collectionSlug: collection?.slug ?? null }
-          : {})
       };
       docs = docs.map((existing) => (existing.id === id ? updated : existing));
       return new Response(JSON.stringify(updated), { status: 200 });
@@ -264,7 +183,7 @@ function openWorkspaceSearch() {
 
 async function openDocumentFromSearch(name: string | RegExp) {
   openWorkspaceSearch();
-  const list = screen.getByRole("navigation", { name: "All documents" });
+  const list = screen.getByRole("group", { name: "Search results" });
   fireEvent.click(await within(list).findByRole("button", { name }));
   await screen.findByRole("region", { name: "Markdown editor" });
 }
@@ -304,11 +223,11 @@ afterEach(() => {
 });
 
 describe("Landing", () => {
-  it("shows the shared context workflow, current pricing, and account actions for Pro users", async () => {
+  it("pitches quiet writing, current pricing, and account actions for Pro users", async () => {
     render(<Landing />);
 
-    expect(screen.getByRole("heading", { name: "A writing app built for you and your agents." })).toBeInTheDocument();
-    expect(screen.getByText(/in a collection your agents can read/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "A quiet place to write." })).toBeInTheDocument();
+    expect(screen.getByText(/a Markdown editor with nothing in the way/)).toBeInTheDocument();
     for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
       expect(cliLink).toHaveAttribute("href", "/cli");
     }
@@ -320,16 +239,11 @@ describe("Landing", () => {
     expect(screen.getByRole("link", { name: "Account settings" })).toHaveAttribute("href", "/account");
     expect(screen.queryByRole("link", { name: "Go Pro" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Upgrade" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Keep context and writing together." })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Store your knowledge" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Group it into collections" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Give your agents access" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Share deliberately" })).toBeInTheDocument();
-    expect(screen.getByText(/one CLI your agents use to read and update the same Markdown/)).toBeInTheDocument();
-    expect(screen.getByText(/A folder on one machine is a poor shared memory/)).toBeInTheDocument();
-    expect(screen.getAllByText("$ passage list").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("passage list --collection operating-context").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("passage share <doc-id>").length).toBeGreaterThan(0);
+    for (const name of ["Nothing in the way", "Find anything", "Plain Markdown", "Your agents can read it too."]) {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    }
+    expect(within(screen.getByRole("list", { name: "Keyboard shortcuts" })).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getByRole("link", { name: "Read the CLI guide" })).toHaveAttribute("href", "/cli");
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
     expect(
@@ -897,9 +811,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
         }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -942,13 +853,13 @@ describe("Write (editor)", () => {
         if (sent.version !== version) {
           return Promise.resolve(new Response(JSON.stringify({
             error: "document changed since it was loaded",
-            document: { id: "doc-shared", publicId: "shared", body: "# Shared", version, starred: false, collectionId: null, collectionSlug: null, updatedAt: "2026-08-17T12:00:00Z" }
+            document: { id: "doc-shared", publicId: "shared", body: "# Shared", version, updatedAt: "2026-08-17T12:00:00Z" }
           }), { status: 409, headers: { "Content-Type": "application/json" } }));
         }
         version += 1;
         const payload = new Response(JSON.stringify({
           id: "doc-shared", publicId: "shared", body: sent.body, version,
-          starred: false, collectionId: null, collectionSlug: null, updatedAt: "2026-08-17T12:00:00Z"
+          updatedAt: "2026-08-17T12:00:00Z"
         }), { status: 200, headers: { "Content-Type": "application/json" } });
         // Hold the first response open so the next keystroke lands while it is
         // still in flight. That is the ordinary case: typing does not stop for
@@ -992,9 +903,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
         }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1032,9 +940,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
           }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1044,9 +949,6 @@ describe("Write (editor)", () => {
           publicId: "shared",
           body: JSON.parse(String(init?.body ?? "{}")).body,
           version: 4,
-          starred: false,
-          collectionId: null,
-          collectionSlug: null,
           updatedAt: "2026-08-16T12:01:00Z"
         }), { status: 200, headers: { "Content-Type": "application/json" } }));
       }
@@ -1085,9 +987,6 @@ describe("Write (editor)", () => {
               publicId: "shared",
               body: "# Shared\n\nwritten by an agent",
               version: 3,
-              starred: false,
-              collectionId: null,
-              collectionSlug: null,
               updatedAt: "2026-08-16T12:00:00Z"
             }
           }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1097,9 +996,6 @@ describe("Write (editor)", () => {
           publicId: "shared",
           body: JSON.parse(String(init?.body ?? "{}")).body,
           version: 4,
-          starred: false,
-          collectionId: null,
-          collectionSlug: null,
           updatedAt: "2026-08-16T12:01:00Z"
         }), { status: 200, headers: { "Content-Type": "application/json" } }));
       }
@@ -1137,9 +1033,6 @@ describe("Write (editor)", () => {
             publicId: id === "doc-one" ? "one" : "two",
             body: `# ${id} from an agent`,
             version: 3,
-            starred: false,
-            collectionId: null,
-            collectionSlug: null,
             updatedAt: "2026-08-16T12:00:00Z"
           }
         }), { status: 409, headers: { "Content-Type": "application/json" } }));
@@ -1516,7 +1409,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Create link" }));
 
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -1532,7 +1425,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
 
-    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -1613,7 +1506,7 @@ describe("Write (editor)", () => {
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
     // The action menu keeps the link reachable after publishing.
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
     expect(screen.getByRole("menuitem", { name: "Copy share link" })).toBeInTheDocument();
@@ -1645,9 +1538,6 @@ describe("Write (editor)", () => {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
-      }
-      if (url === "/api/v1/collections" && method === "GET") {
-        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -1713,9 +1603,6 @@ describe("Write (editor)", () => {
         return new Response(JSON.stringify({ documents: [{ id: "doc-1", publicId: "public-1", body: "# One" }] }), {
           status: 200
         });
-      }
-      if (url === "/api/v1/collections" && method === "GET") {
-        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
       }
       return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
     });
@@ -1818,15 +1705,32 @@ describe("Write (editor)", () => {
     expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });
 
-  it("carries a saved dark theme into the editor without a sidebar control", async () => {
+  it("carries a saved dark theme into the editor without a menu control", async () => {
     localStorage.setItem("passage.theme.v1", "dark");
     await renderWrite();
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
-    expect(screen.getByRole("menuitem", { name: "Light mode" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Light mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("menuitem", { name: "Account" })).toHaveAttribute("href", "/account");
+  });
+
+  it("toggles the theme from the sun and moon button in the editor bar", async () => {
+    await renderWrite();
+
+    const toggle = await screen.findByRole("button", { name: "Dark mode" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBeUndefined());
+    expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });
 
   it("keeps the sign-in action stable while the session check resolves", () => {
@@ -2456,7 +2360,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByText("Shared", { selector: ".wFooter span" })).toBeInTheDocument();
+    expect(await screen.findByText("Shared", { selector: ".wDetails span" })).toBeInTheDocument();
   });
 
   it("unshares a signed-in document", async () => {
@@ -2484,10 +2388,10 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     makeActiveDocumentPrivate();
 
-    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
       method: "DELETE",
       credentials: "include"
@@ -2495,7 +2399,7 @@ describe("Write (editor)", () => {
   });
 });
 
-describe("visual writing and collection navigation", () => {
+describe("visual writing", () => {
   it("does not save on opening or switching modes", async () => {
     const original = "---\ntags: [writing]\n---\n\n# A draft\n\nSome **text**.\n";
     const fetchMock = stubSignedInFetch([{ id: "visual", publicId: "visual", body: original }]);
@@ -2514,9 +2418,9 @@ describe("visual writing and collection navigation", () => {
 describe("Writer", () => {
   it("lists every document newest first, with no folders, stars, or templates", async () => {
     stubSignedInFetch([
-      { id: "doc-old", publicId: "old", body: "# Older idea", updatedAt: "2026-08-01T10:00:00Z", collectionSlug: "research" },
+      { id: "doc-old", publicId: "old", body: "# Older idea", updatedAt: "2026-08-01T10:00:00Z" },
       { id: "doc-new", publicId: "new", body: "# Newest draft", updatedAt: "2026-08-03T10:00:00Z" },
-      { id: "doc-mid", publicId: "mid", body: "# Middle note", updatedAt: "2026-08-02T10:00:00Z", starred: true }
+      { id: "doc-mid", publicId: "mid", body: "# Middle note", updatedAt: "2026-08-02T10:00:00Z" }
     ]);
     await renderWrite();
 
@@ -2547,10 +2451,37 @@ describe("Writer", () => {
     const search = screen.getByRole("searchbox", { name: "Search documents" });
     await waitFor(() => expect(search).toHaveFocus());
     fireEvent.change(search, { target: { value: "calm" } });
-    await waitFor(() => expect(within(screen.getByRole("navigation", { name: "All documents" })).getAllByRole("button")).toHaveLength(1));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Search results" })).getAllByRole("button")).toHaveLength(1));
     fireEvent.keyDown(search, { key: "Enter" });
 
     await waitFor(() => expect(window.location.pathname).toBe("/write/two"));
+  });
+
+  it("opens search from the document list with recent documents first and closes on Escape", async () => {
+    stubSignedInFetch([
+      { id: "doc-1", publicId: "one", body: "# Older", updatedAt: "2026-08-01T10:00:00Z" },
+      { id: "doc-2", publicId: "two", body: "# Newer", updatedAt: "2026-08-02T10:00:00Z" }
+    ]);
+    await renderWrite();
+
+    openDrawer();
+    fireEvent.click(within(screen.getByRole("complementary", { name: "Documents" })).getByRole("button", { name: "Search documents" }));
+    const dialog = screen.getByRole("dialog", { name: "Search documents" });
+    const titles = within(dialog).getAllByRole("button").map((row) => row.querySelector(".wDocTitle")?.textContent);
+    expect(titles).toEqual(["Newer", "Older"]);
+
+    fireEvent.keyDown(within(dialog).getByRole("searchbox", { name: "Search documents" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Search documents" })).not.toBeInTheDocument();
+  });
+
+  it("keeps document actions in the bar while the document loads, so nothing beside it shifts", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Steady" }]);
+    render(<Write />);
+
+    // The bar's first render, before any document has loaded.
+    await screen.findByRole("button", { name: "New document" });
+    expect(screen.getByRole("button", { name: "Document actions" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Document actions" })).toBeEnabled());
   });
 
   it("shows the Markdown source with the keyboard and goes back", async () => {
@@ -2593,5 +2524,27 @@ describe("Writer", () => {
     });
     await waitFor(() => expect(editor).toHaveFocus());
     expect(window.location.pathname).toBe("/write/public-2");
+  });
+
+  it("reuses a blank page and discards it when left empty", async () => {
+    const requests: string[] = [];
+    const baseFetch = stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Existing" }]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (method === "POST" || method === "DELETE") requests.push(`${method} ${String(input)}`);
+      return baseFetch(input, init);
+    }));
+    await renderWrite();
+
+    fireEvent.click(newDocumentButton());
+    await screen.findByRole("textbox", { name: "Visual editor" });
+    await waitFor(() => expect(newDocumentButton()).toBeEnabled());
+    fireEvent.click(newDocumentButton());
+    await waitFor(() => expect(newDocumentButton()).toBeEnabled());
+    expect(requests).toEqual(["POST /api/v1/docs"]);
+
+    await openDocumentNamed("Existing");
+    await waitFor(() => expect(requests).toEqual(["POST /api/v1/docs", "DELETE /api/v1/docs/doc-2"]));
+    expect(within(openDrawer()).queryByRole("button", { name: /^Untitled/ })).not.toBeInTheDocument();
   });
 });

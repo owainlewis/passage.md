@@ -36,6 +36,12 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
     latest.current = { source, onChange };
   }, [source, onChange]);
 
+  // The editor stays hidden until it is ready, and a hidden element cannot
+  // take focus, so a focus asked for while it loads waits for this render.
+  useEffect(() => {
+    if (status === "ready" && wantsFocus.current) instance.current?.focus();
+  }, [status]);
+
   useEffect(() => {
     let cancelled = false;
     let handle: VisualEditorHandle | undefined;
@@ -83,7 +89,6 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
         handle.setSource(latest.current.source);
         instance.current = handle;
         setStatus("ready");
-        if (wantsFocus.current) handle.focus();
       } catch (error) {
         if (!cancelled) setStatus(error instanceof UnsupportedMarkdown ? "unsupported" : "error");
       }

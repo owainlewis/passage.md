@@ -21,7 +21,7 @@
   --hover-strong: rgba(20, 20, 32, 0.085);
   --sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
-  --serif: var(--font-serif), Georgia, "Times New Roman", serif;
+  --serif: var(--font-prose), "Iowan Old Style", Georgia, serif;
 
   /* One sidebar width at every breakpoint. Its sections hold this as a
      minimum so they do not reflow while it collapses. */
@@ -121,9 +121,9 @@ button {
 
 .brandName {
   font-family: var(--serif);
-  font-size: 1.1rem;
-  font-weight: 400;
-  letter-spacing: -0.025em;
+  font-size: 1.3rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--ink);
 }

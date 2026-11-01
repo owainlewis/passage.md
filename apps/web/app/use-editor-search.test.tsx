@@ -42,7 +42,7 @@ it("debounces queries, aborts superseded work, and ignores a late response", asy
 
   const { result, rerender } = renderHook(
     (props: { query: string }) =>
-      useEditorSearch({ query: props.query, scope: {}, userId: "user-1" }),
+      useEditorSearch({ query: props.query, userId: "user-1" }),
     { initialProps: { query: "" } }
   );
 
@@ -81,31 +81,16 @@ it("debounces queries, aborts superseded work, and ignores a late response", asy
   expect(result.current.errorMessage).toBe("");
 });
 
-it("maps collection and Documents scopes to the authenticated search API", async () => {
+it("searches every document through the authenticated search API", async () => {
   const fetchMock = vi.fn().mockResolvedValue(searchResponse([]));
   vi.stubGlobal("fetch", fetchMock);
-  const { rerender } = renderHook(
-    (props: { collectionId?: string; unfiled?: boolean }) =>
-      useEditorSearch({ query: "notes", scope: props, userId: "user-1" }),
-    { initialProps: { collectionId: "22222222-2222-2222-2222-222222222222" } as { collectionId?: string; unfiled?: boolean } }
-  );
+  renderHook(() => useEditorSearch({ query: "notes", userId: "user-1" }));
 
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
     await flushPromises();
   });
-  expect(fetchMock.mock.calls[0][0]).toBe(
-    "/api/v1/docs/search?q=notes&limit=50&collectionId=22222222-2222-2222-2222-222222222222"
-  );
-
-  rerender({ unfiled: true });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(300);
-    await flushPromises();
-  });
-  expect(fetchMock.mock.calls[1][0]).toBe(
-    "/api/v1/docs/search?q=notes&limit=50&unfiled=true"
-  );
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/docs/search?q=notes&limit=50");
 });
 
 it("waits for a pending save before running an unchanged query", async () => {
@@ -115,7 +100,7 @@ it("waits for a pending save before running an unchanged query", async () => {
   vi.stubGlobal("fetch", fetchMock);
   const { result, rerender } = renderHook(
     (props: { paused: boolean }) =>
-      useEditorSearch({ query: "needle", scope: {}, userId: "user-1", paused: props.paused }),
+      useEditorSearch({ query: "needle", userId: "user-1", paused: props.paused }),
     { initialProps: { paused: true } }
   );
 
@@ -159,7 +144,7 @@ it("paginates without duplicates and preserves results through failure and retry
 
   const { result, rerender } = renderHook(
     (props: { query: string }) =>
-      useEditorSearch({ query: props.query, scope: { unfiled: true }, userId: "user-1" }),
+      useEditorSearch({ query: props.query, userId: "user-1" }),
     { initialProps: { query: "agent" } }
   );
 
@@ -175,7 +160,7 @@ it("paginates without duplicates and preserves results through failure and retry
     await flushPromises();
   });
   expect(fetchMock.mock.calls[1][0]).toBe(
-    "/api/v1/docs/search?q=agent&limit=50&unfiled=true&cursor=next-page"
+    "/api/v1/docs/search?q=agent&limit=50&cursor=next-page"
   );
   expect(result.current.documents.map((doc) => doc.id)).toEqual(["a", "b", "c"]);
 
@@ -208,7 +193,7 @@ it("does not expose results from a previous account", async () => {
 
   const { result, rerender } = renderHook(
     (props: { userId: string }) =>
-      useEditorSearch({ query: "secret", scope: {}, userId: props.userId }),
+      useEditorSearch({ query: "secret", userId: props.userId }),
     { initialProps: { userId: "user-1" } }
   );
 
@@ -237,7 +222,7 @@ it("accepts 200 Unicode characters and rejects 201 without a request", async () 
 
   const { result, rerender } = renderHook(
     (props: { query: string }) =>
-      useEditorSearch({ query: props.query, scope: {}, userId: "user-1" }),
+      useEditorSearch({ query: props.query, userId: "user-1" }),
     { initialProps: { query: "🙂".repeat(200) } }
   );
 

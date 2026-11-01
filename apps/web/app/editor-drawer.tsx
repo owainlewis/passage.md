@@ -1,21 +1,14 @@
 "use client";
 
-import { RefObject, useMemo, useState } from "react";
-import { plainSummary } from "./doc-utils";
-import { Doc } from "./editor-model";
-import { editorDocSearchText, editorDocTitle } from "./editor-list";
+import { useMemo } from "react";
+import { Doc, isShared } from "./editor-model";
+import { editorDocTitle } from "./editor-list";
 import { CloseIcon, SearchIcon } from "./icons";
-import { normalizeEditorSearch, useEditorSearch } from "./use-editor-search";
-
-type Row = { doc: Doc; excerpt?: string };
-
-const NO_SCOPE = {};
 
 /**
- * Every document in one list, newest edit first, with search at the top.
- * There are no folders: the list and the search box are the whole of
- * navigation. Typing filters titles and text already loaded straight away,
- * and full-text results from the server replace them once they arrive.
+ * Every document in one list, newest edit first. There are no folders: the
+ * list and search are the whole of navigation. Search lives in its own
+ * dialog, which the field at the top of the list opens, as does ⌘K.
  */
 export function DocumentDrawer({
   activeId,
@@ -25,12 +18,11 @@ export function DocumentDrawer({
   loadError,
   open,
   overlay,
-  searchInput,
-  searchPaused,
-  userId,
+  searchHint,
   onClose,
   onLoadMore,
-  onOpen
+  onOpen,
+  onSearch
 }: {
   activeId: string;
   docs: Doc[];
@@ -39,41 +31,13 @@ export function DocumentDrawer({
   loadError: boolean;
   open: boolean;
   overlay: boolean;
-  searchInput: RefObject<HTMLInputElement | null>;
-  searchPaused: boolean;
-  userId?: string;
+  searchHint: string;
   onClose: () => void;
   onLoadMore: () => void;
   onOpen: (doc: Doc) => void;
+  onSearch: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [highlight, setHighlight] = useState(0);
-  const search = useEditorSearch({ query, scope: NO_SCOPE, userId, paused: searchPaused });
-  const normalized = normalizeEditorSearch(query).toLowerCase();
-
-  const rows = useMemo<Row[]>(() => {
-    const sorted = [...docs].sort((a, b) => timestamp(b.updatedAt) - timestamp(a.updatedAt));
-    if (!normalized) return sorted.map((doc) => ({ doc }));
-    // Server results come first, ranked by full text. Loaded documents that
-    // contain the words as typed follow, so a partial word still finds them.
-    const server = search.documents.map((doc) => {
-      const known = docs.find((candidate) => candidate.id === doc.id);
-      return { doc: known ? { ...doc, body: known.body, bodyLoaded: known.bodyLoaded } : doc, excerpt: doc.matchExcerpt };
-    });
-    const found = new Set(server.map((row) => row.doc.id));
-    const local = sorted
-      .filter((doc) => !found.has(doc.id))
-      .filter((doc) => `${editorDocTitle(doc)}\n${editorDocSearchText(doc)}`.toLowerCase().includes(normalized))
-      .map((doc) => ({ doc, excerpt: around(editorDocSearchText(doc), normalized) }));
-    return [...server, ...local];
-  }, [docs, normalized, search.documents]);
-
-  const selected = Math.min(highlight, Math.max(rows.length - 1, 0));
-
-  function openRow(row: Row | undefined) {
-    if (!row) return;
-    onOpen(row.doc);
-  }
+  const sorted = useMemo(() => sortByUpdated(docs), [docs]);
 
   return (
     <>
@@ -86,40 +50,11 @@ export function DocumentDrawer({
         inert={open ? undefined : true}
       >
         <div className="wDrawerHead">
-          <label className="wSearch">
+          <button type="button" className="wSearch" aria-label="Search documents" onClick={onSearch}>
             <SearchIcon />
-            <input
-              ref={searchInput}
-              type="search"
-              value={query}
-              placeholder="Search"
-              aria-label="Search documents"
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setHighlight(0);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  const step = event.key === "ArrowDown" ? 1 : -1;
-                  setHighlight((selected + step + rows.length) % Math.max(rows.length, 1));
-                } else if (event.key === "Enter") {
-                  event.preventDefault();
-                  openRow(rows[selected]);
-                } else if (event.key === "Escape") {
-                  if (query) {
-                    event.stopPropagation();
-                    setQuery("");
-                  } else {
-                    onClose();
-                  }
-                }
-              }}
-            />
-            <kbd aria-hidden="true">⌘K</kbd>
-          </label>
+            <span>Search</span>
+            <kbd aria-hidden="true">{searchHint}</kbd>
+          </button>
           {overlay && (
             <button type="button" className="wIconButton" aria-label="Close documents" onClick={onClose}>
               <CloseIcon />
@@ -128,36 +63,25 @@ export function DocumentDrawer({
         </div>
 
         <nav className="wDocList" aria-label="All documents">
-          {rows.map((row, index) => (
+          {sorted.map((doc) => (
             <button
-              key={row.doc.id}
+              key={doc.id}
               type="button"
               className="wDocRow"
-              aria-current={row.doc.id === activeId ? "page" : undefined}
-              data-highlight={normalized && index === selected ? true : undefined}
-              onMouseEnter={() => setHighlight(index)}
-              onClick={() => openRow(row)}
+              aria-current={doc.id === activeId ? "page" : undefined}
+              onClick={() => onOpen(doc)}
             >
-              <span className="wDocTitle">{editorDocTitle(row.doc)}</span>
-              {row.excerpt
-                ? <span className="wDocExcerpt">{plainSummary(row.excerpt)}</span>
-                : <span className="wDocMeta">{relativeDate(row.doc.updatedAt)}</span>}
+              <span className="wDocTitle">{editorDocTitle(doc)}</span>
+              <span className="wDocMeta">
+                {isShared(doc) && <span className="wDocShared">Shared</span>}
+                <span>{relativeDate(doc.updatedAt)}</span>
+              </span>
             </button>
           ))}
-          {normalized && rows.length === 0 && (
-            <p className="wDocEmpty" role="status">
-              {search.loading ? "Searching…" : search.errorMessage || "Nothing matches that."}
-            </p>
-          )}
-          {!normalized && docs.length === 0 && <p className="wDocEmpty">No documents yet.</p>}
-          {!normalized && (hasMore || loadError) && (
+          {docs.length === 0 && <p className="wDocEmpty">No documents yet.</p>}
+          {(hasMore || loadError) && (
             <button type="button" className="wDocMore" disabled={loadingMore} onClick={onLoadMore}>
               {loadingMore ? "Loading…" : "Load more documents"}
-            </button>
-          )}
-          {normalized && search.hasMore && (
-            <button type="button" className="wDocMore" disabled={search.loading} onClick={search.loadMore}>
-              {search.loading ? "Searching…" : "More results"}
             </button>
           )}
         </nav>
@@ -166,12 +90,8 @@ export function DocumentDrawer({
   );
 }
 
-// A few words either side of the first match, for a local result's summary.
-function around(text: string, query: string) {
-  const index = text.toLowerCase().indexOf(query);
-  if (index < 0) return undefined;
-  const start = Math.max(0, text.lastIndexOf(" ", Math.max(0, index - 48)));
-  return `${start > 0 ? "…" : ""}${text.slice(start, index + query.length + 120).trim()}`;
+export function sortByUpdated(docs: Doc[]) {
+  return [...docs].sort((a, b) => timestamp(b.updatedAt) - timestamp(a.updatedAt));
 }
 
 function timestamp(value?: string) {

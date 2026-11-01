@@ -388,18 +388,9 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	if strings.Contains(listBody, tokenResponse.Token) {
 		t.Fatalf("token list leaked plaintext token: %s", listBody)
 	}
-	collectionBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/collections", `{"title":"Bearer collection"}`, nil, tokenResponse.Token)
-	var bearerCollection struct {
-		ID   string `json:"id"`
-		Slug string `json:"slug"`
+	if body := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/collections", "", nil, tokenResponse.Token); strings.TrimSpace(body) != `{"collections":[]}` {
+		t.Fatalf("bearer collection list = %s", body)
 	}
-	if err := json.Unmarshal([]byte(collectionBody), &bearerCollection); err != nil {
-		t.Fatal(err)
-	}
-	if bearerCollection.Slug != "bearer-collection" {
-		t.Fatalf("bearer collection = %s", collectionBody)
-	}
-	doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/collections", "", nil, tokenResponse.Token)
 
 	docBody := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Bearer integration"}`, nil, tokenResponse.Token)
 	var docResponse struct {
@@ -414,11 +405,11 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 	doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs", "", nil, tokenResponse.Token)
 	doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/"+docResponse.ID, "", nil, tokenResponse.Token)
-	doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+docResponse.ID, `{"collectionId":"`+bearerCollection.ID+`","starred":true}`, nil, tokenResponse.Token)
+	doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+docResponse.ID, `{"starred":true}`, nil, tokenResponse.Token)
 	doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+docResponse.ID, `{"body":"# Updated bearer integration"}`, nil, tokenResponse.Token)
 	doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs/"+docResponse.ID+"/share", "", nil, tokenResponse.Token)
 	publicHTML := doIntegrationRequest(t, http.MethodGet, server.URL+"/d/"+docResponse.PublicID, "", nil, "")
-	if !strings.Contains(publicHTML, "Updated bearer integration") || strings.Contains(publicHTML, "bearer-collection") || strings.Contains(publicHTML, "starred") {
+	if !strings.Contains(publicHTML, "Updated bearer integration") || strings.Contains(publicHTML, "starred") {
 		t.Fatalf("public HTML changed or leaked private metadata: %s", publicHTML)
 	}
 	if raw := doIntegrationRequest(t, http.MethodGet, server.URL+"/d/"+docResponse.PublicID+".md", "", nil, ""); raw != "# Updated bearer integration" {
@@ -467,7 +458,7 @@ func TestAPITokenDocumentRoutesWithPostgres(t *testing.T) {
 	}
 }
 
-func TestCollectionAndDocumentMetadataRoutesWithPostgres(t *testing.T) {
+func TestRetiredCollectionRoutesAndDocumentMetadataWithPostgres(t *testing.T) {
 	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
@@ -484,9 +475,8 @@ func TestCollectionAndDocumentMetadataRoutesWithPostgres(t *testing.T) {
 	}
 
 	stamp := time.Now().UnixNano()
-	ownerOne := fmt.Sprintf("collections-one-%d@example.com", stamp)
-	ownerTwo := fmt.Sprintf("collections-two-%d@example.com", stamp)
-	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = ANY($1)`, []string{ownerOne, ownerTwo})
+	owner := fmt.Sprintf("retired-collections-%d@example.com", stamp)
+	defer db.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, owner)
 
 	app := NewApp(fstest.MapFS{"index.html": {Data: []byte("ok")}}, db, Options{Billing: config.BillingConfig{
 		FreeMaxSavedDocs: 5,
@@ -494,93 +484,55 @@ func TestCollectionAndDocumentMetadataRoutesWithPostgres(t *testing.T) {
 	}})
 	server := httptest.NewServer(app.Routes())
 	defer server.Close()
+	cookies := createIntegrationUserAndLogin(t, db, server.URL, owner)
 
-	ownerOneCookies := createIntegrationUserAndLogin(t, db, server.URL, ownerOne)
-	ownerTwoCookies := createIntegrationUserAndLogin(t, db, server.URL, ownerTwo)
-
-	var initialCollections struct {
-		Collections []struct {
-			Slug string `json:"slug"`
-		} `json:"collections"`
+	// Older CLI releases still list and change collections.
+	if body := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/collections", "", cookies, ""); strings.TrimSpace(body) != `{"collections":[]}` {
+		t.Fatalf("collection list = %s", body)
 	}
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/collections", "", ownerOneCookies, "")), &initialCollections); err != nil {
-		t.Fatal(err)
-	}
-	if len(initialCollections.Collections) != 0 {
-		t.Fatalf("initial stored collection count = %d, want 0", len(initialCollections.Collections))
-	}
-
-	type collectionResponse struct {
-		ID          string  `json:"id"`
-		Slug        string  `json:"slug"`
-		Title       string  `json:"title"`
-		Description *string `json:"description"`
-	}
-	var ownedCollection collectionResponse
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/collections", `{"title":"Customer Research","description":"Initial"}`, ownerOneCookies, "")), &ownedCollection); err != nil {
-		t.Fatal(err)
-	}
-	if ownedCollection.ID == "" || ownedCollection.Slug != "customer-research" {
-		t.Fatalf("created collection = %#v", ownedCollection)
-	}
-	var renamedCollection collectionResponse
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/collections/"+ownedCollection.Slug, `{"title":"Product Research","description":null}`, ownerOneCookies, "")), &renamedCollection); err != nil {
-		t.Fatal(err)
-	}
-	if renamedCollection.Slug != ownedCollection.Slug || renamedCollection.Title != "Product Research" || renamedCollection.Description != nil {
-		t.Fatalf("renamed collection = %#v", renamedCollection)
-	}
-
-	var otherCollection collectionResponse
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/collections", `{"title":"Other owner"}`, ownerTwoCookies, "")), &otherCollection); err != nil {
-		t.Fatal(err)
+	for _, request := range []struct{ method, path, body string }{
+		{http.MethodPost, "/api/v1/collections", `{"title":"Research"}`},
+		{http.MethodPatch, "/api/v1/collections/research", `{"title":"Product"}`},
+		{http.MethodDelete, "/api/v1/collections/research", ""},
+	} {
+		if got := doIntegrationStatus(t, request.method, server.URL+request.path, request.body, cookies, ""); got != http.StatusGone {
+			t.Fatalf("%s %s status = %d, want %d", request.method, request.path, got, http.StatusGone)
+		}
 	}
 
 	type documentResponse struct {
-		ID             string  `json:"id"`
-		Body           string  `json:"body"`
-		CollectionID   *string `json:"collectionId"`
-		CollectionSlug *string `json:"collectionSlug"`
-		Starred        bool    `json:"starred"`
+		ID        string    `json:"id"`
+		Body      string    `json:"body"`
+		Starred   bool      `json:"starred"`
+		UpdatedAt time.Time `json:"updatedAt"`
 	}
 	var document documentResponse
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Persistent body"}`, ownerOneCookies, "")), &document); err != nil {
+	created := doIntegrationRequest(t, http.MethodPost, server.URL+"/api/v1/docs", `{"body":"# Persistent body"}`, cookies, "")
+	if err := json.Unmarshal([]byte(created), &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.CollectionID != nil || document.CollectionSlug != nil || document.Starred {
-		t.Fatalf("new document metadata = %#v", document)
+	if strings.Contains(created, "collection") || document.Starred {
+		t.Fatalf("new document = %s", created)
 	}
 
-	crossOwnerBody := `{"collectionId":"` + otherCollection.ID + `","starred":true}`
-	if got := doIntegrationStatus(t, http.MethodPatch, server.URL+"/api/v1/docs/"+document.ID, crossOwnerBody, ownerOneCookies, ""); got != http.StatusBadRequest {
-		t.Fatalf("cross-owner assignment status = %d, want %d", got, http.StatusBadRequest)
-	}
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/"+document.ID, "", ownerOneCookies, "")), &document); err != nil {
+	// A move from an older client answers with the document and writes nothing.
+	var moved documentResponse
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+document.ID, `{"collectionId":"99999999-9999-9999-9999-999999999999"}`, cookies, "")), &moved); err != nil {
 		t.Fatal(err)
 	}
-	if document.CollectionID != nil || document.Starred || document.Body != "# Persistent body" {
-		t.Fatalf("document changed after rejected assignment = %#v", document)
+	if moved.Body != "# Persistent body" || !moved.UpdatedAt.Equal(document.UpdatedAt) {
+		t.Fatalf("moved document = %#v, want unchanged %#v", moved, document)
 	}
 
-	metadataBody := `{"collectionId":"` + ownedCollection.ID + `","starred":true}`
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+document.ID, metadataBody, ownerOneCookies, "")), &document); err != nil {
+	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodPatch, server.URL+"/api/v1/docs/"+document.ID, `{"collectionId":null,"starred":true}`, cookies, "")), &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.CollectionID == nil || *document.CollectionID != ownedCollection.ID || document.CollectionSlug == nil || *document.CollectionSlug != ownedCollection.Slug || !document.Starred || document.Body != "# Persistent body" {
+	if !document.Starred || document.Body != "# Persistent body" {
 		t.Fatalf("metadata update = %#v", document)
 	}
-
-	listBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs", "", ownerOneCookies, "")
-	if !strings.Contains(listBody, `"collectionSlug":"customer-research"`) || !strings.Contains(listBody, `"starred":true`) {
-		t.Fatalf("document list omitted metadata: %s", listBody)
-	}
-
-	doIntegrationRequest(t, http.MethodDelete, server.URL+"/api/v1/collections/"+ownedCollection.Slug, "", ownerOneCookies, "")
-	if err := json.Unmarshal([]byte(doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/"+document.ID, "", ownerOneCookies, "")), &document); err != nil {
-		t.Fatal(err)
-	}
-	if document.CollectionID != nil || document.CollectionSlug != nil || !document.Starred || document.Body != "# Persistent body" {
-		t.Fatalf("document after collection deletion = %#v", document)
+	listBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs", "", cookies, "")
+	if !strings.Contains(listBody, `"starred":true`) || strings.Contains(listBody, "collection") {
+		t.Fatalf("document list = %s", listBody)
 	}
 }
 
@@ -612,44 +564,28 @@ func TestDocumentSearchAPIWithPostgres(t *testing.T) {
 	ownerCookies := createIntegrationUserAndLogin(t, db, server.URL, ownerEmail)
 	createIntegrationUserAndLogin(t, db, server.URL, otherEmail)
 
-	var ownerID, otherID, collectionID, otherCollectionID string
+	var ownerID, otherID string
 	if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, ownerEmail).Scan(&ownerID); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(ctx, `SELECT id::text FROM users WHERE email = $1`, otherEmail).Scan(&otherID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(ctx, `
-		INSERT INTO collections (owner_user_id, slug, title)
-		VALUES ($1, 'research', 'Research')
-		RETURNING id::text
-	`, ownerID).Scan(&collectionID); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(ctx, `
-		INSERT INTO collections (owner_user_id, slug, title)
-		VALUES ($1, 'research', 'Research')
-		RETURNING id::text
-	`, otherID).Scan(&otherCollectionID); err != nil {
-		t.Fatal(err)
-	}
-
 	updatedAt := time.Now().UTC().Truncate(time.Microsecond)
 	type fixture struct {
-		id           string
-		ownerID      string
-		title        string
-		body         string
-		collectionID *string
-		archived     bool
-		updated      time.Time
+		id       string
+		ownerID  string
+		title    string
+		body     string
+		archived bool
+		updated  time.Time
 	}
 	fixtures := []fixture{
 		{ownerID: ownerID, title: "Agent workflow", body: "# Title result\n\nNo body terms.", updated: updatedAt},
-		{ownerID: ownerID, title: "Deep result", body: "# Deep result\n\n" + strings.Repeat("padding ", 700) + "agent workflow after four kilobytes", collectionID: &collectionID, updated: updatedAt},
-		{ownerID: ownerID, title: "Second research result", body: "# Research\n\nagent workflow", collectionID: &collectionID, updated: updatedAt.Add(-time.Minute)},
+		{ownerID: ownerID, title: "Deep result", body: "# Deep result\n\n" + strings.Repeat("padding ", 700) + "agent workflow after four kilobytes", updated: updatedAt},
+		{ownerID: ownerID, title: "Second research result", body: "# Research\n\nagent workflow", updated: updatedAt.Add(-time.Minute)},
 		{ownerID: ownerID, title: "Archived result", body: "# Archived\n\nagent workflow", archived: true, updated: updatedAt},
-		{ownerID: otherID, title: "Other owner result", body: "# Other\n\nagent workflow", collectionID: &otherCollectionID, updated: updatedAt},
+		{ownerID: otherID, title: "Other owner result", body: "# Other\n\nagent workflow", updated: updatedAt},
 	}
 	for index := range fixtures {
 		item := &fixtures[index]
@@ -658,21 +594,19 @@ func TestDocumentSearchAPIWithPostgres(t *testing.T) {
 			archivedAt = &item.updated
 		}
 		if err := db.QueryRow(ctx, `
-			INSERT INTO documents (owner_user_id, public_id, title, body, collection_id, archived_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO documents (owner_user_id, public_id, title, body, archived_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
 			RETURNING id::text
-		`, item.ownerID, fmt.Sprintf("api-search-%d-%d", stamp, index), item.title, item.body, item.collectionID, archivedAt, item.updated).Scan(&item.id); err != nil {
+		`, item.ownerID, fmt.Sprintf("api-search-%d-%d", stamp, index), item.title, item.body, archivedAt, item.updated).Scan(&item.id); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	type searchPage struct {
 		Documents []struct {
-			ID             string  `json:"id"`
-			Body           *string `json:"body"`
-			MatchExcerpt   string  `json:"matchExcerpt"`
-			CollectionID   *string `json:"collectionId"`
-			CollectionSlug *string `json:"collectionSlug"`
+			ID           string  `json:"id"`
+			Body         *string `json:"body"`
+			MatchExcerpt string  `json:"matchExcerpt"`
 		} `json:"documents"`
 		NextCursor string `json:"nextCursor"`
 	}
@@ -699,32 +633,16 @@ func TestDocumentSearchAPIWithPostgres(t *testing.T) {
 		t.Fatalf("second search page = %#v", second)
 	}
 
-	var collectionPage searchPage
-	collectionBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow&collectionId="+collectionID, "", ownerCookies, "")
-	if err := json.Unmarshal([]byte(collectionBody), &collectionPage); err != nil {
-		t.Fatal(err)
-	}
-	if len(collectionPage.Documents) != 2 {
-		t.Fatalf("collection search = %s", collectionBody)
-	}
-	for _, document := range collectionPage.Documents {
-		if document.CollectionID == nil || *document.CollectionID != collectionID {
-			t.Fatalf("collection result = %#v", document)
+	// Retired scope parameters from older clients search everything.
+	for _, scope := range []string{"&collectionId=99999999-9999-9999-9999-999999999999", "&unfiled=true", "&collectionId=not-a-uuid"} {
+		var scoped searchPage
+		body := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow"+scope, "", ownerCookies, "")
+		if err := json.Unmarshal([]byte(body), &scoped); err != nil {
+			t.Fatal(err)
 		}
-	}
-	var unfiledPage searchPage
-	unfiledBody := doIntegrationRequest(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent+workflow&unfiled=true", "", ownerCookies, "")
-	if err := json.Unmarshal([]byte(unfiledBody), &unfiledPage); err != nil {
-		t.Fatal(err)
-	}
-	if len(unfiledPage.Documents) != 1 || unfiledPage.Documents[0].ID != fixtures[0].id || unfiledPage.Documents[0].CollectionID != nil {
-		t.Fatalf("unfiled search = %s", unfiledBody)
-	}
-
-	crossOwnerBody, crossOwnerStatus := doIntegrationRequestRaw(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent&collectionId="+otherCollectionID, "", ownerCookies, "")
-	missingBody, missingStatus := doIntegrationRequestRaw(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=agent&collectionId=99999999-9999-9999-9999-999999999999", "", ownerCookies, "")
-	if crossOwnerStatus != http.StatusBadRequest || missingStatus != http.StatusBadRequest || crossOwnerBody != missingBody {
-		t.Fatalf("cross-owner/missing collection responses = %d %q / %d %q", crossOwnerStatus, crossOwnerBody, missingStatus, missingBody)
+		if len(scoped.Documents) != 3 {
+			t.Fatalf("search with %s = %s", scope, body)
+		}
 	}
 	if got := doIntegrationStatus(t, http.MethodGet, server.URL+"/api/v1/docs/search?q=%21%21%21", "", ownerCookies, ""); got != http.StatusBadRequest {
 		t.Fatalf("empty parsed query status = %d", got)

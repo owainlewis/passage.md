@@ -3,7 +3,7 @@
 import { Dispatch, SetStateAction, useRef, useState } from "react";
 import { apiShareDoc, apiUnshareDoc, apiUpdateDoc, ProRequiredError } from "./editor-api";
 import { titleOf } from "./doc-utils";
-import { ALL_DOCUMENTS, Doc, DocumentFilter, newestTimestamp, SaveState, ShareState } from "./editor-model";
+import { Doc, newestTimestamp, SaveState, ShareState } from "./editor-model";
 import { PendingSave } from "./use-editor-documents";
 
 const SHARE_PRO = "Share links are part of Passage Pro.";
@@ -20,7 +20,6 @@ type EditorSharingOptions = {
   setDocs: Dispatch<SetStateAction<Doc[]>>;
   setPendingSave: Dispatch<SetStateAction<PendingSave | null>>;
   setSaveState: Dispatch<SetStateAction<SaveState>>;
-  setDocumentFilter: Dispatch<SetStateAction<DocumentFilter>>;
 };
 
 export function useEditorSharing({
@@ -33,8 +32,7 @@ export function useEditorSharing({
   showUpgrade,
   setDocs,
   setPendingSave,
-  setSaveState,
-  setDocumentFilter
+  setSaveState
 }: EditorSharingOptions) {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const copyTimer = useRef<number | undefined>(undefined);
@@ -86,10 +84,6 @@ export function useEditorSharing({
             doc.id === saved.id
               ? {
                   ...saved,
-                  collectionId: doc.collectionId,
-                  collectionSlug: doc.collectionSlug,
-                  starred: doc.starred,
-                  pinned: doc.pinned,
                   updatedAt: newestTimestamp(doc.updatedAt, saved.updatedAt)
                 }
               : doc
@@ -112,7 +106,6 @@ export function useEditorSharing({
         );
       }
       await copyURL(new URL(htmlPath, window.location.origin).toString());
-      setDocumentFilter(ALL_DOCUMENTS);
       setShareState("copied");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
       return true;
@@ -155,7 +148,6 @@ export function useEditorSharing({
       setDocs((prev) =>
         prev.map((doc) => (doc.id === active.id ? { ...doc, shareToken: null, sharedAt: null, updatedAt } : doc))
       );
-      setDocumentFilter(ALL_DOCUMENTS);
       setShareState("unshared");
       copyTimer.current = window.setTimeout(() => setShareState("idle"), 1800);
       return true;
