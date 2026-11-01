@@ -158,8 +158,10 @@
   color: var(--w-ink);
 }
 
+/* Only a menu trigger holds its pressed look; the documents toggle would
+   otherwise sit grey beside the open list. */
 .wIconButton:active,
-.wIconButton[aria-expanded="true"] {
+.wMenuWrap .wIconButton[aria-expanded="true"] {
   background: var(--w-press);
   color: var(--w-ink);
 }
@@ -367,6 +369,7 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   padding: 0 var(--w-3);
 }
 
+/* Looks like a field, opens the search dialog. */
 .wSearch {
   display: flex;
   flex: 1;
@@ -375,95 +378,66 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   min-width: 0;
   height: var(--w-control);
   padding: 0 var(--w-3);
+  border: 0;
   border-radius: var(--w-radius);
   background: var(--w-hover);
   color: var(--w-faint);
-  cursor: text;
-  transition: background-color 120ms ease, box-shadow 120ms ease;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.wSearch:focus-within {
-  background: var(--w-raised);
-  box-shadow: 0 0 0 1px var(--w-rule), 0 1px 2px rgba(0, 0, 0, 0.04);
+.wSearch:hover {
+  background: var(--w-press);
+  color: var(--w-muted);
 }
 
 .wSearch svg {
   flex: none;
 }
 
-.wSearch input {
+.wSearch span {
   flex: 1;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--w-ink);
-  font: inherit;
-  font-size: 14px;
-}
-
-.wSearch input:focus-visible {
-  outline: none;
-}
-
-.wSearch input::placeholder {
-  color: var(--w-faint);
-}
-
-.wSearch input::-webkit-search-cancel-button {
-  display: none;
-}
-
-.wSearch:focus-within kbd {
-  visibility: hidden;
 }
 
 .wDocList {
+  display: grid;
+  align-content: start;
+  gap: 2px;
   overflow-y: auto;
   padding: var(--w-1) var(--w-3) var(--w-5);
   overscroll-behavior: contain;
 }
 
+/* One line per document: title on the left, when it changed on the right. */
 .wDocRow {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: var(--w-3);
   min-width: 0;
-  gap: 2px;
   width: 100%;
-  padding: var(--w-2) var(--w-3);
+  height: var(--w-control);
+  padding: 0 var(--w-3);
   border: 0;
   border-radius: var(--w-radius);
   background: transparent;
   color: var(--w-ink-2);
   text-align: left;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.wDocRow:hover,
-.wDocRow[data-highlight] {
+.wDocRow:hover {
   background: var(--w-hover);
-}
-
-.wDocRow[aria-current="page"] {
-  background: var(--w-press);
   color: var(--w-ink);
 }
 
-.wDocHead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--w-2);
-  min-width: 0;
-}
-
-/* A quiet mark, so a public document is never a surprise. */
-.wDocShared {
-  flex: none;
-  color: var(--w-accent);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
+/* The open document reads as a card lifted off the list, so it never looks
+   like the row under the pointer. */
+.wDocRow[aria-current="page"] {
+  background: var(--w-raised);
+  box-shadow: 0 0 0 1px var(--w-rule), 0 1px 2px rgba(0, 0, 0, 0.04);
+  color: var(--w-ink);
 }
 
 .wDocTitle {
@@ -477,21 +451,22 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   white-space: nowrap;
 }
 
-.wDocMeta,
-.wDocExcerpt {
-  overflow: hidden;
+.wDocMeta {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--w-2);
   color: var(--w-faint);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   line-height: 16px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wDocExcerpt {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  white-space: normal;
+/* A quiet mark, so a public document is never a surprise. */
+.wDocShared {
+  color: var(--w-accent);
+  font-weight: 500;
 }
 
 .wDocEmpty {
@@ -528,6 +503,119 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   from {
     opacity: 0;
   }
+}
+
+/* ---------------------------------------------------------------- palette */
+
+.wModalBackdrop[data-variant="palette"] {
+  place-items: start center;
+  padding-top: 14vh;
+}
+
+.wModal[data-variant="palette"] {
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(520px, 72vh);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+}
+
+.wPaletteField {
+  display: flex;
+  align-items: center;
+  gap: var(--w-3);
+  height: 52px;
+  /* The icon lines up with the result titles below: list padding plus row padding. */
+  padding: 0 var(--w-4) 0 calc(var(--w-2) + var(--w-3));
+  border-bottom: 1px solid var(--w-rule);
+  color: var(--w-faint);
+}
+
+.wPaletteField svg {
+  flex: none;
+}
+
+.wPaletteField input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--w-ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+.wPaletteField input:focus-visible {
+  outline: none;
+}
+
+.wPaletteField input::placeholder {
+  color: var(--w-faint);
+}
+
+.wPaletteField input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.wPaletteField kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--w-rule);
+  border-radius: 6px;
+  color: var(--w-faint);
+  font-family: var(--w-ui);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.wPaletteList {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  overflow-y: auto;
+  padding: var(--w-2);
+  overscroll-behavior: contain;
+}
+
+.wPaletteLabel {
+  margin: 0;
+  padding: var(--w-1) var(--w-3) var(--w-1);
+  color: var(--w-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wPaletteRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--w-3);
+  width: 100%;
+  padding: var(--w-2) var(--w-3);
+  border: 0;
+  border-radius: var(--w-radius);
+  background: transparent;
+  color: var(--w-ink-2);
+  text-align: left;
+}
+
+.wPaletteRow[data-highlight] {
+  background: var(--w-press);
+  color: var(--w-ink);
+}
+
+.wPaletteExcerpt {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--w-faint);
+  font-size: 13px;
+  line-height: 18px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 /* ----------------------------------------------------------------- notice */
@@ -1133,8 +1221,13 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
     scrollbar-gutter: auto;
   }
 
-  .wSearch kbd {
+  .wSearch kbd,
+  .wPaletteField kbd {
     display: none;
+  }
+
+  .wModalBackdrop[data-variant="palette"] {
+    padding: var(--w-2);
   }
 
   .wDetailsExtra {

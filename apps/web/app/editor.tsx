@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { flushSync } from "react-dom";
 import { PendingStatus, useAuth } from "./auth";
 import { titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { DocumentDrawer } from "./editor-drawer";
+import { SearchDialog } from "./editor-search-dialog";
 import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
 import { currentWorkspaceLocation } from "./editor-workspace-location";
 import { useEntitlements } from "./entitlements";
@@ -58,6 +58,7 @@ function isMac() {
 export default function Editor() {
   const [source, setSource] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
   const [shareDialogDocId, setShareDialogDocId] = useState("");
   const [copied, setCopied] = useState(false);
@@ -69,8 +70,7 @@ export default function Editor() {
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const visualRef = useRef<{ focus: () => void }>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const focusNewDocument = useRef(false);
+  const focusOnOpen = useRef(false);
   const overlay = useMediaQuery(OVERLAY_QUERY);
   const mod = isMac() ? "⌘" : "Ctrl+";
 
@@ -146,16 +146,14 @@ export default function Editor() {
     }
   }, []);
 
-  // Focus lands in the same task as the shortcut, so the first letters typed
-  // after ⌘K go to the search box and never into the document.
-  const openSearch = useCallback(() => {
-    flushSync(() => setDrawerOpen(true));
-    searchRef.current?.focus();
-    searchRef.current?.select();
-  }, []);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
 
+  // Two frames, so a dialog that just closed has handed focus back to its
+  // trigger before the editor takes it.
   const focusEditor = useCallback(() => {
-    requestAnimationFrame(() => (source ? textareaRef.current?.focus() : visualRef.current?.focus()));
+    requestAnimationFrame(() => requestAnimationFrame(() => (
+      source ? textareaRef.current?.focus() : visualRef.current?.focus()
+    )));
   }, [source]);
 
   // The chrome steps back while you type and returns when you reach for the
@@ -224,15 +222,16 @@ export default function Editor() {
     if (location.shouldReplace) window.history.replaceState(null, "", location.canonicalPath);
   }, []);
 
-  // A document created from New should be ready to type into. This runs after
-  // the editor has actually mounted, which is why it is an effect.
+  // A document created from New, or opened from the list or search, should be
+  // ready to type into. Its body may still be loading, so this runs once the
+  // editor has actually mounted, which is why it is an effect.
   useEffect(() => {
-    if (!focusNewDocument.current) return;
+    if (!focusOnOpen.current || activeLoading || !active?.bodyLoaded) return;
     const element = source ? textareaRef.current : visualRef.current;
     if (!element) return;
-    focusNewDocument.current = false;
+    focusOnOpen.current = false;
     element.focus();
-  }, [source, activeId, active?.bodyLoaded]);
+  }, [source, activeId, active?.bodyLoaded, activeLoading]);
 
   // Textareas without field-sizing grow by hand.
   useEffect(() => {
@@ -288,7 +287,7 @@ export default function Editor() {
       .then((created) => {
         if (!created) return;
         setRoutePublicId(created.publicId ?? "");
-        focusNewDocument.current = true;
+        focusOnOpen.current = true;
         if (overlay) setDrawerOpen(false);
       })
       .finally(() => setCreatingDocument(false));
@@ -300,6 +299,7 @@ export default function Editor() {
     setRoutePublicId(doc.publicId ?? "");
     selectDoc(existing ?? doc, "push");
     if (overlay) setDrawerOpen(false);
+    focusOnOpen.current = true;
     focusEditor();
   }
 
@@ -385,12 +385,11 @@ export default function Editor() {
         loadError={documentIndexError}
         open={drawerOpen}
         overlay={overlay}
-        searchInput={searchRef}
-        searchPaused={Boolean(userId && pendingSave)}
-        userId={userId}
+        searchHint={`${mod}K`}
         onClose={() => setDrawer(false)}
         onLoadMore={() => void loadMoreDocs()}
         onOpen={openDocument}
+        onSearch={openSearch}
       />
 
       <div className="wMain">
@@ -434,7 +433,9 @@ export default function Editor() {
             >
               <PlusIcon />
             </button>
-            {ready && <MenuButton label="Document actions" icon={<MoreIcon />} items={documentItems} />}
+            {/* Always in the bar, so the buttons beside it never shift as a
+                document loads. */}
+            <MenuButton label="Document actions" icon={<MoreIcon />} items={documentItems} disabled={!ready} />
             <button
               type="button"
               className="wIconButton"
@@ -541,6 +542,15 @@ export default function Editor() {
 
       {authError && <p className="wToast" role="alert">{authError}</p>}
 
+      {searchOpen && (
+        <SearchDialog
+          docs={docsReady ? docs : []}
+          searchPaused={Boolean(userId && pendingSave)}
+          userId={userId}
+          onClose={() => setSearchOpen(false)}
+          onOpen={openDocument}
+        />
+      )}
       {shareDialogOpen && active && (
         <DocumentShareDialog
           activeShared={activeShared}

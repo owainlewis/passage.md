@@ -183,7 +183,7 @@ function openWorkspaceSearch() {
 
 async function openDocumentFromSearch(name: string | RegExp) {
   openWorkspaceSearch();
-  const list = screen.getByRole("navigation", { name: "All documents" });
+  const list = screen.getByRole("group", { name: "Search results" });
   fireEvent.click(await within(list).findByRole("button", { name }));
   await screen.findByRole("region", { name: "Markdown editor" });
 }
@@ -2451,10 +2451,37 @@ describe("Writer", () => {
     const search = screen.getByRole("searchbox", { name: "Search documents" });
     await waitFor(() => expect(search).toHaveFocus());
     fireEvent.change(search, { target: { value: "calm" } });
-    await waitFor(() => expect(within(screen.getByRole("navigation", { name: "All documents" })).getAllByRole("button")).toHaveLength(1));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Search results" })).getAllByRole("button")).toHaveLength(1));
     fireEvent.keyDown(search, { key: "Enter" });
 
     await waitFor(() => expect(window.location.pathname).toBe("/write/two"));
+  });
+
+  it("opens search from the document list with recent documents first and closes on Escape", async () => {
+    stubSignedInFetch([
+      { id: "doc-1", publicId: "one", body: "# Older", updatedAt: "2026-08-01T10:00:00Z" },
+      { id: "doc-2", publicId: "two", body: "# Newer", updatedAt: "2026-08-02T10:00:00Z" }
+    ]);
+    await renderWrite();
+
+    openDrawer();
+    fireEvent.click(within(screen.getByRole("complementary", { name: "Documents" })).getByRole("button", { name: "Search documents" }));
+    const dialog = screen.getByRole("dialog", { name: "Search documents" });
+    const titles = within(dialog).getAllByRole("button").map((row) => row.querySelector(".wDocTitle")?.textContent);
+    expect(titles).toEqual(["Newer", "Older"]);
+
+    fireEvent.keyDown(within(dialog).getByRole("searchbox", { name: "Search documents" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Search documents" })).not.toBeInTheDocument();
+  });
+
+  it("keeps document actions in the bar while the document loads, so nothing beside it shifts", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Steady" }]);
+    render(<Write />);
+
+    // The bar's first render, before any document has loaded.
+    await screen.findByRole("button", { name: "New document" });
+    expect(screen.getByRole("button", { name: "Document actions" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Document actions" })).toBeEnabled());
   });
 
   it("shows the Markdown source with the keyboard and goes back", async () => {
