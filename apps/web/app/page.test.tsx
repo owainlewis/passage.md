@@ -1409,7 +1409,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Create link" }));
 
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -1425,7 +1425,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
 
-    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -1506,7 +1506,7 @@ describe("Write (editor)", () => {
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
     // The action menu keeps the link reachable after publishing.
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
     expect(screen.getByRole("menuitem", { name: "Copy share link" })).toBeInTheDocument();
@@ -2355,7 +2355,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByText("Shared", { selector: ".wFooter span" })).toBeInTheDocument();
+    expect(await screen.findByText("Shared", { selector: ".wDetails span" })).toBeInTheDocument();
   });
 
   it("unshares a signed-in document", async () => {
@@ -2383,10 +2383,10 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     makeActiveDocumentPrivate();
 
-    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
       method: "DELETE",
       credentials: "include"

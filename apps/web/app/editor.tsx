@@ -411,6 +411,13 @@ export default function Editor() {
                 Markdown
               </button>
             )}
+            {ready && (
+              <div className="wDetails" aria-label="Document details">
+                <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
+                {words >= 200 && <span className="wDetailsExtra">{Math.max(1, Math.round(words / 230))} min read</span>}
+                {activeShared && <span>Shared</span>}
+              </div>
+            )}
           </div>
           <div className="wBarGroup">
             <span className="wStatus" role="status" data-error={saveState === "error" || undefined}>{status}</span>
@@ -525,13 +532,6 @@ export default function Editor() {
           </div>
         </section>
 
-        {ready && (
-          <footer className="wFooter" aria-label="Document details">
-            <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
-            {words >= 200 && <span>{Math.max(1, Math.round(words / 230))} min read</span>}
-            {activeShared && <span>Shared</span>}
-          </footer>
-        )}
       </div>
 
       {authError && <p className="wToast" role="alert">{authError}</p>}

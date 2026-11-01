@@ -92,7 +92,7 @@
 
 .wMain {
   display: grid;
-  grid-template-rows: var(--w-bar) auto minmax(0, 1fr) var(--w-7);
+  grid-template-rows: var(--w-bar) auto minmax(0, 1fr);
   height: 100%;
   margin-left: 0;
   transition: margin-left 260ms var(--w-ease);
@@ -104,13 +104,11 @@
 
 /* -------------------------------------------------------------------- bar */
 
-.wBar,
-.wFooter {
+.wBar {
   transition: opacity 180ms ease;
 }
 
-.writer[data-typing] .wBar,
-.writer[data-typing] .wFooter {
+.writer[data-typing] .wBar {
   opacity: 0;
   transition-duration: 700ms;
 }
@@ -182,6 +180,23 @@
 
 .wStatus:empty {
   display: none;
+}
+
+.wDetails {
+  display: flex;
+  align-items: center;
+  gap: var(--w-2);
+  min-width: 0;
+  padding: 0 var(--w-2);
+  color: var(--w-faint);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wDetails span + span::before {
+  content: "·";
+  margin-right: var(--w-2);
 }
 
 .wStatus[data-error] {
@@ -608,21 +623,6 @@
   max-width: calc(var(--w-measure) + 2 * var(--w-5));
   margin: 0 auto;
   padding: var(--w-8) var(--w-5) 40vh;
-}
-
-.wFooter {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--w-4);
-  color: var(--w-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.wFooter span + span::before {
-  content: "·";
-  margin-right: var(--w-4);
 }
 
 .wEmpty {
@@ -1118,6 +1118,10 @@
     display: none;
   }
 
+  .wDetailsExtra {
+    display: none;
+  }
+
   .wNotice {
     width: calc(100% - 2 * var(--w-4));
   }
@@ -1127,8 +1131,7 @@
   .wMain,
   .wDrawer,
   .wDrawer[data-open="true"],
-  .wBar,
-  .wFooter {
+  .wBar {
     transition: none;
   }
 
