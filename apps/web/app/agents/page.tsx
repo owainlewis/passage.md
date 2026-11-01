@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Brand } from "../brand";
-import { claudeCodeCommand, MCP_URL } from "../mcp";
+import { claudeCodeCommandLines, MCP_URL } from "../mcp";
 
 const clientConfig = `{
   "mcpServers": {
@@ -75,7 +75,7 @@ export default function AgentsPage() {
               <h3>Claude Code</h3>
               <p>Run this once with your token. Passage is then available in every session.</p>
               <pre>
-                <code>{claudeCodeCommand()}</code>
+                <code>{claudeCodeCommandLines()}</code>
               </pre>
             </div>
             <div className="agentsPanel">

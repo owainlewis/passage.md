@@ -399,11 +399,9 @@ describe("Agents page", () => {
 
     expect(screen.getByRole("heading", { name: "Connect your agents to Passage." })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Create an API token" })).toHaveAttribute("href", "/account");
-    expect(
-      screen.getByText(
-        'claude mcp add --transport http passage https://passage.md/mcp --header "Authorization: Bearer psg_..."'
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText(/claude mcp add --transport http passage/)).toHaveTextContent(
+      'https://passage.md/mcp \\ --header "Authorization: Bearer psg_..."'
+    );
     for (const tool of ["search_documents", "read_document", "edit_document", "append_to_document"]) {
       expect(screen.getByText(tool)).toBeInTheDocument();
     }

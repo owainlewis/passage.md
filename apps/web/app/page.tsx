@@ -6,7 +6,7 @@ import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
 import { MoreIcon, PanelIcon, PlusIcon, SearchIcon } from "./icons";
 import { MerchantLink, SupportLink } from "./legal";
-import { MCP_URL } from "./mcp";
+import { claudeCodeCommandLines } from "./mcp";
 import styles from "./landing.module.css";
 
 const principles = [
@@ -183,8 +183,7 @@ function LandingContent() {
           </div>
           <pre className={styles.terminal}>
             <code>
-              <span className={styles.prompt}>$</span> claude mcp add --transport http passage {MCP_URL} --header
-              &quot;Authorization: Bearer psg_...&quot;
+              <span className={styles.prompt}>$</span> {claudeCodeCommandLines()}
             </code>
           </pre>
         </section>
