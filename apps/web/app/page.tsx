@@ -6,6 +6,7 @@ import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
 import { MoreIcon, PanelIcon, PlusIcon, SearchIcon } from "./icons";
 import { MerchantLink, SupportLink } from "./legal";
+import { MCP_URL } from "./mcp";
 import styles from "./landing.module.css";
 
 const principles = [
@@ -19,7 +20,7 @@ const principles = [
   },
   {
     title: "Plain Markdown",
-    body: "Write with headings, lists and quotes as you type, or flip to the raw text with ⌘/. Copy it, download it, or read it from the CLI."
+    body: "Write with headings, lists and quotes as you type, or flip to the raw text with ⌘/. Copy it, download it, or hand it to an agent."
   }
 ];
 
@@ -96,7 +97,7 @@ function LandingContent() {
       <header className={styles.nav}>
         <Brand />
         <nav className={styles.navLinks} aria-label="Main navigation">
-          <Link href="/cli">CLI</Link>
+          <Link href="/agents">Agents</Link>
           {isPro ? <Link href="/account">Account</Link> : <a href="#pricing">Go Pro</a>}
           {showSignIn && <Link href="/login">Sign in</Link>}
           <Link className={styles.navCta} href={primaryHref}>
@@ -173,25 +174,24 @@ function LandingContent() {
           <div>
             <h2 className={styles.sectionTitle}>Your agents can read it too.</h2>
             <p>
-              With Pro, the CLI and API give your agents the same private Markdown you write in. They can list it, read
-              it and add to it. Share a read-only page only when you choose.
+              With Pro, Passage&apos;s MCP server lets Claude Code, Cursor and other agents search, read and edit the same
+              private Markdown you write in. They edit on top of your latest text, and they can&apos;t share or delete.
             </p>
-            <Link className={styles.textLink} href="/cli">
-              Read the CLI guide
+            <Link className={styles.textLink} href="/agents">
+              Connect an agent
             </Link>
           </div>
           <pre className={styles.terminal}>
             <code>
-              <span className={styles.prompt}>$</span> passage list{"\n"}
-              <span className={styles.prompt}>$</span> passage cat &lt;doc-id&gt;{"\n"}
-              <span className={styles.prompt}>$</span> passage append &lt;doc-id&gt; ./notes.md
+              <span className={styles.prompt}>$</span> claude mcp add --transport http passage {MCP_URL} --header
+              &quot;Authorization: Bearer psg_...&quot;
             </code>
           </pre>
         </section>
 
         <section className={styles.pricing} id="pricing">
           <h2 className={styles.sectionTitle}>Simple pricing</h2>
-          <p className={styles.pricingSub}>Start for free. Upgrade when you want more room, sharing, or the CLI.</p>
+          <p className={styles.pricingSub}>Start for free. Upgrade when you want more room, sharing, or your agents.</p>
           <div className={styles.plans}>
             <div className={styles.plan}>
               <p className={styles.planName}>Free</p>
@@ -245,7 +245,7 @@ function LandingContent() {
         <nav className={styles.footerLinks} aria-label="Footer links">
           <Link href={primaryHref}>{primaryLabel}</Link>
           {showSignIn && <Link href="/login">Sign in</Link>}
-          <Link href="/cli">CLI</Link>
+          <Link href="/agents">Agents</Link>
           <a href="#pricing">Pricing</a>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>

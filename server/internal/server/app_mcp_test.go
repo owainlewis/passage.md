@@ -85,3 +85,11 @@ func TestMCPReadsOnlyTheTokenOwnersDocuments(t *testing.T) {
 		t.Fatalf("another owner's document leaked: %s", body)
 	}
 }
+
+func TestOldCLIGuideRedirectsToTheAgentsGuide(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	newMCPTestApp().Routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/cli", nil))
+	if recorder.Code != http.StatusMovedPermanently || recorder.Header().Get("Location") != "/agents" {
+		t.Fatalf("status = %d, location = %q", recorder.Code, recorder.Header().Get("Location"))
+	}
+}

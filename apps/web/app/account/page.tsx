@@ -6,6 +6,7 @@ import { AuthBoundary, RoutePending, SessionError, useAuth } from "../auth";
 import { Brand } from "../brand";
 import { formatDocumentCount, isNearDocumentLimit } from "../document-limits";
 import { documentLimitSupportHref, SupportLink } from "../legal";
+import { claudeCodeCommand } from "../mcp";
 import { Theme } from "../editor-model";
 import { useTheme } from "../theme";
 
@@ -225,7 +226,7 @@ function AccountPage() {
           <div className="accountPanel">
             <div className="accountPanelIntro">
               <h2>API tokens</h2>
-              <p>Create tokens for the CLI and API.</p>
+              <p>Create tokens to connect agents over MCP or the API.</p>
             </div>
             <div className="accountPanelBody">
               <TokenManager locked={!isPro} />
@@ -295,7 +296,7 @@ function ThemeChoice() {
 
 function TokenManager({ locked }: { locked: boolean }) {
   const [tokens, setTokens] = useState<APIToken[]>([]);
-  const [tokenName, setTokenName] = useState("CLI");
+  const [tokenName, setTokenName] = useState("Claude Code");
   const [createdToken, setCreatedToken] = useState("");
   const [createdTokenId, setCreatedTokenId] = useState("");
   const [status, setStatus] = useState<TokenStatus>("loading");
@@ -346,7 +347,7 @@ function TokenManager({ locked }: { locked: boolean }) {
       setTokens((prev) => [created.apiToken, ...prev.filter((token) => token.id !== created.apiToken.id)]);
       setCreatedToken(created.token);
       setCreatedTokenId(created.apiToken.id);
-      setTokenName("CLI");
+      setTokenName("Claude Code");
       await copyText(created.token);
       setStatus("copied");
     } catch (err) {
@@ -402,6 +403,15 @@ function TokenManager({ locked }: { locked: boolean }) {
           <code>{createdToken}</code>
           <button type="button" className="tokenCopy" onClick={() => void copyText(createdToken)}>
             {status === "copied" ? "Copied" : "Copy"}
+          </button>
+        </div>
+      )}
+      {createdToken && (
+        <div className="createdToken">
+          <span className="createdTokenLabel">Add to Claude Code</span>
+          <code>{claudeCodeCommand(createdToken)}</code>
+          <button type="button" className="tokenCopy" onClick={() => void copyText(claudeCodeCommand(createdToken))}>
+            Copy
           </button>
         </div>
       )}

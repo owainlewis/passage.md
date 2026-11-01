@@ -612,13 +612,13 @@ button {
 
 /* ---------------------------------------------------------------- CLI page */
 
-.cliPage {
+.agentsPage {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
 }
 
-.cliNav {
+.agentsNav {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -629,7 +629,7 @@ button {
   border-bottom: 1px solid var(--hairline);
 }
 
-.cliNavLinks {
+.agentsNavLinks {
   display: flex;
   align-items: center;
   gap: clamp(14px, 3vw, 28px);
@@ -637,26 +637,26 @@ button {
   color: var(--muted);
 }
 
-.cliNavLinks a {
+.agentsNavLinks a {
   transition: color 0.12s ease;
 }
 
-.cliNavLinks a:hover {
+.agentsNavLinks a:hover {
   color: var(--ink);
 }
 
-.cliMain {
+.agentsMain {
   max-width: 68rem;
   margin: 0 auto;
   padding: clamp(44px, 7vw, 84px) clamp(20px, 5vw, 40px) clamp(64px, 8vw, 96px);
 }
 
-.cliHero {
+.agentsHero {
   max-width: 44rem;
   margin-bottom: clamp(48px, 8vw, 80px);
 }
 
-.cliKicker {
+.agentsKicker {
   margin: 0 0 10px;
   color: var(--accent);
   font-size: 0.72rem;
@@ -665,42 +665,42 @@ button {
   text-transform: uppercase;
 }
 
-.cliHero h1,
-.cliSectionHead h2 {
+.agentsHero h1,
+.agentsSectionHead h2 {
   margin: 0;
   color: var(--ink);
   letter-spacing: 0;
 }
 
-.cliHero h1 {
+.agentsHero h1 {
   max-width: 12ch;
   font-size: clamp(2.4rem, 6vw, 4rem);
   line-height: 1.05;
   font-weight: 720;
 }
 
-.cliHero p,
-.cliBody {
+.agentsHero p,
+.agentsBody {
   max-width: 40rem;
   color: var(--ink-soft);
   font-size: 1.05rem;
   line-height: 1.7;
 }
 
-.cliActions {
+.agentsActions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 28px;
 }
 
-.cliBand {
+.agentsBand {
   min-width: 0;
   padding: clamp(34px, 6vw, 56px) 0;
   border-top: 1px solid var(--hairline);
 }
 
-.cliSectionHead {
+.agentsSectionHead {
   display: grid;
   grid-template-columns: minmax(9rem, 0.35fr) minmax(0, 1fr);
   gap: 22px;
@@ -708,19 +708,19 @@ button {
   margin-bottom: 24px;
 }
 
-.cliSectionHead h2 {
+.agentsSectionHead h2 {
   font-size: clamp(1.45rem, 3vw, 2rem);
   line-height: 1.2;
   font-weight: 700;
 }
 
-.cliGrid {
+.agentsGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 
-.cliPanel {
+.agentsPanel {
   min-width: 0;
   border: 1px solid var(--hairline);
   border-radius: 8px;
@@ -728,24 +728,24 @@ button {
   background: var(--surface);
 }
 
-.cliPanel h3 {
+.agentsPanel h3 {
   margin: 0 0 8px;
   font-size: 1rem;
 }
 
-.cliPanel p,
-.cliSteps,
-.cliCommand span {
+.agentsPanel p,
+.agentsSteps,
+.agentsCommand span {
   color: var(--muted);
   font-size: 0.92rem;
   line-height: 1.55;
 }
 
-.cliPanel p {
+.agentsPanel p {
   margin: 0 0 14px;
 }
 
-.cliPage pre {
+.agentsPage pre {
   margin: 18px 0 0;
   padding: 15px 16px;
   border: 1px solid var(--hairline);
@@ -754,34 +754,34 @@ button {
   background: var(--code-bg);
 }
 
-.cliPage pre code,
-.cliCommand code {
+.agentsPage pre code,
+.agentsCommand code {
   font-family: var(--mono);
   color: var(--ink);
 }
 
-.cliPage pre code {
+.agentsPage pre code {
   font-size: 0.84rem;
   line-height: 1.65;
   white-space: pre;
 }
 
-.cliSteps {
+.agentsSteps {
   margin: 0;
   padding-left: 1.4rem;
 }
 
-.cliSteps li {
+.agentsSteps li {
   margin: 0.45rem 0;
   padding-left: 0.18rem;
 }
 
-.cliCommandList {
+.agentsCommandList {
   display: grid;
   gap: 8px;
 }
 
-.cliCommand {
+.agentsCommand {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(16rem, 0.42fr) minmax(0, 1fr);
@@ -791,7 +791,7 @@ button {
   border-bottom: 1px solid var(--hairline);
 }
 
-.cliCommand code {
+.agentsCommand code {
   font-size: 0.84rem;
   overflow-wrap: anywhere;
 }
@@ -1617,25 +1617,25 @@ button {
 
 @media (max-width: 720px) {
 
-  .cliNav {
+  .agentsNav {
     align-items: flex-start;
   }
 
-  .cliMain {
+  .agentsMain {
     padding-top: 38px;
   }
 
-  .cliHero h1 {
+  .agentsHero h1 {
     max-width: 10ch;
   }
 
-  .cliSectionHead,
-  .cliGrid,
-  .cliCommand {
+  .agentsSectionHead,
+  .agentsGrid,
+  .agentsCommand {
     grid-template-columns: 1fr;
   }
 
-  .cliCommand {
+  .agentsCommand {
     gap: 5px;
   }
 

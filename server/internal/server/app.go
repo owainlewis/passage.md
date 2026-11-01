@@ -135,6 +135,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/collections/{slug}", a.collectionsRemoved)
 	mux.HandleFunc("DELETE /api/v1/collections/{slug}", a.collectionsRemoved)
 	mux.HandleFunc("/mcp", a.mcpEndpoint)
+	// The CLI guide was replaced by the agents guide; keep old links working.
+	mux.Handle("GET /cli", http.RedirectHandler("/agents", http.StatusMovedPermanently))
 	mux.HandleFunc("GET /d/{token}", a.limitPublicDocument(a.publicDoc))
 	mux.HandleFunc("GET /write", a.write)
 	mux.HandleFunc("GET /write/{$}", a.write)
