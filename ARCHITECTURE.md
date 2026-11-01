@@ -155,6 +155,14 @@ These commands are an operator trust boundary.
 
 They are not public product APIs and do not share the public CLI's bearer-token restrictions.
 
+### MCP server
+
+`/mcp` serves the Model Context Protocol over stateless Streamable HTTP, so agents can search, read, create and edit documents.
+
+It accepts only bearer API tokens, requires Pro, and calls the same document store and abuse limits as `/api/v1`.
+
+Edits are rebuilt on the latest body and written with the document version guard. See `docs/mcp.md`.
+
 ### Public CLI
 
 The public Go CLI lives in the separate `owainlewis/passage-cli` repository.

@@ -4,7 +4,7 @@ import Account from "./account/page";
 import { AppProviders } from "./app-providers";
 import { ThemeProvider } from "./theme";
 import { AuthProvider } from "./auth";
-import CLIPage from "./cli/page";
+import AgentsPage from "./agents/page";
 import Login from "./login/page";
 import Signup from "./signup/page";
 import Landing from "./page";
@@ -228,8 +228,8 @@ describe("Landing", () => {
 
     expect(screen.getByRole("heading", { name: "A quiet place to write." })).toBeInTheDocument();
     expect(screen.getByText(/a Markdown editor with nothing in the way/)).toBeInTheDocument();
-    for (const cliLink of screen.getAllByRole("link", { name: "CLI" })) {
-      expect(cliLink).toHaveAttribute("href", "/cli");
+    for (const agentsLink of screen.getAllByRole("link", { name: "Agents" })) {
+      expect(agentsLink).toHaveAttribute("href", "/agents");
     }
     expect(await screen.findByText("Passage Pro is active.")).toBeInTheDocument();
     for (const workspaceLink of screen.getAllByRole("link", { name: "Open workspace" })) {
@@ -243,7 +243,7 @@ describe("Landing", () => {
       expect(screen.getByRole("heading", { name })).toBeInTheDocument();
     }
     expect(within(screen.getByRole("list", { name: "Keyboard shortcuts" })).getAllByRole("listitem")).toHaveLength(3);
-    expect(screen.getByRole("link", { name: "Read the CLI guide" })).toHaveAttribute("href", "/cli");
+    expect(screen.getByRole("link", { name: "Connect an agent" })).toHaveAttribute("href", "/agents");
     expect(screen.getByText("$5")).toHaveTextContent("$5 USD / month");
     expect(screen.getByText("Save thousands of documents")).toBeInTheDocument();
     expect(
@@ -393,24 +393,21 @@ describe("Policy pages", () => {
   });
 });
 
-describe("CLI page", () => {
-  it("explains install, auth, core commands, and releases", () => {
-    render(<CLIPage />);
+describe("Agents page", () => {
+  it("explains how to connect an agent over MCP", () => {
+    render(<AgentsPage />);
 
-    expect(screen.getByRole("heading", { name: "Hosted Markdown from your terminal." })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download releases" })).toHaveAttribute(
-      "href",
-      "https://github.com/owainlewis/passage-cli/releases"
+    expect(screen.getByRole("heading", { name: "Connect your agents to Passage." })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create an API token" })).toHaveAttribute("href", "/account");
+    expect(screen.getByText(/claude mcp add --transport http passage/)).toHaveTextContent(
+      'https://passage.md/mcp \\ --header "Authorization: Bearer psg_..."'
     );
-    expect(screen.getByText("passage login")).toBeInTheDocument();
-    expect(screen.getByText("passage auth status --check")).toBeInTheDocument();
-    expect(screen.getByText("passage replace <doc-id> ./draft.md")).toBeInTheDocument();
-    expect(screen.getByText(/Copy the token when it appears/)).toBeInTheDocument();
-    expect(screen.getByText(/Revoke old tokens/)).toBeInTheDocument();
-    expect(screen.getByText(/raw `.md` URLs/)).toBeInTheDocument();
-    expect(screen.getByText((content) => content.includes("/d/<public-id>.md"))).toBeInTheDocument();
-    expect(screen.queryByText((content) => content.includes("/d/<share-token>.md"))).not.toBeInTheDocument();
-    expect(screen.getByText((content) => content.includes("passage unshare <doc-id> revokes both URLs"))).toBeInTheDocument();
+    for (const tool of ["search_documents", "read_document", "edit_document", "append_to_document"]) {
+      expect(screen.getByText(tool)).toBeInTheDocument();
+    }
+    expect(screen.getByText(/Passage only shows it once/)).toBeInTheDocument();
+    expect(screen.getByText(/They cannot\s+share or delete documents/)).toBeInTheDocument();
+    expect(screen.queryByText(/passage-cli/)).not.toBeInTheDocument();
   });
 });
 

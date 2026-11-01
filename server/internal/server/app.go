@@ -42,6 +42,7 @@ type App struct {
 	gcpProjectID        string
 	writesDisabled      bool
 	publicSignupEnabled bool
+	appBaseURL          string
 }
 
 type databasePinger interface {
@@ -74,6 +75,7 @@ func NewApp(static fs.FS, db *database.Pool, opts ...Options) *App {
 		clientIP:            clientIP,
 		writesDisabled:      options.WritesDisabled,
 		publicSignupEnabled: options.PublicSignupEnabled,
+		appBaseURL:          options.AppBaseURL,
 	}
 	if db != nil {
 		app.databaseHealth = db
@@ -132,6 +134,9 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/collections", a.collectionsRemoved)
 	mux.HandleFunc("PATCH /api/v1/collections/{slug}", a.collectionsRemoved)
 	mux.HandleFunc("DELETE /api/v1/collections/{slug}", a.collectionsRemoved)
+	mux.HandleFunc("/mcp", a.mcpEndpoint)
+	// The CLI guide was replaced by the agents guide; keep old links working.
+	mux.Handle("GET /cli", http.RedirectHandler("/agents", http.StatusMovedPermanently))
 	mux.HandleFunc("GET /d/{token}", a.limitPublicDocument(a.publicDoc))
 	mux.HandleFunc("GET /write", a.write)
 	mux.HandleFunc("GET /write/{$}", a.write)

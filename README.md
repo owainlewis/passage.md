@@ -32,7 +32,7 @@ The visual reference is calm minimalism without becoming a local-file writing ap
 
 The technical wedge is agent usefulness without copy-paste, sync folders, or repo setup.
 
-Every saved doc is plain Markdown, private by default, and addressable through web, CLI, and API.
+Every saved doc is plain Markdown, private by default, and addressable through web, MCP, and API.
 
 ## Docs
 
@@ -40,7 +40,7 @@ Every saved doc is plain Markdown, private by default, and addressable through w
 - [Architecture](ARCHITECTURE.md)
 - [Production runbook](docs/production-runbook.md)
 - [Document API contract](docs/document-api.md)
-- [CLI](docs/cli.md)
+- [MCP server](docs/mcp.md)
 - [Project board](https://github.com/users/owainlewis/projects/14)
 - [Goal prompts](docs/goal-prompts.md)
 

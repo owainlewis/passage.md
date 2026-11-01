@@ -4,6 +4,8 @@ This is the stable HTTP contract for Passage document clients.
 
 The CLI and agent clients should build against this document instead of server handlers.
 
+Agents should usually connect through the [MCP server](mcp.md) instead, which wraps these routes.
+
 Base URL examples use `http://localhost:8080` for local development.
 
 Production examples should replace that with the hosted Passage origin.
