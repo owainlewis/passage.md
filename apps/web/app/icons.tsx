@@ -72,3 +72,20 @@ export function CloseIcon() {
     </Icon>
   );
 }
+
+export function SunIcon() {
+  return (
+    <Icon>
+      <circle cx="12" cy="12" r="3.75" />
+      <path d="M12 3.75v1.5M12 18.75v1.5M3.75 12h1.5M18.75 12h1.5M6.17 6.17l1.06 1.06M16.77 16.77l1.06 1.06M6.17 17.83l1.06-1.06M16.77 7.23l1.06-1.06" />
+    </Icon>
+  );
+}
+
+export function MoonIcon() {
+  return (
+    <Icon>
+      <path d="M19.25 14.5A7.5 7.5 0 0 1 9.5 4.75a7.5 7.5 0 1 0 9.75 9.75Z" />
+    </Icon>
+  );
+}

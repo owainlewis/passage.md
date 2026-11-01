@@ -27,7 +27,7 @@
   --w-bar: 56px;
   --w-control: 36px;
   --w-drawer: 304px;
-  --w-measure: 640px;
+  --w-measure: 580px;
   --w-radius: 8px;
   --w-radius-lg: 14px;
 
@@ -92,7 +92,7 @@
 
 .wMain {
   display: grid;
-  grid-template-rows: var(--w-bar) auto minmax(0, 1fr) var(--w-7);
+  grid-template-rows: var(--w-bar) auto minmax(0, 1fr);
   height: 100%;
   margin-left: 0;
   transition: margin-left 260ms var(--w-ease);
@@ -104,13 +104,11 @@
 
 /* -------------------------------------------------------------------- bar */
 
-.wBar,
-.wFooter {
+.wBar {
   transition: opacity 180ms ease;
 }
 
-.writer[data-typing] .wBar,
-.writer[data-typing] .wFooter {
+.writer[data-typing] .wBar {
   opacity: 0;
   transition-duration: 700ms;
 }
@@ -125,6 +123,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--w-4);
+  min-width: 0;
   padding: 0 var(--w-3);
 }
 
@@ -133,6 +132,11 @@
   align-items: center;
   gap: var(--w-1);
   min-width: 0;
+}
+
+/* The controls keep their size; only the details on the left give way. */
+.wBarGroup:last-child {
+  flex: none;
 }
 
 .wIconButton {
@@ -154,8 +158,10 @@
   color: var(--w-ink);
 }
 
+/* Only a menu trigger holds its pressed look; the documents toggle would
+   otherwise sit grey beside the open list. */
 .wIconButton:active,
-.wIconButton[aria-expanded="true"] {
+.wMenuWrap .wIconButton[aria-expanded="true"] {
   background: var(--w-press);
   color: var(--w-ink);
 }
@@ -172,7 +178,8 @@
   outline-offset: 2px;
 }
 
-.wStatus {
+.wStatus,
+.wDetails {
   padding: 0 var(--w-2);
   color: var(--w-faint);
   font-size: 13px;
@@ -182,6 +189,32 @@
 
 .wStatus:empty {
   display: none;
+}
+
+/* Truncates rather than pushing into the buttons on a narrow bar. */
+.wDetails {
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.wDetails span + span::before {
+  content: "·";
+  margin: 0 var(--w-2);
+}
+
+.wThemeIcon {
+  display: grid;
+}
+
+.wThemeIcon[data-icon="sun"],
+html[data-theme="dark"] .wThemeIcon[data-icon="moon"] {
+  display: none;
+}
+
+html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
+  display: grid;
 }
 
 .wStatus[data-error] {
@@ -336,6 +369,7 @@
   padding: 0 var(--w-3);
 }
 
+/* Looks like a field, opens the search dialog. */
 .wSearch {
   display: flex;
   flex: 1;
@@ -344,95 +378,66 @@
   min-width: 0;
   height: var(--w-control);
   padding: 0 var(--w-3);
+  border: 0;
   border-radius: var(--w-radius);
   background: var(--w-hover);
   color: var(--w-faint);
-  cursor: text;
-  transition: background-color 120ms ease, box-shadow 120ms ease;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.wSearch:focus-within {
-  background: var(--w-raised);
-  box-shadow: 0 0 0 1px var(--w-rule), 0 1px 2px rgba(0, 0, 0, 0.04);
+.wSearch:hover {
+  background: var(--w-press);
+  color: var(--w-muted);
 }
 
 .wSearch svg {
   flex: none;
 }
 
-.wSearch input {
+.wSearch span {
   flex: 1;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--w-ink);
-  font: inherit;
-  font-size: 14px;
-}
-
-.wSearch input:focus-visible {
-  outline: none;
-}
-
-.wSearch input::placeholder {
-  color: var(--w-faint);
-}
-
-.wSearch input::-webkit-search-cancel-button {
-  display: none;
-}
-
-.wSearch:focus-within kbd {
-  visibility: hidden;
 }
 
 .wDocList {
+  display: grid;
+  align-content: start;
+  gap: 2px;
   overflow-y: auto;
   padding: var(--w-1) var(--w-3) var(--w-5);
   overscroll-behavior: contain;
 }
 
+/* One line per document: title on the left, when it changed on the right. */
 .wDocRow {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: var(--w-3);
   min-width: 0;
-  gap: 2px;
   width: 100%;
-  padding: var(--w-2) var(--w-3);
+  height: var(--w-control);
+  padding: 0 var(--w-3);
   border: 0;
   border-radius: var(--w-radius);
   background: transparent;
   color: var(--w-ink-2);
   text-align: left;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.wDocRow:hover,
-.wDocRow[data-highlight] {
+.wDocRow:hover {
   background: var(--w-hover);
-}
-
-.wDocRow[aria-current="page"] {
-  background: var(--w-press);
   color: var(--w-ink);
 }
 
-.wDocHead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--w-2);
-  min-width: 0;
-}
-
-/* A quiet mark, so a public document is never a surprise. */
-.wDocShared {
-  flex: none;
-  color: var(--w-accent);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
+/* The open document reads as a card lifted off the list, so it never looks
+   like the row under the pointer. */
+.wDocRow[aria-current="page"] {
+  background: var(--w-raised);
+  box-shadow: 0 0 0 1px var(--w-rule), 0 1px 2px rgba(0, 0, 0, 0.04);
+  color: var(--w-ink);
 }
 
 .wDocTitle {
@@ -446,21 +451,22 @@
   white-space: nowrap;
 }
 
-.wDocMeta,
-.wDocExcerpt {
-  overflow: hidden;
+.wDocMeta {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--w-2);
   color: var(--w-faint);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   line-height: 16px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wDocExcerpt {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  white-space: normal;
+/* A quiet mark, so a public document is never a surprise. */
+.wDocShared {
+  color: var(--w-accent);
+  font-weight: 500;
 }
 
 .wDocEmpty {
@@ -497,6 +503,119 @@
   from {
     opacity: 0;
   }
+}
+
+/* ---------------------------------------------------------------- palette */
+
+.wModalBackdrop[data-variant="palette"] {
+  place-items: start center;
+  padding-top: 14vh;
+}
+
+.wModal[data-variant="palette"] {
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(520px, 72vh);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+}
+
+.wPaletteField {
+  display: flex;
+  align-items: center;
+  gap: var(--w-3);
+  height: 52px;
+  /* The icon lines up with the result titles below: list padding plus row padding. */
+  padding: 0 var(--w-4) 0 calc(var(--w-2) + var(--w-3));
+  border-bottom: 1px solid var(--w-rule);
+  color: var(--w-faint);
+}
+
+.wPaletteField svg {
+  flex: none;
+}
+
+.wPaletteField input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--w-ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+.wPaletteField input:focus-visible {
+  outline: none;
+}
+
+.wPaletteField input::placeholder {
+  color: var(--w-faint);
+}
+
+.wPaletteField input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.wPaletteField kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--w-rule);
+  border-radius: 6px;
+  color: var(--w-faint);
+  font-family: var(--w-ui);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.wPaletteList {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  overflow-y: auto;
+  padding: var(--w-2);
+  overscroll-behavior: contain;
+}
+
+.wPaletteLabel {
+  margin: 0;
+  padding: var(--w-1) var(--w-3) var(--w-1);
+  color: var(--w-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wPaletteRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--w-3);
+  width: 100%;
+  padding: var(--w-2) var(--w-3);
+  border: 0;
+  border-radius: var(--w-radius);
+  background: transparent;
+  color: var(--w-ink-2);
+  text-align: left;
+}
+
+.wPaletteRow[data-highlight] {
+  background: var(--w-press);
+  color: var(--w-ink);
+}
+
+.wPaletteExcerpt {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--w-faint);
+  font-size: 13px;
+  line-height: 18px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 /* ----------------------------------------------------------------- notice */
@@ -589,12 +708,15 @@
 
 /* ------------------------------------------------------------------- page */
 
+/* Pinned to the flexible row so it fills the height whether or not a
+   notice takes the row above it. */
 .wPage {
+  grid-row: 3;
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
   scroll-padding-block: var(--w-9);
-  /* Text softens into the bar and the footer instead of being cut off at a
-     hard edge as it scrolls past them. */
+  /* Text softens into the bar and the bottom edge instead of being cut off
+     hard as it scrolls past them. */
   -webkit-mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-8)), transparent calc(100% - var(--w-2)));
   mask-image: linear-gradient(to bottom, transparent, transparent var(--w-2), #000 var(--w-6), #000 calc(100% - var(--w-8)), transparent calc(100% - var(--w-2)));
 }
@@ -608,21 +730,6 @@
   max-width: calc(var(--w-measure) + 2 * var(--w-5));
   margin: 0 auto;
   padding: var(--w-8) var(--w-5) 40vh;
-}
-
-.wFooter {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--w-4);
-  color: var(--w-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.wFooter span + span::before {
-  content: "·";
-  margin-right: var(--w-4);
 }
 
 .wEmpty {
@@ -659,7 +766,7 @@
 .writer .markdown {
   color: var(--w-ink-2);
   font-family: var(--w-prose);
-  font-size: 21px;
+  font-size: 19px;
   font-optical-sizing: auto;
   font-kerning: normal;
   font-variant-ligatures: common-ligatures contextual;
@@ -693,7 +800,7 @@
    light, section heads are medium, and only the smallest lean on bold. */
 .writer .markdown h1 {
   margin: 1.4em 0 0.55em;
-  font-size: 2.15em;
+  font-size: 2em;
   font-weight: 450;
   letter-spacing: -0.022em;
   line-height: 1.1;
@@ -901,7 +1008,7 @@
   color: var(--w-ink-2);
   caret-color: var(--w-accent);
   font-family: var(--w-mono);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.75;
   tab-size: 2;
 }
@@ -1091,7 +1198,7 @@
   }
 
   .writer .markdown {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .writer .markdown h1 {
@@ -1114,7 +1221,16 @@
     scrollbar-gutter: auto;
   }
 
-  .wSearch kbd {
+  .wSearch kbd,
+  .wPaletteField kbd {
+    display: none;
+  }
+
+  .wModalBackdrop[data-variant="palette"] {
+    padding: var(--w-2);
+  }
+
+  .wDetailsExtra {
     display: none;
   }
 
@@ -1127,8 +1243,7 @@
   .wMain,
   .wDrawer,
   .wDrawer[data-open="true"],
-  .wBar,
-  .wFooter {
+  .wBar {
     transition: none;
   }
 

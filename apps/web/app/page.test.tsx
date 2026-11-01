@@ -183,7 +183,7 @@ function openWorkspaceSearch() {
 
 async function openDocumentFromSearch(name: string | RegExp) {
   openWorkspaceSearch();
-  const list = screen.getByRole("navigation", { name: "All documents" });
+  const list = screen.getByRole("group", { name: "Search results" });
   fireEvent.click(await within(list).findByRole("button", { name }));
   await screen.findByRole("region", { name: "Markdown editor" });
 }
@@ -1406,7 +1406,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Create link" }));
 
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -1422,7 +1422,7 @@ describe("Write (editor)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
 
-    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(screen.getByRole("region", { name: "Markdown editor" })).toBeInTheDocument();
   });
 
@@ -1503,7 +1503,7 @@ describe("Write (editor)", () => {
     const copiedUrl = writeText.mock.calls[0][0] as string;
     expect(copiedUrl).toBe("http://localhost:3000/d/public-2");
     // The action menu keeps the link reachable after publishing.
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
     expect(screen.getByRole("menuitem", { name: "Copy share link" })).toBeInTheDocument();
@@ -1702,15 +1702,32 @@ describe("Write (editor)", () => {
     expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });
 
-  it("carries a saved dark theme into the editor without a sidebar control", async () => {
+  it("carries a saved dark theme into the editor without a menu control", async () => {
     localStorage.setItem("passage.theme.v1", "dark");
     await renderWrite();
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
-    expect(screen.getByRole("menuitem", { name: "Light mode" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Light mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("menuitem", { name: "Account" })).toHaveAttribute("href", "/account");
+  });
+
+  it("toggles the theme from the sun and moon button in the editor bar", async () => {
+    await renderWrite();
+
+    const toggle = await screen.findByRole("button", { name: "Dark mode" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBeUndefined());
+    expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });
 
   it("keeps the sign-in action stable while the session check resolves", () => {
@@ -2340,7 +2357,7 @@ describe("Write (editor)", () => {
       method: "POST",
       credentials: "include"
     });
-    expect(await screen.findByText("Shared", { selector: ".wFooter span" })).toBeInTheDocument();
+    expect(await screen.findByText("Shared", { selector: ".wDetails span" })).toBeInTheDocument();
   });
 
   it("unshares a signed-in document", async () => {
@@ -2368,10 +2385,10 @@ describe("Write (editor)", () => {
 
     await renderWrite();
 
-    await screen.findByText("Shared", { selector: ".wFooter span" });
+    await screen.findByText("Shared", { selector: ".wDetails span" });
     makeActiveDocumentPrivate();
 
-    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wFooter span" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Shared", { selector: ".wDetails span" })).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-1/share", {
       method: "DELETE",
       credentials: "include"
@@ -2431,10 +2448,37 @@ describe("Writer", () => {
     const search = screen.getByRole("searchbox", { name: "Search documents" });
     await waitFor(() => expect(search).toHaveFocus());
     fireEvent.change(search, { target: { value: "calm" } });
-    await waitFor(() => expect(within(screen.getByRole("navigation", { name: "All documents" })).getAllByRole("button")).toHaveLength(1));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Search results" })).getAllByRole("button")).toHaveLength(1));
     fireEvent.keyDown(search, { key: "Enter" });
 
     await waitFor(() => expect(window.location.pathname).toBe("/write/two"));
+  });
+
+  it("opens search from the document list with recent documents first and closes on Escape", async () => {
+    stubSignedInFetch([
+      { id: "doc-1", publicId: "one", body: "# Older", updatedAt: "2026-08-01T10:00:00Z" },
+      { id: "doc-2", publicId: "two", body: "# Newer", updatedAt: "2026-08-02T10:00:00Z" }
+    ]);
+    await renderWrite();
+
+    openDrawer();
+    fireEvent.click(within(screen.getByRole("complementary", { name: "Documents" })).getByRole("button", { name: "Search documents" }));
+    const dialog = screen.getByRole("dialog", { name: "Search documents" });
+    const titles = within(dialog).getAllByRole("button").map((row) => row.querySelector(".wDocTitle")?.textContent);
+    expect(titles).toEqual(["Newer", "Older"]);
+
+    fireEvent.keyDown(within(dialog).getByRole("searchbox", { name: "Search documents" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Search documents" })).not.toBeInTheDocument();
+  });
+
+  it("keeps document actions in the bar while the document loads, so nothing beside it shifts", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Steady" }]);
+    render(<Write />);
+
+    // The bar's first render, before any document has loaded.
+    await screen.findByRole("button", { name: "New document" });
+    expect(screen.getByRole("button", { name: "Document actions" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Document actions" })).toBeEnabled());
   });
 
   it("shows the Markdown source with the keyboard and goes back", async () => {

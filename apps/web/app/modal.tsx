@@ -23,12 +23,15 @@ export function Modal({
   children,
   dismissDisabled = false,
   initialFocus,
+  variant,
   onClose
 }: {
   ariaLabel: string;
   children: React.ReactNode;
   dismissDisabled?: boolean;
   initialFocus: RefObject<HTMLElement | null>;
+  // "palette" sits near the top of the screen, wider, for search.
+  variant?: "palette";
   onClose: () => void;
 }) {
   const backdrop = useRef<HTMLDivElement>(null);
@@ -105,6 +108,7 @@ export function Modal({
     <div
       ref={backdrop}
       className="wModalBackdrop"
+      data-variant={variant}
       role="presentation"
       onPointerDown={(event) => {
         backdropPressStarted.current = event.target === event.currentTarget;
@@ -121,6 +125,7 @@ export function Modal({
       <section
         ref={dialog}
         className="wModal"
+        data-variant={variant}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
