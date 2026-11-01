@@ -10,7 +10,7 @@ import { DocumentDrawer } from "./editor-drawer";
 import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
 import { currentWorkspaceLocation } from "./editor-workspace-location";
 import { useEntitlements } from "./entitlements";
-import { MoreIcon, PanelIcon, PlusIcon, SearchIcon, UserIcon } from "./icons";
+import { MoonIcon, MoreIcon, PanelIcon, PlusIcon, SearchIcon, SunIcon, UserIcon } from "./icons";
 import { MenuButton, MenuItem } from "./menu-button";
 import { Modal } from "./modal";
 import { useTheme } from "./theme";
@@ -371,7 +371,6 @@ export default function Editor() {
   const accountItems: MenuItem[] = [
     { kind: "note", label: "Signed in as", detail: auth.user?.email },
     { kind: "separator" },
-    { label: darkActive ? "Light mode" : "Dark mode", onSelect: toggleDarkMode },
     { kind: "link", label: "Account", href: "/account" },
     { label: "Sign out", onSelect: () => void signOut() }
   ];
@@ -429,6 +428,15 @@ export default function Editor() {
               <PlusIcon />
             </button>
             {ready && <MenuButton label="Document actions" icon={<MoreIcon />} items={documentItems} />}
+            <button
+              type="button"
+              className="wIconButton"
+              aria-label={darkActive ? "Switch to light mode" : "Switch to dark mode"}
+              title={darkActive ? "Light mode" : "Dark mode"}
+              onClick={toggleDarkMode}
+            >
+              {darkActive ? <SunIcon /> : <MoonIcon />}
+            </button>
             <MenuButton label="Account" icon={<UserIcon />} items={accountItems} />
           </div>
         </header>

@@ -1705,15 +1705,27 @@ describe("Write (editor)", () => {
     expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });
 
-  it("carries a saved dark theme into the editor without a sidebar control", async () => {
+  it("carries a saved dark theme into the editor without a menu control", async () => {
     localStorage.setItem("passage.theme.v1", "dark");
     await renderWrite();
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
     expect(screen.queryByRole("switch", { name: "Dark mode" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
-    expect(screen.getByRole("menuitem", { name: "Light mode" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Light mode" })).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Account" })).toHaveAttribute("href", "/account");
+  });
+
+  it("toggles the theme from the sun and moon button in the editor bar", async () => {
+    await renderWrite();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Switch to dark mode" }));
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    expect(localStorage.getItem("passage.theme.v1")).toBe("dark");
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to light mode" }));
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBeUndefined());
+    expect(localStorage.getItem("passage.theme.v1")).toBe("light");
   });
 
   it("keeps the sign-in action stable while the session check resolves", () => {
