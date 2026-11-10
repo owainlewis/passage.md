@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { AuthBoundary, useAuth } from "../auth";
-import { Brand } from "../brand";
+import styles from "../auth.module.css";
+import { AuthPage } from "../auth-page";
+import paper from "../paper.module.css";
 
 export default function Login() {
   return (
@@ -38,15 +40,11 @@ function LoginForm() {
   }
 
   return (
-    <main className="loginPage">
-      <header className="loginNav">
-        <Brand href="/" />
-        <Link href="/">Home</Link>
-      </header>
-      <section className="loginShell" aria-labelledby="login-title">
-        <p className="betaLabel">{auth.publicSignupEnabled ? "Welcome back" : "Launch preview"}</p>
-        <h1 id="login-title">Sign in to passage.md</h1>
-        <p className="loginCopy">
+    <AuthPage link={{ href: "/", label: "Home" }}>
+      <section className={styles.shell} aria-labelledby="login-title">
+        <p className={styles.context}>{auth.publicSignupEnabled ? "Welcome back" : "Launch preview"}</p>
+        <h1 className={styles.title} id="login-title">Sign in to Passage</h1>
+        <p className={styles.lead}>
           {auth.publicSignupEnabled ? (
             <>
               New to Passage? <Link href="/signup">Create a free account</Link>.
@@ -55,11 +53,11 @@ function LoginForm() {
             "Public signup is not open yet. Existing account holders can sign in."
           )}
         </p>
-        <form className="loginForm" onSubmit={submit}>
-            <label>
+        <form className={styles.form} onSubmit={submit}>
+            <label className={styles.field}>
               <span>Email</span>
               <input
-                className="authInput"
+                className={styles.input}
                 type="email"
                 name="email"
                 value={email}
@@ -68,10 +66,10 @@ function LoginForm() {
                 required
               />
             </label>
-            <label>
+            <label className={styles.field}>
               <span>Password</span>
               <input
-                className="authInput"
+                className={styles.input}
                 type="password"
                 name="password"
                 value={password}
@@ -80,16 +78,16 @@ function LoginForm() {
                 required
               />
             </label>
-            <Link className="loginTextLink" href="/forgot-password">
+            <Link className={styles.aside} href="/forgot-password">
               Forgot your password?
             </Link>
-            {error && <p className="authError">{error}</p>}
-            <button className="btnPrimary loginSubmit" type="submit" disabled={auth.loading || auth.routeRevalidating}>
+            {error && <p className={styles.notice} data-tone="error" role="alert">{error}</p>}
+            <button className={`${paper.primaryButton} ${styles.submit}`} type="submit" disabled={auth.loading || auth.routeRevalidating}>
               Sign in
             </button>
         </form>
       </section>
-    </main>
+    </AuthPage>
   );
 }
 

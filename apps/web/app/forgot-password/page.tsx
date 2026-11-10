@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { Brand } from "../brand";
+import styles from "../auth.module.css";
+import { AuthPage } from "../auth-page";
+import paper from "../paper.module.css";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -33,20 +34,16 @@ export default function ForgotPassword() {
   }
 
   return (
-    <main className="loginPage">
-      <header className="loginNav">
-        <Brand href="/" />
-        <Link href="/login">Sign in</Link>
-      </header>
-      <section className="loginShell" aria-labelledby="forgot-password-title">
-        <p className="betaLabel">Account recovery</p>
-        <h1 id="forgot-password-title">Reset your password</h1>
-        <p className="loginCopy">Enter your account email and we will send a reset link if the account exists.</p>
-        <form className="loginForm" onSubmit={submit}>
-          <label>
+    <AuthPage link={{ href: "/login", label: "Sign in" }}>
+      <section className={styles.shell} aria-labelledby="forgot-password-title">
+        <p className={styles.context}>Account recovery</p>
+        <h1 className={styles.title} id="forgot-password-title">Reset your password</h1>
+        <p className={styles.lead}>Enter your account email and we will send a reset link if the account exists.</p>
+        <form className={styles.form} onSubmit={submit}>
+          <label className={styles.field}>
             <span>Email</span>
             <input
-              className="authInput"
+              className={styles.input}
               type="email"
               name="email"
               value={email}
@@ -55,13 +52,13 @@ export default function ForgotPassword() {
               required
             />
           </label>
-          {error && <p className="authError" role="alert">{error}</p>}
-          {message && <p className="authSuccess" role="status">{message}</p>}
-          <button className="btnPrimary loginSubmit" type="submit" disabled={submitting}>
+          {error && <p className={styles.notice} data-tone="error" role="alert">{error}</p>}
+          {message && <p className={styles.notice} role="status">{message}</p>}
+          <button className={`${paper.primaryButton} ${styles.submit}`} type="submit" disabled={submitting}>
             {submitting ? "Sending…" : "Send reset link"}
           </button>
         </form>
       </section>
-    </main>
+    </AuthPage>
   );
 }

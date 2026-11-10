@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthBoundary, useAuth } from "../auth";
-import { Brand } from "../brand";
+import styles from "../auth.module.css";
+import { AuthPage } from "../auth-page";
+import paper from "../paper.module.css";
 
 type Referral = { ref: string; code: string; name: string; policyVersion: string };
 
@@ -108,41 +110,37 @@ function SignupForm() {
   }
 
   return (
-    <main className="loginPage">
-      <header className="loginNav">
-        <Brand href="/" />
-        <Link href="/login">Sign in</Link>
-      </header>
+    <AuthPage link={{ href: "/login", label: "Sign in" }}>
       {referral === undefined || (referral === null && auth.loading) ? (
-        <section className="loginShell" aria-label="Checking referral">
-          <p className="betaLabel">{referral === undefined ? "Community access" : "Signup"}</p>
-          <h1>{referral === undefined ? "Checking your invitation" : "Checking availability"}</h1>
+        <section className={styles.shell} aria-label="Checking referral">
+          <p className={styles.context}>{referral === undefined ? "Community access" : "Signup"}</p>
+          <h1 className={styles.title}>{referral === undefined ? "Checking your invitation" : "Checking availability"}</h1>
         </section>
       ) : referral === null && !auth.publicSignupEnabled ? (
-        <section className="loginShell" aria-labelledby="signup-closed-title">
-          <p className="betaLabel">Launch preview</p>
-          <h1 id="signup-closed-title">Passage is not open for signup yet</h1>
-          <p className="loginCopy">
+        <section className={styles.shell} aria-labelledby="signup-closed-title">
+          <p className={styles.context}>Launch preview</p>
+          <h1 className={styles.title} id="signup-closed-title">Passage is not open for signup yet</h1>
+          <p className={styles.lead}>
             If your community includes Passage Pro, use the private signup link they shared with you.
           </p>
-          <Link className="btnPrimary loginSubmit" href="/login">
+          <Link className={`${paper.primaryButton} ${styles.submit}`} href="/login">
             Sign in
           </Link>
         </section>
       ) : (
-        <section className="loginShell" aria-labelledby="signup-title">
-          <p className="betaLabel">{referral?.name ?? "Free account"}</p>
-          <h1 id="signup-title">Create your account</h1>
-          <p className="loginCopy">
+        <section className={styles.shell} aria-labelledby="signup-title">
+          <p className={styles.context}>{referral?.name ?? "Free account"}</p>
+          <h1 className={styles.title} id="signup-title">Create your account</h1>
+          <p className={styles.lead}>
             {referral
               ? "Passage Pro is included with your community membership. No card or checkout is required."
               : "Start free with five saved Markdown documents, preview, Mermaid, and dark mode. No card is required."}
           </p>
-          <form className="loginForm" onSubmit={submit}>
-            <label>
+          <form className={styles.form} onSubmit={submit}>
+            <label className={styles.field}>
               <span>Email</span>
               <input
-                className="authInput"
+                className={styles.input}
                 type="email"
                 name="email"
                 value={email}
@@ -151,10 +149,10 @@ function SignupForm() {
                 required
               />
             </label>
-            <label>
+            <label className={styles.field}>
               <span>Password</span>
               <input
-                className="authInput"
+                className={styles.input}
                 type="password"
                 name="password"
                 value={password}
@@ -164,7 +162,7 @@ function SignupForm() {
                 required
               />
             </label>
-            <label className="policyConsent">
+            <label className={styles.consent}>
               <input
                 type="checkbox"
                 checked={acceptedPolicies}
@@ -176,9 +174,9 @@ function SignupForm() {
                 <Link href="/privacy">Privacy Policy</Link>.
               </span>
             </label>
-            {error && <p className="authError">{error}</p>}
+            {error && <p className={styles.notice} data-tone="error" role="alert">{error}</p>}
             <button
-              className="btnPrimary loginSubmit"
+              className={`${paper.primaryButton} ${styles.submit}`}
               type="submit"
               disabled={auth.loading || auth.routeRevalidating || submitting}
             >
@@ -187,6 +185,6 @@ function SignupForm() {
           </form>
         </section>
       )}
-    </main>
+    </AuthPage>
   );
 }

@@ -1,0 +1,178 @@
+/*
+ * The sign-in pages: sign in, sign up, and password reset.
+ *
+ * One narrow column under the writer's bar. The title is set like the
+ * writer's empty page; everything a reader types into or presses is in the
+ * UI face. Colours, the bar and the button come from paper.module.css.
+ */
+
+.shell {
+  width: min(100% - 40px, 380px);
+  margin: 0 auto;
+  padding: clamp(40px, 11vh, 120px) 0 80px;
+}
+
+/* Says which door this is: a community's name, or that signup is closed. */
+.context {
+  margin: 0 0 12px;
+  color: var(--p-faint);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--p-prose);
+  font-size: 40px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.lead {
+  margin: 12px 0 0;
+  color: var(--p-muted);
+  font-size: 15px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.lead a {
+  color: var(--p-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+/* ------------------------------------------------------------------- form */
+
+.form {
+  display: grid;
+  gap: 20px;
+  margin-top: 32px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  color: var(--p-ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* 16px, so a phone does not zoom the page when the field takes focus. */
+.input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--p-radius);
+  background: var(--p-raised);
+  box-shadow: inset 0 0 0 1px var(--p-rule);
+  color: var(--p-ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  transition: box-shadow 120ms ease;
+}
+
+.input:hover {
+  box-shadow: inset 0 0 0 1px var(--p-faint);
+}
+
+/* A saved password keeps the page's own surface and ink. */
+.input:-webkit-autofill {
+  box-shadow: inset 0 0 0 1px var(--p-rule), inset 0 0 0 100px var(--p-raised);
+  caret-color: var(--p-ink);
+  -webkit-text-fill-color: var(--p-ink);
+}
+
+.aside {
+  justify-self: start;
+  margin-top: -8px;
+  color: var(--p-muted);
+  font-size: 14px;
+  line-height: 20px;
+  text-decoration: underline;
+  text-decoration-color: var(--p-rule);
+  text-underline-offset: 3px;
+  transition: color 120ms ease;
+}
+
+.aside:hover {
+  color: var(--p-ink);
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--p-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.consent input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--p-accent);
+}
+
+.consent a {
+  color: var(--p-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--p-faint);
+  text-underline-offset: 3px;
+}
+
+/* What happened and what to do next, set apart from the form around it. */
+.notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--p-radius);
+  background: var(--p-paper-2);
+  color: var(--p-ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.notice[data-tone="error"] {
+  color: var(--p-danger);
+}
+
+/* The server words its errors in lower case; a sentence starts with a capital. */
+.notice::first-letter {
+  text-transform: uppercase;
+}
+
+.notice a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.shell > .notice,
+.shell > .submit {
+  margin-top: 24px;
+}
+
+.submit {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .title {
+    font-size: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input,
+  .aside {
+    transition: none;
+  }
+}
