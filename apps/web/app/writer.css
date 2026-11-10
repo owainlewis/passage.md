@@ -1839,18 +1839,6 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   outline-color: var(--p-accent);
 }
 
-.wPrompter .wPrompterHint {
-  position: absolute;
-  top: var(--w-5);
-  right: 0;
-  left: 0;
-  margin: 0;
-  color: #7d786f;
-  font-family: var(--w-ui);
-  font-size: 12px;
-  text-align: center;
-}
-
 @media (max-width: 1023px) {
   .wOutline {
     display: none;
@@ -1858,7 +1846,6 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
 }
 
 @media (max-width: 720px) {
-  .wPrompter .wPrompterHint,
   .wBar .wModePill[data-mode="focus"] {
     display: none;
   }

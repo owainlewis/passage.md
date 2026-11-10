@@ -220,7 +220,7 @@ export function Teleprompter({ source, onClose }: { source: string; onClose: () 
         </div>
         <div className="wPrompterGuide" aria-hidden="true" />
         <div className="wPrompterBar" role="toolbar" aria-label="Teleprompter controls">
-          <button type="button" data-primary onMouseDown={keepFocus} onClick={toggle}>{playing ? "Pause" : "Play"}</button>
+          <button type="button" data-primary title={`${playing ? "Pause" : "Play"}  Space`} onMouseDown={keepFocus} onClick={toggle}>{playing ? "Pause" : "Play"}</button>
           <div role="group" aria-label="Speed">
             <button type="button" aria-label="Slower" onMouseDown={keepFocus} onClick={() => change({ wpm: clamp(settings.wpm - WPM.step, WPM) })}>−</button>
             <output>{settings.wpm} wpm</output>
@@ -231,13 +231,10 @@ export function Teleprompter({ source, onClose }: { source: string; onClose: () 
             <output>Size</output>
             <button type="button" aria-label="Larger text" onMouseDown={keepFocus} onClick={() => change({ size: clamp(settings.size + SIZE.step, SIZE) })}>+</button>
           </div>
-          <button type="button" aria-pressed={settings.mirror} onMouseDown={keepFocus} onClick={() => change({ mirror: !settings.mirror })}>Mirror</button>
+          <button type="button" aria-pressed={settings.mirror} title="Mirror  M" onMouseDown={keepFocus} onClick={() => change({ mirror: !settings.mirror })}>Mirror</button>
           <span className="wPrompterClock" role="timer" aria-label="Elapsed and total time">{clock(progress * seconds)} / {clock(seconds)}</span>
-          <button type="button" onMouseDown={keepFocus} onClick={onClose}>Close</button>
+          <button type="button" title="Close  Esc" onMouseDown={keepFocus} onClick={onClose}>Close</button>
         </div>
-        {!playing && (
-          <p className="wPrompterHint">Space to play · ↑ ↓ speed · ← → skip · M mirror · F full screen · Esc to close</p>
-        )}
       </div>
     </Modal>
   );
