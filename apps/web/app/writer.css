@@ -47,6 +47,8 @@
   --w-selection: rgba(61, 106, 93, 0.16);
   --w-shadow: 0 1px 2px rgba(31, 30, 27, 0.06), 0 12px 32px -8px rgba(31, 30, 27, 0.16);
   --w-code: #f0ede6;
+  /* Text that has stepped back in focus mode. Readable, not inviting. */
+  --w-dim: #c3bfb6;
 
   --w-prose: var(--font-prose), "Iowan Old Style", Georgia, serif;
   --w-ui: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -72,6 +74,7 @@
   --w-selection: rgba(147, 184, 170, 0.22);
   --w-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px -8px rgba(0, 0, 0, 0.55);
   --w-code: #22211d;
+  --w-dim: #55524b;
 }
 
 /* ------------------------------------------------------------------ frame */
@@ -91,6 +94,7 @@
 }
 
 .wMain {
+  position: relative;
   display: grid;
   grid-template-rows: var(--w-bar) auto minmax(0, 1fr);
   height: 100%;
@@ -194,9 +198,21 @@
 /* Truncates rather than pushing into the buttons on a narrow bar. */
 .wDetails {
   min-width: 0;
+  height: var(--w-control);
   overflow: hidden;
+  border: 0;
+  border-radius: var(--w-radius);
+  background: transparent;
+  font-family: inherit;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.wDetails:hover,
+.wDetails[aria-expanded="true"] {
+  background: var(--w-hover);
+  color: var(--w-muted);
 }
 
 .wDetails span + span::before {
@@ -292,6 +308,18 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
 
 .wMenuItem[data-danger] {
   color: var(--w-danger);
+}
+
+.wMenuItem:disabled {
+  opacity: 0.45;
+  background: transparent;
+}
+
+/* A mode that is on carries a tick after its name. */
+.wMenuItem[aria-checked="true"] > span:first-child::after {
+  content: "✓";
+  margin-left: var(--w-2);
+  color: var(--w-accent);
 }
 
 .wMenuItem kbd,
@@ -1243,7 +1271,11 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   .wMain,
   .wDrawer,
   .wDrawer[data-open="true"],
-  .wBar {
+  .wBar,
+  .wOutline,
+  .wPrompterBar,
+  .writer .visualEditorContent.wFocusOn,
+  .writer .visualEditorContent.wFocusOn * {
     transition: none;
   }
 
@@ -1278,4 +1310,564 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
 .writer .visualEditorContent {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ stats */
+
+.wStatsWrap {
+  display: flex;
+  min-width: 0;
+}
+
+.wGoalCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: top;
+}
+
+.wGoalCount circle {
+  fill: none;
+  stroke: var(--w-rule);
+  stroke-width: 1.75;
+}
+
+.wGoalCount circle + circle {
+  stroke: var(--w-accent);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 300ms var(--w-ease);
+}
+
+.wGoalCount[data-reached] {
+  color: var(--w-accent);
+}
+
+.wStats {
+  right: auto;
+  left: 0;
+  width: 272px;
+  padding: var(--w-3) var(--w-4) var(--w-4);
+  transform-origin: top left;
+}
+
+.wStats dl {
+  display: grid;
+  gap: var(--w-2);
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.wStats dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--w-4);
+}
+
+.wStats dt {
+  color: var(--w-faint);
+}
+
+.wStats dd {
+  margin: 0;
+  color: var(--w-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.wGoal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--w-3) var(--w-4);
+  margin-top: var(--w-3);
+  padding-top: var(--w-3);
+  border-top: 1px solid var(--w-rule);
+  color: var(--w-ink);
+  font-size: 13px;
+}
+
+.wGoal input {
+  width: 88px;
+  height: 28px;
+  padding: 0 var(--w-2);
+  border: 1px solid var(--w-rule);
+  border-radius: 6px;
+  background: var(--w-paper);
+  color: var(--w-ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wGoal input::placeholder {
+  color: var(--w-faint);
+}
+
+.wGoal p {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--w-2);
+  margin: 0;
+  color: var(--w-faint);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.wGoal progress {
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--w-rule);
+  appearance: none;
+}
+
+.wGoal progress::-webkit-progress-bar {
+  background: var(--w-rule);
+}
+
+.wGoal progress::-webkit-progress-value {
+  background: var(--w-accent);
+}
+
+.wGoal progress::-moz-progress-bar {
+  background: var(--w-accent);
+}
+
+/* ------------------------------------------------------------------ focus */
+
+/* Everything steps back except the sentence being written. It is done
+   with colour rather than opacity so the lit sentence can sit inside a
+   dimmed paragraph. */
+.writer .visualEditorContent.wFocusOn,
+.writer .visualEditorContent.wFocusOn * {
+  color: var(--w-dim);
+  transition: color 260ms ease;
+}
+
+.writer .visualEditorContent.wFocusOn li::marker {
+  color: var(--w-dim);
+}
+
+.writer .visualEditorContent.wFocusOn .wFocusText,
+.writer .visualEditorContent.wFocusOn .wFocusText * {
+  color: var(--w-ink);
+}
+
+.writer .visualEditorContent.wFocusOn > :not(.wFocusBlock) :is(img, input),
+.writer .visualEditorContent.wFocusOn > :is(hr, pre, table):not(.wFocusBlock) {
+  opacity: 0.35;
+}
+
+/* ---------------------------------------------------------------- outline */
+
+.wOutline {
+  position: absolute;
+  top: 50%;
+  right: var(--w-4);
+  z-index: 20;
+  transform: translateY(-50%);
+  transition: opacity 180ms ease;
+}
+
+.writer[data-typing] .wOutline:not(:focus-within) {
+  opacity: 0;
+  transition-duration: 700ms;
+}
+
+.wOutline ol {
+  display: grid;
+  max-height: 70vh;
+  margin: 0;
+  padding: var(--w-2) var(--w-1);
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--w-radius-lg);
+  list-style: none;
+}
+
+.wOutline button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--w-3);
+  width: 100%;
+  height: 12px;
+  padding: 0 var(--w-1);
+  border: 0;
+  border-radius: var(--w-radius);
+  background: transparent;
+  color: var(--w-faint);
+  font-size: 13px;
+  text-align: left;
+}
+
+.wOutlineMark {
+  flex: none;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.wOutline [data-depth="1"] .wOutlineMark {
+  width: 11px;
+}
+
+.wOutline [data-depth="2"] .wOutlineMark {
+  width: 7px;
+}
+
+.wOutline [aria-current] .wOutlineMark {
+  background: var(--w-ink);
+  opacity: 1;
+}
+
+.wOutlineText,
+.wOutlineWords {
+  display: none;
+}
+
+/* Reaching for the marks opens the headings by name. */
+.wOutline:is(:hover, :focus-within) ol {
+  width: 280px;
+  padding: var(--w-1);
+  overflow-y: auto;
+  border-color: var(--w-rule);
+  background: var(--w-raised);
+  box-shadow: var(--w-shadow);
+}
+
+.wOutline:is(:hover, :focus-within) button {
+  justify-content: flex-start;
+  height: 32px;
+  padding: 0 var(--w-3);
+  color: var(--w-ink-2);
+}
+
+.wOutline:is(:hover, :focus-within) button:hover {
+  background: var(--w-hover);
+}
+
+.wOutline:is(:hover, :focus-within) [aria-current] {
+  color: var(--w-ink);
+  font-weight: 500;
+}
+
+.wOutline:is(:hover, :focus-within) .wOutlineMark {
+  display: none;
+}
+
+.wOutline:is(:hover, :focus-within) .wOutlineText {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wOutline:is(:hover, :focus-within) [data-depth="1"] .wOutlineText {
+  padding-left: var(--w-3);
+}
+
+.wOutline:is(:hover, :focus-within) [data-depth="2"] .wOutlineText {
+  padding-left: var(--w-5);
+}
+
+.wOutline:is(:hover, :focus-within) .wOutlineWords {
+  display: block;
+  color: var(--w-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+/* ------------------------------------------------------------ teleprompter */
+
+/* Always light on black, whatever the theme: it is read from a distance,
+   often beside a camera. */
+.wModalBackdrop[data-variant="screen"] {
+  display: block;
+  padding: 0;
+  background: #0b0b0a;
+}
+
+.wModalBackdrop[data-variant="screen"] .wModal {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: #0b0b0a;
+  box-shadow: none;
+  animation: none;
+}
+
+.wPrompter {
+  --p-ink: #f6f3ec;
+  --p-muted: #a39e94;
+  --p-accent: #93b8aa;
+  --p-line: 38vh;
+  /* The chosen size, held to what a narrow screen can set in a line. */
+  --p-font: min(var(--p-size), 9vw);
+
+  position: relative;
+  height: 100%;
+  color: var(--p-ink);
+}
+
+@supports (height: 1dvh) {
+  .wPrompter {
+    --p-line: 38dvh;
+  }
+}
+
+.wPrompter[data-idle] {
+  cursor: none;
+}
+
+.wPrompterProgress {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.wPrompterProgress div {
+  height: 100%;
+  background: var(--p-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.wPrompterScroll {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* The line being read is brightest. What has been said fades out above
+     it, and what is coming waits below. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.3) 14%, #000 32%, #000 60%, rgba(0, 0, 0, 0.25));
+  mask-image: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.3) 14%, #000 32%, #000 60%, rgba(0, 0, 0, 0.25));
+}
+
+.wPrompterScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.wModalBackdrop .wPrompterScroll:focus-visible {
+  outline: none;
+}
+
+/* For teleprompter glass, which reflects the screen. */
+.wPrompterScroll[data-mirror] {
+  transform: scaleX(-1);
+}
+
+/* The script starts on the reading line and ends on it, so the scroll
+   distance is exactly the height of the text. */
+.wPrompterText {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--p-line) 7vw calc(100vh - var(--p-line));
+  font-family: var(--w-ui);
+  font-size: var(--p-font);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1.36;
+  text-wrap: pretty;
+}
+
+@supports (height: 1dvh) {
+  .wPrompterText {
+    padding-bottom: calc(100dvh - var(--p-line));
+  }
+}
+
+.wPrompterText > :first-child {
+  margin-top: 0;
+}
+
+/* The script sits inside a dialog, so the dialog's own paragraph and
+   heading styles are set back to the script's. */
+.wPrompterText :is(p, ul, ol, blockquote) {
+  margin: 0 0 0.85em;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Headings are cues for the speaker, not lines to read. */
+.wPrompterText :is(h1, h2, h3, h4, h5, h6) {
+  margin: 2.4em 0 0.9em;
+  color: var(--p-accent);
+  font-size: 0.4em;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.wPrompterText :is(ul, ol) {
+  padding-left: 1.1em;
+}
+
+.wPrompterText li {
+  margin: 0.25em 0;
+}
+
+.wPrompterText blockquote {
+  padding-left: 0.7em;
+  border-left: 3px solid rgba(255, 255, 255, 0.18);
+  color: var(--p-muted);
+}
+
+.wPrompterText :is(li, blockquote) > p:last-child {
+  margin-bottom: 0;
+}
+
+.wPrompterText a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wPrompterText strong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.wPrompterText hr {
+  margin: 1.2em 0;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.wPrompterText :is(pre, table) {
+  font-size: 0.5em;
+}
+
+.wPrompterText img {
+  display: none;
+}
+
+.wPrompterGuide {
+  position: absolute;
+  top: calc(var(--p-line) + var(--p-font) * 0.68 - 9px);
+  left: 0;
+  border: solid transparent;
+  border-width: 9px 0 9px 13px;
+  border-left-color: var(--p-accent);
+  pointer-events: none;
+}
+
+.wPrompterBar {
+  position: absolute;
+  bottom: var(--w-5);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: var(--w-2);
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(30, 29, 26, 0.92);
+  color: #d2cdc3;
+  font-family: var(--w-ui);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transition: opacity 320ms ease;
+}
+
+.wPrompter[data-idle] .wPrompterBar:not(:focus-within) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wPrompterBar button {
+  height: 32px;
+  padding: 0 var(--w-3);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+}
+
+.wPrompterBar button:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.wPrompterBar button[data-primary] {
+  min-width: 72px;
+  background: var(--p-ink);
+  color: #111110;
+  font-weight: 600;
+}
+
+.wPrompterBar button[aria-pressed="true"] {
+  background: rgba(147, 184, 170, 0.2);
+  color: var(--p-accent);
+}
+
+.wPrompterBar [role="group"] {
+  display: flex;
+  align-items: center;
+}
+
+.wPrompterBar [role="group"] button {
+  width: 30px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.wPrompterBar output {
+  min-width: 58px;
+  text-align: center;
+}
+
+.wPrompterClock {
+  padding: 0 var(--w-2);
+}
+
+.wModalBackdrop .wPrompterBar :focus-visible {
+  outline-color: var(--p-accent);
+}
+
+.wPrompter .wPrompterHint {
+  position: absolute;
+  top: var(--w-5);
+  right: 0;
+  left: 0;
+  margin: 0;
+  color: #7d786f;
+  font-family: var(--w-ui);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 1023px) {
+  .wOutline {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .wPrompter .wPrompterHint,
+  .wBar .wModePill[data-mode="focus"] {
+    display: none;
+  }
+
+  .wPrompterBar {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: max-content;
+    max-width: calc(100% - 2 * var(--w-3));
+    border-radius: 24px;
+  }
 }

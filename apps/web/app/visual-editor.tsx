@@ -4,37 +4,53 @@ import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useStat
 import type { Ref } from "react";
 import { EditorBlockMenu } from "./editor-block-menu";
 import { matchingBlockCommands } from "./editor-block-commands";
+import type { EditorModes, OutlineItem } from "./visual-editor-modes";
 import type { BlockMenuState, VisualEditorHandle } from "./visual-editor-runtime";
 import "@milkdown/kit/prose/view/style/prosemirror.css";
 import "@milkdown/kit/prose/gapcursor/style/gapcursor.css";
 import "@milkdown/kit/prose/tables/style/tables.css";
 
+export type VisualEditorRef = {
+  focus: () => void;
+  revealHeading: (index: number) => void;
+  activeHeading: () => number;
+};
+
 type Props = {
   source: string;
   onChange: (source: string) => void;
   onSource: () => void;
-  ref?: Ref<{ focus: () => void }>;
+  modes?: EditorModes;
+  onOutline?: (items: OutlineItem[]) => void;
+  onSelection?: (words: number) => void;
+  ref?: Ref<VisualEditorRef>;
 };
 
-export function VisualEditor({ source, onChange, onSource, ref }: Props) {
+const NO_MODES: EditorModes = { focus: false };
+
+export function VisualEditor({ source, onChange, onSource, modes = NO_MODES, onOutline, onSelection, ref }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const [blockMenu, setBlockMenu] = useState<BlockMenuState | null>(null);
   const [selectedBlock, setSelectedBlock] = useState(0);
   const blockState = useRef<{ menu: BlockMenuState | null; selected: number }>({ menu: null, selected: 0 });
   const instance = useRef<VisualEditorHandle | null>(null);
-  const latest = useRef({ source, onChange });
+  const latest = useRef({ source, onChange, modes, onOutline, onSelection });
   const wantsFocus = useRef(false);
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported" | "error">("loading");
 
-  useImperativeHandle(ref, () => ({ focus() {
-    wantsFocus.current = true;
-    instance.current?.focus();
-  } }), []);
+  useImperativeHandle(ref, () => ({
+    focus() {
+      wantsFocus.current = true;
+      instance.current?.focus();
+    },
+    revealHeading: (index) => instance.current?.revealHeading(index),
+    activeHeading: () => instance.current?.activeHeading() ?? -1
+  }), []);
 
   useLayoutEffect(() => {
-    latest.current = { source, onChange };
-  }, [source, onChange]);
+    latest.current = { source, onChange, modes, onOutline, onSelection };
+  }, [source, onChange, modes, onOutline, onSelection]);
 
   // The editor stays hidden until it is ready, and a hidden element cannot
   // take focus, so a focus asked for while it loads waits for this render.
@@ -84,9 +100,14 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
             }
             return false;
           }
+        }, {
+          modes: latest.current.modes,
+          onOutline: (items) => { if (!cancelled) latest.current.onOutline?.(items); },
+          onSelection: (words) => { if (!cancelled) latest.current.onSelection?.(words); }
         });
         if (cancelled) { await handle.destroy(); return; }
         handle.setSource(latest.current.source);
+        handle.setModes(latest.current.modes);
         instance.current = handle;
         setStatus("ready");
       } catch (error) {
@@ -110,6 +131,10 @@ export function VisualEditor({ source, onChange, onSource, ref }: Props) {
       setStatus("unsupported");
     }
   }, [source]);
+
+  useEffect(() => {
+    instance.current?.setModes(modes);
+  }, [modes]);
 
   useEffect(() => {
     const command = blockMenu ? matchingBlockCommands(blockMenu.query)[selectedBlock] : undefined;

@@ -31,7 +31,8 @@ export function Modal({
   dismissDisabled?: boolean;
   initialFocus: RefObject<HTMLElement | null>;
   // "palette" sits near the top of the screen, wider, for search.
-  variant?: "palette";
+  // "screen" fills the window instead of sitting in a card over the page.
+  variant?: "palette" | "screen";
   onClose: () => void;
 }) {
   const backdrop = useRef<HTMLDivElement>(null);

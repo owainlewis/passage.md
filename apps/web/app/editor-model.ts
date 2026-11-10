@@ -60,9 +60,15 @@ Press **⌘/** (or **Ctrl+/**) to see the raw Markdown, and again to go back.
 
 Every document is in one list, newest first. Press **⌘K** to search every word you have written, or **⌘.** to show and hide the list.
 
+## Drafting
+
+Press **⌘D** to dim everything but the sentence you are writing.
+
+Click the word count for reading time, speaking time, and a word goal.
+
 ## When you are ready
 
-The **…** menu copies or downloads the Markdown and shares a read-only link you can turn off later.
+The **…** menu copies the page as Markdown or rich text, opens it in a teleprompter, and shares a read-only link you can turn off later.
 
 > The best writing tool is the one you forget is there.
 `;

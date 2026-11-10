@@ -1,28 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { PendingStatus, useAuth } from "./auth";
-import { titleOf, wordCount } from "./doc-utils";
+import { bodyWithoutFrontmatter, plainDocument, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
 import { DocumentDrawer } from "./editor-drawer";
 import { SearchDialog } from "./editor-search-dialog";
 import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
+import { DocumentOutline } from "./editor-outline";
+import { DocumentStats } from "./editor-stats";
 import { currentWorkspaceLocation } from "./editor-workspace-location";
 import { useEntitlements } from "./entitlements";
 import { MoonIcon, MoreIcon, PanelIcon, PlusIcon, SearchIcon, SunIcon, UserIcon } from "./icons";
+import { renderMarkdown } from "./markdown-view";
 import { MenuButton, MenuItem } from "./menu-button";
 import { Modal } from "./modal";
+import { Teleprompter } from "./teleprompter";
 import { useTheme } from "./theme";
 import { useEditorDocuments } from "./use-editor-documents";
 import { useEditorSharing } from "./use-editor-sharing";
-import { VisualEditor } from "./visual-editor";
+import { VisualEditor, type VisualEditorRef } from "./visual-editor";
+import type { OutlineItem } from "./visual-editor-modes";
+import { useWordGoal } from "./word-goals";
 import "./writer.css";
 
 // Matches the CSS breakpoint. Below it the document list opens over the page
 // instead of beside it.
 const OVERLAY_QUERY = "(max-width: 1023px)";
 const DRAWER_KEY = "passage.drawer.v1";
+const FOCUS_KEY = "passage.focus.v1";
 // Pointer travel that counts as "the writer reached for the mouse" and brings
 // the chrome back. Smaller movements are trackpad noise while typing.
 const WAKE_DISTANCE = 6;
@@ -47,6 +54,23 @@ function storedDrawer() {
   }
 }
 
+function storedFocus() {
+  try {
+    return localStorage.getItem(FOCUS_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+// What the visual editor last said about the document it has open.
+type EditorReport = { id: string; outline: OutlineItem[]; selectedWords: number };
+
+function blankReport(id: string): EditorReport {
+  return { id, outline: [], selectedWords: 0 };
+}
+
+const NO_REPORT = blankReport("");
+
 function isMac() {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 }
@@ -62,6 +86,9 @@ export default function Editor() {
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
   const [shareDialogDocId, setShareDialogDocId] = useState("");
   const [copied, setCopied] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [prompterOpen, setPrompterOpen] = useState(false);
+  const [report, setReport] = useState(NO_REPORT);
   const [creatingDocument, setCreatingDocument] = useState(false);
   const [authError, setAuthError] = useState("");
   // The document the address bar asks for. It can name a document the list
@@ -69,7 +96,7 @@ export default function Editor() {
   const [routePublicId, setRoutePublicId] = useState(() => publicIdFromPath());
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const visualRef = useRef<{ focus: () => void }>(null);
+  const visualRef = useRef<VisualEditorRef>(null);
   const focusOnOpen = useRef(false);
   const overlay = useMediaQuery(OVERLAY_QUERY);
   const mod = isMac() ? "⌘" : "Ctrl+";
@@ -112,6 +139,18 @@ export default function Editor() {
     focusEditor: () => (source ? textareaRef.current?.focus() : visualRef.current?.focus())
   });
 
+  const [goal, setGoal] = useWordGoal(activeId);
+  const modes = useMemo(() => ({ focus: focusMode }), [focusMode]);
+  // The editor reports as it is edited. A report is only good for the
+  // document it came from, so one from the last document is never shown.
+  const live = !source && report.id === activeId ? report : NO_REPORT;
+  const updateReport = useCallback((next: Partial<EditorReport>) => {
+    setReport((current) => ({ ...(current.id === activeId ? current : blankReport(activeId)), ...next }));
+  }, [activeId]);
+  const reportOutline = useCallback((outline: OutlineItem[]) => updateReport({ outline }), [updateReport]);
+  const reportSelection = useCallback((selectedWords: number) => updateReport({ selectedWords }), [updateReport]);
+  const activeHeading = useCallback(() => visualRef.current?.activeHeading() ?? -1, []);
+
   const activeShared = active ? isShared(active) : false;
   const canExport = entitlements.can("exportMarkdown");
   const canShare = entitlements.can("shareLinks");
@@ -134,7 +173,21 @@ export default function Editor() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!window.matchMedia?.(OVERLAY_QUERY).matches && storedDrawer()) setDrawerOpen(true);
+    if (storedFocus()) setFocusMode(true);
   }, []);
+
+  // Focus is a way of seeing the formatted page, so asking for it from the
+  // Markdown view goes back to the page with it on.
+  const toggleFocus = useCallback(() => {
+    const next = source || !focusMode;
+    setSource(false);
+    setFocusMode(next);
+    try {
+      localStorage.setItem(FOCUS_KEY, next ? "on" : "off");
+    } catch {
+      // Storage may be unavailable; focus still works for this visit.
+    }
+  }, [focusMode, source]);
 
   const setDrawer = useCallback((open: boolean) => {
     setDrawerOpen(open);
@@ -203,6 +256,11 @@ export default function Editor() {
         setSource((current) => !current);
         return;
       }
+      if (modifier && !event.shiftKey && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        toggleFocus();
+        return;
+      }
       if (modifier && event.key === ".") {
         event.preventDefault();
         setDrawer(!drawerOpen);
@@ -214,7 +272,7 @@ export default function Editor() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen, openSearch, overlay, setDrawer]);
+  }, [drawerOpen, openSearch, overlay, setDrawer, toggleFocus]);
 
   // Older links carried view and collection queries. Those views are gone.
   useEffect(() => {
@@ -314,6 +372,11 @@ export default function Editor() {
     }
   }
 
+  function showCopied() {
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
   // Copies the Markdown itself, the form another tool expects.
   async function copyDocument() {
     if (!active?.bodyLoaded) return;
@@ -323,8 +386,29 @@ export default function Editor() {
       window.prompt("Copy this document", active.body);
       return;
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    showCopied();
+  }
+
+  // Copies the formatted document, for an email, a Google Doc or a post
+  // editor. Places that take no formatting get clean text, not Markdown marks.
+  async function copyRichText() {
+    if (!active?.bodyLoaded) return;
+    const markdown = bodyWithoutFrontmatter(active.body);
+    const text = plainDocument(markdown);
+    try {
+      if (typeof ClipboardItem === "undefined") {
+        await navigator.clipboard.writeText(text);
+      } else {
+        await navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([renderMarkdown(markdown)], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" })
+        })]);
+      }
+    } catch {
+      window.prompt("Copy this document", text);
+      return;
+    }
+    showCopied();
   }
 
   async function signOut() {
@@ -352,9 +436,12 @@ export default function Editor() {
   const ready = docsReady && active?.bodyLoaded && !routeUnresolved;
 
   const documentItems: MenuItem[] = active ? [
+    { label: "Focus", hint: `${mod}D`, checked: focusMode && !source, onSelect: toggleFocus },
+    { label: "Teleprompter", disabled: words === 0, onSelect: () => setPrompterOpen(true) },
     { label: source ? "Show formatted" : "Show Markdown", hint: `${mod}/`, onSelect: () => setSource(!source) },
     { kind: "separator" },
     { label: "Copy Markdown", onSelect: () => void copyDocument() },
+    { label: "Copy rich text", onSelect: () => void copyRichText() },
     { label: "Download .md", badge: canExport ? undefined : "Pro", onSelect: exportDoc },
     activeShared && publicDocPath
       ? { label: "Copy share link", onSelect: () => void copyShareLink() }
@@ -410,12 +497,20 @@ export default function Editor() {
                 Markdown
               </button>
             )}
-            {ready && (
-              <div className="wDetails" role="group" aria-label="Document details">
-                <span>{words === 1 ? "1 word" : `${words.toLocaleString("en-US")} words`}</span>
-                {words >= 200 && <span className="wDetailsExtra">{Math.max(1, Math.round(words / 230))} min read</span>}
-                {activeShared && <span>Shared</span>}
-              </div>
+            {focusMode && !source && (
+              <button type="button" className="wModePill" data-mode="focus" onClick={toggleFocus} title={`Leave focus  ${mod}D`}>
+                Focus
+              </button>
+            )}
+            {ready && active && (
+              <DocumentStats
+                body={active.body}
+                words={words}
+                selectedWords={live.selectedWords}
+                shared={activeShared}
+                goal={goal}
+                onGoal={setGoal}
+              />
             )}
           </div>
           <div className="wBarGroup">
@@ -531,13 +626,23 @@ export default function Editor() {
                 key={active.id}
                 ref={visualRef}
                 source={active.body}
+                modes={modes}
                 onChange={updateBody}
+                onOutline={reportOutline}
+                onSelection={reportSelection}
                 onSource={() => setSource(true)}
               />
             )}
           </div>
         </section>
 
+        {ready && !source && (
+          <DocumentOutline
+            items={live.outline}
+            activeHeading={activeHeading}
+            onReveal={(index) => visualRef.current?.revealHeading(index)}
+          />
+        )}
       </div>
 
       {authError && <p className="wToast" role="alert">{authError}</p>}
@@ -551,6 +656,7 @@ export default function Editor() {
           onOpen={openDocument}
         />
       )}
+      {prompterOpen && active && <Teleprompter source={active.body} onClose={() => setPrompterOpen(false)} />}
       {shareDialogOpen && active && (
         <DocumentShareDialog
           activeShared={activeShared}

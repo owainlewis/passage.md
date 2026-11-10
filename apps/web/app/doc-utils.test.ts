@@ -1,5 +1,7 @@
 import {
   bodyWithoutFrontmatter,
+  plainBlocks,
+  plainDocument,
   plainSummary,
   snippetOf,
   titleOf,
@@ -112,5 +114,34 @@ describe("withoutLeadingTitle with a cut-off title", () => {
 
   it("keeps body text that happens to mention the title later", () => {
     expect(withoutLeadingTitle("…before coffee I read Morning pages", "Morning pages")).toBe("…before coffee I read Morning pages");
+  });
+});
+
+describe("plainBlocks", () => {
+  it("returns the prose of each block and leaves code out", () => {
+    expect(plainBlocks("# Title\n\nA **bold** line.\n\n```js\nconst x = 1;\n```\n\n- One\n- Two\n")).toEqual([
+      "Title",
+      "A bold line.",
+      "One",
+      "Two"
+    ]);
+  });
+});
+
+describe("plainDocument", () => {
+  it("keeps paragraphs apart and drops the Markdown marks", () => {
+    expect(plainDocument("# Launch\n\nA **bold** [link](https://example.com).\n\n> Quoted.\n")).toBe(
+      "Launch\n\nA bold link.\n\nQuoted."
+    );
+  });
+
+  it("keeps bullets, numbers, tasks and nesting in lists", () => {
+    expect(plainDocument("- One\n  - Nested\n- Two\n\n3. Three\n4. Four\n\n- [ ] Open\n- [x] Done\n")).toBe(
+      "• One\n  • Nested\n• Two\n\n3. Three\n4. Four\n\n☐ Open\n☑ Done"
+    );
+  });
+
+  it("keeps code as written and leaves frontmatter out", () => {
+    expect(plainDocument("---\ntags: [a]\n---\n\nText.\n\n```\nline 1\n  line 2\n```\n")).toBe("Text.\n\nline 1\n  line 2");
   });
 });

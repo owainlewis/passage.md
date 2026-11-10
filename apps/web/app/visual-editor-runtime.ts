@@ -2,7 +2,7 @@ import {
   Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx,
   parserCtx, remarkCtx, rootCtx, serializerCtx
 } from "@milkdown/kit/core";
-import { $view } from "@milkdown/kit/utils";
+import { $prose, $view } from "@milkdown/kit/utils";
 import { listItemSchema, commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { history } from "@milkdown/kit/plugin/history";
@@ -13,13 +13,35 @@ import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 
 import type { BlockCommand } from "./editor-block-commands";
+import { modesKey, modesPlugin, outlineOf, selectionWords, type EditorModes, type OutlineItem } from "./visual-editor-modes";
 
 export type BlockMenuState = { query: string; left: number; top: number };
 export type BlockMenuOptions = {
   onChange: (state: BlockMenuState | null) => void;
   onKeyDown: (event: KeyboardEvent) => boolean;
 };
+// What the page around the editor is told about the document. Each is
+// called only when its value changes.
+export type EditorObservers = {
+  modes?: EditorModes;
+  onOutline?: (items: OutlineItem[]) => void;
+  onSelection?: (words: number) => void;
+};
 
+// Where the line being written sits in focus mode, as a share of the page
+// height. A little above the middle, where the eye rests.
+const TYPEWRITER_LINE = 0.42;
+
+function scrollParent(element: HTMLElement) {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(node).overflowY)) return node;
+  }
+  return null;
+}
+
+function scrollBehavior(): ScrollBehavior {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
 
 // Keep metadata byte-for-byte outside the visual editor's parser/serializer.
 export function splitFrontmatter(source: string) {
@@ -45,9 +67,14 @@ export async function createVisualEditor(
   source: string,
   onChange: (markdown: string) => void,
   onError: () => void,
-  blockMenu?: BlockMenuOptions
+  blockMenu?: BlockMenuOptions,
+  observers: EditorObservers = {}
 ) {
   let currentSource = source;
+  let modes: EditorModes = observers.modes ?? { focus: false };
+  let outline: ReturnType<typeof outlineOf> = { items: [], positions: [] };
+  const reported = { doc: null as unknown, outline: "[]", selection: 0 };
+  let typewriterFrame = 0;
   let { prefix, markdown } = splitFrontmatter(source);
   let ready = false;
   let destroyed = false;
@@ -84,6 +111,12 @@ export async function createVisualEditor(
                 onChange(nextSource);
               }
               reportBlocks(this);
+              reportDocument(this);
+              // A click or drag places the caret where the writer is already
+              // looking, so only typing and the keyboard move the page.
+              if (modes.focus && (transaction.docChanged || (transaction.selectionSet && !transaction.getMeta("pointer")))) {
+                typewriter(this);
+              }
             }
           } catch {
             onError();
@@ -111,6 +144,7 @@ export async function createVisualEditor(
     .use(gfm)
     .use(history)
     .use(cursor)
+    .use($prose(() => modesPlugin(() => modes)))
     .use($view(listItemSchema.node, () => (node, view, getPos) => {
       const dom = document.createElement("li");
       const contentDOM = document.createElement("div");
@@ -167,6 +201,44 @@ export async function createVisualEditor(
     }
   }
 
+  function reportDocument(view: EditorView) {
+    if (!ready || destroyed) return;
+    if (view.state.doc !== reported.doc) {
+      reported.doc = view.state.doc;
+      outline = outlineOf(view.state.doc);
+      const key = JSON.stringify(outline.items);
+      if (key !== reported.outline) {
+        reported.outline = key;
+        observers.onOutline?.(outline.items);
+      }
+    }
+    const words = selectionWords(view.state);
+    if (words !== reported.selection) {
+      reported.selection = words;
+      observers.onSelection?.(words);
+    }
+  }
+
+  // Typewriter scrolling: the line being written stays at one height and
+  // the page moves under it.
+  function typewriter(view: EditorView) {
+    if (typeof requestAnimationFrame !== "function") return;
+    cancelAnimationFrame(typewriterFrame);
+    typewriterFrame = requestAnimationFrame(() => {
+      if (destroyed || !modes.focus) return;
+      try {
+        const page = scrollParent(view.dom);
+        if (!page) return;
+        const caret = view.coordsAtPos(view.state.selection.head);
+        const box = page.getBoundingClientRect();
+        const delta = (caret.top + caret.bottom) / 2 - (box.top + box.height * TYPEWRITER_LINE);
+        if (Math.abs(delta) > 2) page.scrollTo({ top: page.scrollTop + delta, behavior: scrollBehavior() });
+      } catch {
+        // No layout to measure. The caret is still where it was.
+      }
+    });
+  }
+
   // A blank document opens on an empty title, so the first words typed
   // become its heading. Nothing is saved until something is typed.
   function startWithTitle(view: EditorView) {
@@ -188,6 +260,7 @@ export async function createVisualEditor(
     assertCompatible(markdown, editor.ctx.get(serializerCtx)(view.state.doc));
     if (!markdown.trim()) startWithTitle(view);
     ready = true;
+    reportDocument(view);
     const reposition = () => reportBlocks(view);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
@@ -240,6 +313,33 @@ export async function createVisualEditor(
         setBlockType(type, level ? { level } : undefined)(view.state, view.dispatch);
         view.focus();
       },
+      setModes(next: EditorModes) {
+        if (next.focus === modes.focus) return;
+        modes = next;
+        view.dispatch(view.state.tr.setMeta(modesKey, next));
+        if (next.focus) typewriter(view);
+      },
+      // Puts the caret in a heading from the outline and brings it into view.
+      revealHeading(index: number) {
+        const pos = outline.positions[index];
+        if (pos == null) return;
+        view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(pos + 1))));
+        const dom = view.nodeDOM(pos);
+        if (!modes.focus && dom instanceof HTMLElement) dom.scrollIntoView?.({ block: "start", behavior: scrollBehavior() });
+        view.focus();
+      },
+      // The heading whose section is at the top of the page, or -1 above the first.
+      activeHeading() {
+        const page = scrollParent(view.dom);
+        if (!page) return -1;
+        const line = page.getBoundingClientRect().top + 144;
+        let active = -1;
+        outline.positions.forEach((pos, index) => {
+          const dom = view.nodeDOM(pos);
+          if (dom instanceof HTMLElement && dom.getBoundingClientRect().top <= line) active = index;
+        });
+        return active;
+      },
       setSource(nextSource: string) {
         if (nextSource === currentSource) return;
         const next = splitFrontmatter(nextSource);
@@ -256,10 +356,12 @@ export async function createVisualEditor(
         markdown = next.markdown;
         currentSource = nextSource;
         reportBlocks(view);
+        reportDocument(view);
       },
       async destroy() {
         destroyed = true;
         ready = false;
+        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(typewriterFrame);
         window.removeEventListener("scroll", reposition, true);
         window.removeEventListener("resize", reposition);
         await editor.destroy();

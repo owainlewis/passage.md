@@ -1483,6 +1483,68 @@ describe("Write (editor)", () => {
     expect(await screen.findByText("Copied")).toBeInTheDocument();
   });
 
+  it("copies the formatted document as rich text with clean plain text beside it", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const items: Array<Record<string, Blob>> = [];
+    vi.stubGlobal("ClipboardItem", class { constructor(data: Record<string, Blob>) { items.push(data); } });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write } });
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "---\ntags: [a]\n---\n\n# Notes\n\nSome **bold** text.\n\n- One\n" }]);
+
+    await renderWrite();
+    openDocumentAction("Copy rich text");
+
+    await waitFor(() => expect(write).toHaveBeenCalledOnce());
+    const html = await items[0]["text/html"].text();
+    expect(html).toContain("<h1>Notes</h1>");
+    expect(html).toContain("<strong>bold</strong>");
+    expect(html).not.toContain("tags");
+    expect(await items[0]["text/plain"].text()).toBe("Notes\n\nSome bold text.\n\n• One");
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+
+  it("turns focus on and off from the menu and the keyboard, and remembers it", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Notes\n\nOne sentence. Another sentence.\n" }]);
+
+    await renderWrite();
+    const page = await screen.findByRole("textbox", { name: "Visual editor" });
+    expect(page).not.toHaveClass("wFocusOn");
+
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /^Focus/ }));
+    await waitFor(() => expect(page).toHaveClass("wFocusOn"));
+    expect(localStorage.getItem("passage.focus.v1")).toBe("on");
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+    expect(screen.getByRole("menuitemcheckbox", { name: /^Focus/ })).toBeChecked();
+
+    fireEvent.keyDown(window, { key: "d", metaKey: true });
+    await waitFor(() => expect(page).not.toHaveClass("wFocusOn"));
+    expect(localStorage.getItem("passage.focus.v1")).toBe("off");
+    localStorage.removeItem("passage.focus.v1");
+  });
+
+  it("opens the document in the teleprompter", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Script\n\nSay this to camera.\n" }]);
+
+    await renderWrite();
+    openDocumentAction("Teleprompter");
+
+    const prompter = screen.getByRole("dialog", { name: "Teleprompter" });
+    expect(within(prompter).getByRole("document", { name: "Script" })).toHaveTextContent("Say this to camera.");
+    fireEvent.click(within(prompter).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Teleprompter" })).not.toBeInTheDocument();
+  });
+
+  it("shows an outline for a document with sections and none in the Markdown view", async () => {
+    stubSignedInFetch([{ id: "doc-1", publicId: "one", body: "# Plan\n\nIntro.\n\n## First\n\nOne two.\n\n## Second\n\nThree.\n" }]);
+
+    await renderWrite();
+    const outline = await screen.findByRole("navigation", { name: "Outline" });
+    expect(within(outline).getAllByRole("button").map((button) => button.textContent)).toEqual(["Plan6", "First2", "Second1"]);
+
+    fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    expect(screen.queryByRole("navigation", { name: "Outline" })).not.toBeInTheDocument();
+  });
+
   it("copies a server share link for the active document", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
