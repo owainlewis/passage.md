@@ -1,0 +1,184 @@
+/*
+ * The writer's materials for the pages around it: the home page and the
+ * sign-in pages. Warm paper, one accent, Newsreader for words and the UI
+ * face for controls, the writer's bar and its ink buttons.
+ *
+ * The values are the writer's. landing.test.tsx keeps each --p- token equal to
+ * its --w- twin in writer.css, so these pages cannot drift from it.
+ */
+
+.paper {
+  --p-paper: #fbfaf7;
+  --p-paper-2: #f4f2ed;
+  --p-raised: #ffffff;
+  --p-ink: #1f1e1b;
+  --p-ink-2: #3b3934;
+  --p-muted: #54504a;
+  --p-faint: #69655d;
+  --p-rule: #e8e4dc;
+  --p-hover: rgba(31, 30, 27, 0.04);
+  --p-press: rgba(31, 30, 27, 0.07);
+  --p-accent: #3d6a5d;
+  --p-danger: #b4432f;
+  --p-selection: rgba(61, 106, 93, 0.16);
+  --p-code: #f0ede6;
+
+  --p-prose: var(--font-prose), "Iowan Old Style", Georgia, serif;
+  --p-ui: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --p-mono: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --p-bar: 56px;
+  --p-control: 36px;
+  --p-measure: 580px;
+  --p-radius: 8px;
+  --p-radius-lg: 14px;
+
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: var(--p-ink);
+  background: var(--p-paper);
+  font-family: var(--p-ui);
+}
+
+:global(:root[data-theme="dark"]) .paper {
+  --p-paper: #171614;
+  --p-paper-2: #1d1c19;
+  --p-raised: #23221f;
+  --p-ink: #ece8e0;
+  --p-ink-2: #d2cdc3;
+  --p-muted: #b3aea3;
+  --p-faint: #a29d93;
+  --p-rule: #2c2a26;
+  --p-hover: rgba(236, 232, 224, 0.05);
+  --p-press: rgba(236, 232, 224, 0.08);
+  --p-accent: #93b8aa;
+  --p-danger: #e08a76;
+  --p-selection: rgba(147, 184, 170, 0.22);
+  --p-code: #22211d;
+
+  /* Checkboxes, autofill and scrollbars follow the page into the dark. */
+  color-scheme: dark;
+}
+
+.paper ::selection {
+  background: var(--p-selection);
+}
+
+.paper :focus-visible {
+  outline: 2px solid var(--p-accent);
+  outline-offset: 2px;
+}
+
+.paper :global(.brandName) {
+  color: var(--p-ink);
+}
+
+/* -------------------------------------------------------------------- bar */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: var(--p-bar);
+  padding: 0 12px 0 20px;
+  background: var(--p-paper);
+}
+
+/* Words soften into the bar as they scroll under it, as in the writer. */
+.bar::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 24px;
+  background: linear-gradient(var(--p-paper), transparent);
+  pointer-events: none;
+}
+
+.barGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.barLink {
+  display: inline-flex;
+  align-items: center;
+  height: var(--p-control);
+  padding: 0 12px;
+  border-radius: var(--p-radius);
+  color: var(--p-muted);
+  font-size: 14px;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.barLink:hover {
+  background: var(--p-hover);
+  color: var(--p-ink);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--p-radius);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 120ms ease, transform 80ms ease;
+}
+
+.primaryButton {
+  background: var(--p-ink);
+  color: var(--p-paper);
+}
+
+.primaryButton:hover {
+  background: var(--p-ink-2);
+}
+
+.secondaryButton {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--p-rule);
+  color: var(--p-ink);
+}
+
+.secondaryButton:hover {
+  background: var(--p-hover);
+}
+
+.primaryButton:active,
+.secondaryButton:active {
+  transform: translateY(1px);
+}
+
+.primaryButton:disabled {
+  background: var(--p-ink);
+  cursor: default;
+  opacity: 0.5;
+  transform: none;
+}
+
+@media (max-width: 720px) {
+  .bar {
+    padding: 0 8px 0 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryButton,
+  .secondaryButton {
+    transition: none;
+  }
+}

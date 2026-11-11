@@ -4,23 +4,25 @@ import Link from "next/link";
 import { AuthBoundary, useAuth } from "./auth";
 import { Brand } from "./brand";
 import { PLAN_FEATURES } from "./features";
-import { MoreIcon, PanelIcon, PlusIcon, SearchIcon } from "./icons";
+import { MoonIcon, MoreIcon, PanelIcon, PlusIcon, SearchIcon, SunIcon, UserIcon } from "./icons";
 import { MerchantLink, SupportLink } from "./legal";
 import { claudeCodeCommandLines } from "./mcp";
+import { useTheme } from "./theme";
 import styles from "./landing.module.css";
+import paper from "./paper.module.css";
 
 const principles = [
   {
     title: "Nothing in the way",
-    body: "One page and a blinking cursor. The few controls there are fade out as soon as you start typing, and come back when you reach for them."
+    body: "One page and a blinking cursor. The few controls fade out when you start typing and come back when you reach for them."
   },
   {
     title: "Find anything",
-    body: "Every document in one list, newest first. Press ⌘K and search every word you have ever written. No folders to file things in."
+    body: "Every document in one list, newest first. Press ⌘K and search every word you have written. No folders to file things in."
   },
   {
     title: "Plain Markdown",
-    body: "Write with headings, lists and quotes as you type, or flip to the raw text with ⌘/. Copy it, download it, or hand it to an agent."
+    body: "Headings, lists and quotes take shape as you type. Press ⌘/ to see the raw text, and copy it out whenever you like."
   }
 ];
 
@@ -28,6 +30,26 @@ const shortcuts = [
   { keys: "⌘K", label: "Search" },
   { keys: "⌘/", label: "Markdown" },
   { keys: "⌘.", label: "Documents" }
+];
+
+// The document in the picture of the writer under the hero.
+const sample = {
+  title: "Morning pages",
+  opening:
+    "The best writing tool is the one you forget is there. No sidebar asking where this belongs, no toolbar asking how it should look. Just the next sentence.",
+  heading: "Three things for today",
+  items: ["Finish the draft before lunch", "Cut the second section in half", "Send it, even if it is not perfect"]
+};
+
+// Counted the way the writer counts a document.
+const sampleWords = [sample.title, sample.opening, sample.heading, ...sample.items].join(" ").match(/\S+/g)?.length ?? 0;
+
+const sampleDocuments = [
+  { title: sample.title, meta: "Just now" },
+  { title: "Chapter four", meta: "Yesterday" },
+  { title: "Research notes", meta: "Monday" },
+  { title: "Letter to the editor", meta: "28 Oct" },
+  { title: "Ideas", meta: "12 Oct" }
 ];
 
 const proRenewal = "Renews monthly until cancelled. Cancel through the Stripe portal.";
@@ -42,6 +64,7 @@ export default function Landing() {
 
 function LandingContent() {
   const auth = useAuth();
+  const { darkActive, toggleDarkMode } = useTheme();
   const sessionReady = auth.sessionStatus === "authenticated" || auth.sessionStatus === "anonymous";
   const signedIn = Boolean(auth.user);
   const isPro = auth.account?.plan === "pro";
@@ -93,13 +116,28 @@ function LandingContent() {
           : "Public signup is not open yet. Existing customers can sign in.";
 
   return (
-    <div className={styles.landing}>
+    <div className={`${paper.paper} ${styles.landing}`}>
       <header className={styles.nav}>
         <Brand />
         <nav className={styles.navLinks} aria-label="Main navigation">
-          <Link href="/agents">Agents</Link>
-          {isPro ? <Link href="/account">Account</Link> : <a href="#pricing">Go Pro</a>}
-          {showSignIn && <Link href="/login">Sign in</Link>}
+          <Link className={`${paper.barLink} ${styles.navLink}`} href="/agents">Agents</Link>
+          {isPro
+            ? <Link className={`${paper.barLink} ${styles.navLink}`} href="/account">Account</Link>
+            : <a className={`${paper.barLink} ${styles.navLink}`} href="#pricing">Go Pro</a>}
+          {showSignIn && <Link className={`${paper.barLink} ${styles.navLink}`} href="/login">Sign in</Link>}
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="Dark mode"
+            aria-pressed={darkActive}
+            title="Dark mode"
+            onClick={toggleDarkMode}
+          >
+            {/* Both icons render and CSS picks one from the document theme,
+                as in the writer, so a dark reader never sees the moon flash. */}
+            <span className={styles.themeIcon} data-icon="moon"><MoonIcon /></span>
+            <span className={styles.themeIcon} data-icon="sun"><SunIcon /></span>
+          </button>
           <Link className={styles.navCta} href={primaryHref}>
             {primaryLabel}
           </Link>
@@ -113,44 +151,21 @@ function LandingContent() {
             Passage is a Markdown editor with nothing in the way. Open it, write, and find anything again with search.
           </p>
           <div className={styles.heroActions}>
-            <Link className={styles.primaryButton} href={primaryHref}>
+            <Link className={paper.primaryButton} href={primaryHref}>
               {primaryLabel}
             </Link>
+            {!isPro && (
+              <a className={paper.secondaryButton} href="#pricing">
+                See pricing
+              </a>
+            )}
           </div>
           <p className={styles.heroNote} aria-live="polite">
             {statusMessage}
           </p>
         </section>
 
-        <div className={styles.stage} aria-hidden="true">
-          <div className={styles.window}>
-            <div className={styles.windowBar}>
-              <span className={styles.windowIcon}><PanelIcon /></span>
-              <span className={styles.windowSpacer} />
-              <span className={styles.windowStatus}>Saved</span>
-              <span className={styles.windowIcon}><SearchIcon /></span>
-              <span className={styles.windowIcon}><PlusIcon /></span>
-              <span className={styles.windowIcon}><MoreIcon /></span>
-            </div>
-            <div className={styles.windowPage}>
-              <h2>Morning pages</h2>
-              <p>
-                The best writing tool is the one you forget is there. No sidebar asking where this belongs, no toolbar
-                asking how it should look. Just the next sentence.
-              </p>
-              <p>Three things for today:</p>
-              <ul>
-                <li>Finish the draft before lunch</li>
-                <li>Cut the second section in half</li>
-                <li>
-                  Send it, even if it is not perfect
-                  <span className={styles.caret} />
-                </li>
-              </ul>
-            </div>
-            <div className={styles.windowFoot}>64 words</div>
-          </div>
-        </div>
+        <WriterPicture />
 
         <section className={styles.principles} aria-label="Why Passage">
           {principles.map((item) => (
@@ -203,7 +218,7 @@ function LandingContent() {
                 ))}
               </ul>
               <div className={styles.planFooter}>
-                <Link className={styles.secondaryButton} href={primaryHref}>
+                <Link className={paper.secondaryButton} href={primaryHref}>
                   {primaryLabel}
                 </Link>
                 <p className={styles.planRenewal}>No card required.</p>
@@ -221,7 +236,7 @@ function LandingContent() {
                 ))}
               </ul>
               <div className={styles.planFooter}>
-                <Link className={styles.primaryButton} href={proHref}>
+                <Link className={paper.primaryButton} href={proHref}>
                   {proLabel}
                 </Link>
                 <p className={styles.planRenewal}>{proRenewal}</p>
@@ -231,6 +246,13 @@ function LandingContent() {
           <p className={styles.policies}>
             See the <Link href="/cancellation">Cancellation Policy</Link> and <Link href="/refunds">Refund Policy</Link>.
           </p>
+        </section>
+
+        <section className={styles.closing}>
+          <h2 className={styles.closingTitle}>Start with a blank page.</h2>
+          <Link className={paper.primaryButton} href={primaryHref}>
+            {primaryLabel}
+          </Link>
         </section>
       </main>
 
@@ -252,6 +274,60 @@ function LandingContent() {
           <Link href="/cancellation">Cancellation</Link>
         </nav>
       </footer>
+    </div>
+  );
+}
+
+// The writer as it looks with the document list open. A picture of the app,
+// so it is hidden from assistive technology; the sections below it say the
+// same things in words.
+function WriterPicture() {
+  return (
+    <div className={styles.stage} aria-hidden="true">
+      <div className={styles.window}>
+        <div className={styles.drawer}>
+          <div className={styles.drawerHead}>
+            <span className={styles.search}>
+              <SearchIcon />
+              <span>Search</span>
+              <kbd>⌘K</kbd>
+            </span>
+          </div>
+          <div className={styles.docList}>
+            {sampleDocuments.map((doc, index) => (
+              <span className={styles.docRow} data-current={index === 0 || undefined} key={doc.title}>
+                <span className={styles.docTitle}>{doc.title}</span>
+                <span className={styles.docMeta}>{doc.meta}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className={styles.windowMain}>
+          <div className={styles.windowBar}>
+            <span className={styles.windowIcon} data-active><PanelIcon /></span>
+            <span className={styles.windowDetails}>{sampleWords} words</span>
+            <span className={styles.windowSpacer} />
+            <span className={styles.windowIcon}><SearchIcon /></span>
+            <span className={styles.windowIcon}><PlusIcon /></span>
+            <span className={styles.windowIcon}><MoreIcon /></span>
+            <span className={styles.windowIcon}><MoonIcon /></span>
+            <span className={styles.windowIcon}><UserIcon /></span>
+          </div>
+          <div className={styles.windowPage}>
+            <p className={styles.docH1}>{sample.title}</p>
+            <p>{sample.opening}</p>
+            <p className={styles.docH2}>{sample.heading}</p>
+            <ul>
+              {sample.items.map((item, index) => (
+                <li key={item}>
+                  {item}
+                  {index === sample.items.length - 1 && <span className={styles.caret} />}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
