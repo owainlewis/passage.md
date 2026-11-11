@@ -1,0 +1,240 @@
+/*
+ * The reading pages: the agents guide and the policies.
+ *
+ * One column on the writer's measure under the writer's bar. The title is
+ * set like the writer's empty page and the words below it in the writer's
+ * document type, so a page here reads like a page in the writer.
+ * Colours, the bar and the button come from paper.module.css.
+ */
+
+.column,
+.footer {
+  width: min(100% - 48px, var(--p-measure));
+  margin: 0 auto;
+}
+
+.column {
+  padding: clamp(40px, 8vh, 80px) 0 96px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--p-prose);
+  font-size: 40px;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.lead {
+  margin: 16px 0 0;
+  color: var(--p-muted);
+  font-size: 17px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* When the page took effect. */
+.meta,
+.step {
+  color: var(--p-faint);
+  font-family: var(--p-ui);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.meta {
+  margin: 16px 0 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+/* ------------------------------------------------------------------ prose */
+
+/* The writer's own type: Newsreader at 19px, headings that step down by
+   weight as well as size. */
+.prose {
+  color: var(--p-ink-2);
+  font-family: var(--p-prose);
+  font-size: 19px;
+  font-optical-sizing: auto;
+  line-height: 1.62;
+  text-wrap: pretty;
+}
+
+.prose section {
+  margin-top: 2.5em;
+}
+
+.prose :is(h2, h3) {
+  color: var(--p-ink);
+  text-wrap: balance;
+}
+
+.prose h2 {
+  margin: 0 0 0.5em;
+  font-size: 1.42em;
+  font-weight: 520;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+}
+
+.prose h3 {
+  margin: 1.6em 0 0.4em;
+  font-size: 1.12em;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+
+.prose h2 + h3 {
+  margin-top: 1em;
+}
+
+/* Which step of the setup a section is. */
+.step {
+  margin: 0 0 4px;
+}
+
+.prose p {
+  margin: 0 0 0.9em;
+}
+
+.prose a {
+  color: var(--p-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.prose :is(ul, ol) {
+  margin: 0 0 0.9em;
+  padding-left: 1.25em;
+}
+
+.prose li {
+  margin: 0.2em 0;
+  padding-left: 0.15em;
+}
+
+.prose li::marker {
+  color: var(--p-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.prose code {
+  padding: 0.12em 0.32em;
+  border-radius: 4px;
+  background: var(--p-code);
+  color: var(--p-ink);
+  font-family: var(--p-mono);
+  font-size: 0.8em;
+}
+
+.prose pre {
+  overflow-x: auto;
+  margin: 1.3em 0;
+  padding: 16px 24px;
+  border-radius: var(--p-radius);
+  background: var(--p-code);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.prose pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+/* A name and what it does on each row, set like a table in the writer. */
+.tools {
+  margin: 1.3em 0;
+  font-size: 0.86em;
+  line-height: 1.45;
+}
+
+.tool {
+  display: grid;
+  grid-template-columns: 12em minmax(0, 1fr);
+  gap: 0 1em;
+  align-items: baseline;
+  padding: 0.55em 0;
+  border-bottom: 1px solid var(--p-rule);
+}
+
+.tool code {
+  padding: 0;
+  background: none;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer {
+  display: grid;
+  gap: 16px;
+  padding: 32px 0 48px;
+  border-top: 1px solid var(--p-rule);
+  color: var(--p-faint);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.footer a {
+  color: var(--p-muted);
+  overflow-wrap: anywhere;
+}
+
+.footer a:hover {
+  color: var(--p-ink);
+}
+
+/* ---------------------------------------------------------------- narrow */
+
+@media (max-width: 720px) {
+  .column,
+  .footer {
+    width: min(100% - 32px, var(--p-measure));
+  }
+
+  .column {
+    padding-bottom: 64px;
+  }
+
+  .title {
+    font-size: 32px;
+  }
+
+  .prose {
+    font-size: 18px;
+  }
+
+  .prose h2 {
+    font-size: 1.32em;
+  }
+
+  /* Small enough that the agent command's longest line fits a phone. */
+  .prose pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+
+  .tool {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}

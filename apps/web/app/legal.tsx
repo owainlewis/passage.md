@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Brand } from "./brand";
+import paper from "./paper.module.css";
+import styles from "./reading.module.css";
 
 export const MERCHANT_NAME = "Gradientwork Limited";
 export const MERCHANT_URL = "https://gradientwork.com";
@@ -37,19 +39,20 @@ export function PolicyPage({
   children: React.ReactNode;
 }) {
   return (
-    <div className="policyPage">
-      <header className="policyNav">
+    <div className={paper.paper}>
+      <header className={paper.bar}>
         <Brand href="/" />
-        <Link href="/write">Start writing</Link>
+        <Link className={paper.barLink} href="/write">
+          Start writing
+        </Link>
       </header>
-      <main className="policyMain">
-        <p className="policyKicker">Passage policies</p>
-        <h1>{title}</h1>
-        <p className="policySummary">{summary}</p>
-        <p className="policyDate">Effective {POLICY_DATE}</p>
-        <div className="policyBody">{children}</div>
+      <main className={styles.column}>
+        <h1 className={styles.title}>{title}</h1>
+        <p className={styles.lead}>{summary}</p>
+        <p className={styles.meta}>Effective {POLICY_DATE}</p>
+        <div className={styles.prose}>{children}</div>
       </main>
-      <footer className="policyFooter">
+      <footer className={styles.footer}>
         <span>
           Passage is operated by <MerchantLink />.
         </span>
