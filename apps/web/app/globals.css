@@ -1165,6 +1165,28 @@ button {
   color: #969da8;
 }
 
+.fontChoicePreview {
+  width: 54px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.fontChoicePreview[data-font-preview="serif"] {
+  font-family: var(--serif);
+}
+
+.fontChoicePreview[data-font-preview="sans"] {
+  font-family: var(--sans);
+  font-weight: 500;
+}
+
 .themeChoiceText {
   min-width: 0;
   display: flex;

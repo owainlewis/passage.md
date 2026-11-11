@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { THEME_BOOT_SCRIPT, THEME_KEY, ThemeProvider, useTheme } from "./theme";
+import { FONT_KEY, THEME_BOOT_SCRIPT, THEME_KEY, ThemeProvider, useTheme } from "./theme";
 
 const stylesheet = readFileSync("app/globals.css", "utf8");
 
 function Probe() {
-  const { darkActive, setTheme, theme, toggleDarkMode } = useTheme();
+  const { darkActive, font, setFont, setTheme, theme, toggleDarkMode } = useTheme();
   return (
     <div>
+      <span data-testid="font">{font}</span>
+      <button type="button" onClick={() => setFont("sans")}>Set sans</button>
+      <button type="button" onClick={() => setFont("serif")}>Set serif</button>
       <span data-testid="theme">{theme}</span>
       <span data-testid="dark">{String(darkActive)}</span>
       <button type="button" onClick={() => setTheme("dark")}>Set dark</button>
@@ -28,6 +31,7 @@ function renderProbe() {
 beforeEach(() => {
   localStorage.clear();
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.font;
 });
 
 describe("theme provider", () => {
@@ -89,6 +93,27 @@ describe("theme provider", () => {
     expect(stylesheet).toMatch(/html\[data-theme-transition-blocked\] \*/);
   });
 
+  it("defaults to the serif font and persists a sans choice", () => {
+    renderProbe();
+    expect(screen.getByTestId("font")).toHaveTextContent("serif");
+    expect(document.documentElement.dataset.font).toBeUndefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Set sans" }));
+    expect(localStorage.getItem(FONT_KEY)).toBe("sans");
+    expect(document.documentElement.dataset.font).toBe("sans");
+
+    fireEvent.click(screen.getByRole("button", { name: "Set serif" }));
+    expect(localStorage.getItem(FONT_KEY)).toBe("serif");
+    expect(document.documentElement.dataset.font).toBeUndefined();
+  });
+
+  it("restores a stored sans font", async () => {
+    localStorage.setItem(FONT_KEY, "sans");
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("font")).toHaveTextContent("sans"));
+    expect(document.documentElement.dataset.font).toBe("sans");
+  });
+
   it("fails loudly when used outside the provider", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
@@ -115,6 +140,12 @@ describe("pre-paint boot script", () => {
     localStorage.clear();
     new Function(THEME_BOOT_SCRIPT)();
     expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  it("applies a stored sans font before React runs", () => {
+    localStorage.setItem(FONT_KEY, "sans");
+    new Function(THEME_BOOT_SCRIPT)();
+    expect(document.documentElement.dataset.font).toBe("sans");
   });
 
   it("reads the same storage key the provider writes", () => {
