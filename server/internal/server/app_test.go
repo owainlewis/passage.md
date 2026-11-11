@@ -161,7 +161,7 @@ func (s *routeDocumentStore) Contributors(ctx context.Context, ownerID string, i
 	return nil, nil
 }
 
-func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor documents.Actor) (documents.Document, error) {
+func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, parentID string, maxSavedDocs int, actor documents.Actor) (documents.Document, error) {
 	s.ownerID = ownerID
 	s.body = body
 	return documents.Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil

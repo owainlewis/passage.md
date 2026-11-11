@@ -202,6 +202,7 @@ Fields:
 - `title`: server-derived title from the Markdown body.
 - `body`: full Markdown body.
 - `starred`: private owner star state.
+- `parentId`: optional. Set on a derived doc to the `id` of the document it sits under. Omitted on top-level documents.
 - `shareToken`: optional legacy public share token.
 - `sharedAt`: optional share creation timestamp.
 - `createdAt`: creation timestamp.
@@ -219,6 +220,20 @@ They do not appear in public HTML, raw Markdown, or exported Markdown bodies.
 `title` is derived from the first non-empty Markdown line.
 
 If no title can be derived, the title is `Untitled`.
+
+## Derived Docs
+
+A document can hold derived docs: child documents nested one level under it.
+A writer keeps a source piece as the parent, and the newsletter, post, or script made from it as its children.
+
+- `parentId` is the whole relationship. A child holds no other link back to its parent.
+- Nesting is one level deep. A derived doc cannot have derived docs of its own.
+- `parentId` is set when the document is created and never changes. `PATCH` ignores it.
+- The parent must be an active document owned by the same user.
+- Derived docs count toward the saved document limit like any other document.
+- Derived docs are available on every plan.
+- A derived doc is read, updated, shared, and archived through the same routes as any document.
+- Archiving a parent archives its derived docs with it.
 
 ## List Documents
 
@@ -259,6 +274,9 @@ This request remains the legacy compatibility form.
 
 It returns every active document, including each complete `body`, so released CLI clients continue to work.
 
+The legacy form is flat.
+Derived docs appear in the same list as their parents, each with `parentId` set.
+
 New browser and API clients should use the bounded metadata form below.
 
 ### Paginated document metadata
@@ -276,7 +294,11 @@ The cursor is opaque.
 
 Clients must send it back unchanged and must not build or inspect cursor values.
 
-Paginated responses are ordered by `updatedAt` descending, with document ID as a stable tie-breaker.
+Paginated responses return top-level documents only.
+
+They are ordered by the top-level document's own `updatedAt` descending, with document ID as a stable tie-breaker.
+
+Editing a derived doc does not move its parent in the list.
 
 They include metadata and a bounded excerpt, but never the complete Markdown body:
 
@@ -291,12 +313,31 @@ They include metadata and a bounded excerpt, but never the complete Markdown bod
       "tags": ["agents", "notes"],
       "starred": false,
       "createdAt": "2026-06-28T12:00:00Z",
-      "updatedAt": "2026-06-28T12:00:00Z"
+      "updatedAt": "2026-06-28T12:00:00Z",
+      "children": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "publicId": "zyxwvutsrqponmlkjihgfe",
+          "title": "Newsletter",
+          "excerpt": "# Newsletter\n\nThe beginning of the derived doc.",
+          "tags": [],
+          "starred": false,
+          "parentId": "11111111-1111-1111-1111-111111111111",
+          "createdAt": "2026-06-28T12:10:00Z",
+          "updatedAt": "2026-06-28T12:10:00Z"
+        }
+      ]
     }
   ],
   "nextCursor": "opaque-value"
 }
 ```
+
+`children` holds the metadata of the document's derived docs, ordered by `createdAt` ascending.
+
+It is omitted when the document has none.
+
+A derived doc is never returned as a row of its own, and never counts toward `limit`, so a page boundary cannot separate it from its parent.
 
 `excerpt` contains at most the first 4,096 characters and exists only to support bounded navigation and previews.
 
@@ -367,6 +408,8 @@ Clients must render it as text, never as HTML.
 
 Search responses never contain the complete `body` and set `Cache-Control: private, no-store`.
 
+Derived docs are searched and returned like any other document, with `parentId` set.
+
 Search is limited per authenticated user and returns `429` with `Retry-After` when the limit is exceeded.
 
 `nextCursor` is omitted on the final page.
@@ -419,6 +462,21 @@ Request rules:
 
 - If `body` is omitted, the server treats it as an empty string.
 - Empty `body` is accepted and creates an `Untitled` document.
+- `parentId` is optional. When present, the new document is created as a derived doc of that document.
+
+Creating a derived doc:
+
+```json
+{"body":"# Newsletter\n\nMarkdown body.","parentId":"11111111-1111-1111-1111-111111111111"}
+```
+
+The response is the new document with `parentId` set.
+
+A `parentId` that is malformed, missing, archived, or owned by another user returns `404`.
+
+A `parentId` that names a derived doc returns `400`, because nesting is one level deep.
+
+A derived doc created at the saved document limit is refused like any other create.
 
 ## Read Document
 
@@ -508,6 +566,13 @@ Archives an owned active private document.
 Shared documents cannot be archived.
 
 Unshare the document before archiving it.
+
+Archiving a document that has derived docs archives all of them in the same transaction.
+
+Only the document named in the request must be unshared first.
+A shared derived doc is archived with its parent, and its public URLs then return `404`.
+
+Archiving a derived doc leaves its parent and the parent's other derived docs unchanged.
 
 Archived documents are hidden from list, read, update, share, and public lookup.
 
@@ -634,12 +699,12 @@ Legacy share token URLs are still accepted while older shares exist.
 - `200`: successful read, update, or share.
 - `201`: document created.
 - `204`: document archived or unshared.
-- `400`: invalid JSON.
+- `400`: invalid JSON, or a derived doc created under another derived doc.
 - `401`: authentication required.
 - `402`: a bearer-token document request requires Pro.
 - `429`: an abuse limit was exceeded.
 - `403`: cross-origin mutation blocked.
-- `404`: document or public share not found.
+- `404`: document, parent document, or public share not found.
 - `415`: create or update request was not JSON.
 - `500`: unexpected server failure.
 - `503`: database-backed service is not configured.

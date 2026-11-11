@@ -497,6 +497,108 @@ html[data-theme="dark"] .wThemeIcon[data-icon="sun"] {
   font-weight: 500;
 }
 
+/* A document and the docs derived from it. Every box on the way down to a
+   title may shrink, so a long title is cut with an ellipsis instead of
+   widening the list. */
+.wDocGroup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The parent's row and its toggle share one surface, so the pair reads as a
+   single row like every other document. */
+.wDocParent {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: var(--w-radius);
+  transition: background-color 120ms ease;
+}
+
+.wDocParent:hover {
+  background: var(--w-hover);
+}
+
+.wDocParent[data-current] {
+  background: var(--w-raised);
+  box-shadow: 0 0 0 1px var(--w-rule), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.wDocParent .wDocRow {
+  flex: 1 1 auto;
+  width: auto;
+  padding-right: var(--w-2);
+}
+
+.wDocParent .wDocRow,
+.wDocParent .wDocRow:hover {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* How many docs are derived from this one, and the control that shows them. */
+.wDocToggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--w-control);
+  height: var(--w-control);
+  padding: 0 var(--w-2);
+  border: 0;
+  border-radius: var(--w-radius);
+  background: transparent;
+  color: var(--w-faint);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.wDocToggle:hover {
+  background: var(--w-press);
+  color: var(--w-ink);
+}
+
+.wDocToggle::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.wDocToggle[aria-expanded="true"]::after {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+
+.wDocChildren {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+  margin-left: var(--w-3);
+  padding-left: var(--w-2);
+  border-left: 1px solid var(--w-rule);
+}
+
+/* A derived doc is one line: its title, cut to fit. */
+.wDocChild {
+  height: 32px;
+  color: var(--w-muted);
+}
+
+.wDocChild .wDocTitle {
+  font-weight: 400;
+}
+
 .wDocEmpty {
   margin: 0;
   padding: var(--w-2) var(--w-3);

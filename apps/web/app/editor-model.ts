@@ -9,6 +9,9 @@ export type Doc = {
   excerpt?: string;
   shareToken?: string | null;
   sharedAt?: string | null;
+  /** Set on a derived doc: the id of the document it sits under. */
+  parentId?: string | null;
+  createdAt?: string;
   updatedAt?: string;
   /** Server content version this body was loaded at. Sent back on save. */
   version?: number;

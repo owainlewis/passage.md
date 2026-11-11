@@ -5,6 +5,8 @@ export type DocumentPage = {
   nextCursor: string;
 };
 
+type ListedDoc = Doc & { children?: Doc[] };
+
 export type SearchDocument = Doc & {
   matchExcerpt: string;
 };
@@ -22,9 +24,16 @@ export async function apiDocsPage(cursor = ""): Promise<DocumentPage> {
   if (!res.ok) {
     throw new Error(typeof body.error === "string" ? body.error : "Documents could not be loaded");
   }
-  const documents = Array.isArray(body.documents)
-    ? body.documents.map((doc: Doc) => normalizeDoc(doc, typeof doc.body === "string"))
-    : [];
+  // The server nests derived docs under their parent. The editor keeps one
+  // flat list and tells them apart by parentId, so each parent is followed
+  // here by its children.
+  const documents: Doc[] = [];
+  for (const { children, ...doc } of Array.isArray(body.documents) ? body.documents as ListedDoc[] : []) {
+    documents.push(normalizeDoc(doc, typeof doc.body === "string"));
+    for (const child of Array.isArray(children) ? children : []) {
+      documents.push(normalizeDoc({ ...child, parentId: doc.id }, typeof child.body === "string"));
+    }
+  }
   return {
     documents,
     nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : ""
@@ -67,12 +76,12 @@ export async function apiDoc(id: string): Promise<Doc> {
   return normalizeDoc(body as Doc, true);
 }
 
-export async function apiCreateDoc(body: string): Promise<Doc> {
+export async function apiCreateDoc(body: string, parentId?: string): Promise<Doc> {
   const res = await fetch("/api/v1/docs", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body })
+    body: JSON.stringify(parentId ? { body, parentId } : { body })
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {

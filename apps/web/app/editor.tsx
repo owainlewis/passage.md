@@ -351,6 +351,19 @@ export default function Editor() {
       .finally(() => setCreatingDocument(false));
   }
 
+  // An empty document under the open one, for a piece made from it.
+  function newDerivedDocument(parentId: string) {
+    if (creatingDocument) return;
+    setCreatingDocument(true);
+    void createDoc("", parentId)
+      .then((created) => {
+        if (!created) return;
+        setRoutePublicId(created.publicId ?? "");
+        focusOnOpen.current = true;
+      })
+      .finally(() => setCreatingDocument(false));
+  }
+
   function openDocument(doc: Doc) {
     const existing = docs.find((candidate) => candidate.id === doc.id);
     if (!existing) setDocs((current) => [doc, ...current]);
@@ -439,6 +452,8 @@ export default function Editor() {
     { label: "Focus", hint: `${mod}D`, checked: focusMode && !source, onSelect: toggleFocus },
     { label: "Teleprompter", disabled: words === 0, onSelect: () => setPrompterOpen(true) },
     { label: source ? "Show formatted" : "Show Markdown", hint: `${mod}/`, onSelect: () => setSource(!source) },
+    // Nesting is one level deep, so a derived doc cannot have its own.
+    ...(userId && !active.parentId ? [{ label: "New derived doc", onSelect: () => newDerivedDocument(active.id) }] : []),
     { kind: "separator" },
     { label: "Copy Markdown", onSelect: () => void copyDocument() },
     { label: "Copy rich text", onSelect: () => void copyRichText() },
@@ -670,6 +685,7 @@ export default function Editor() {
       {deleteDialogDocId === active?.id && active && !activeShared && (
         <DeleteDocumentDialog
           title={titleOf(active.body)}
+          derivedCount={docs.filter((doc) => doc.parentId === active.id).length}
           onClose={() => setDeleteDialogDocId("")}
           onDelete={() => deleteDoc(deleteDialogDocId)}
         />
@@ -742,10 +758,12 @@ function DocumentShareDialog({
 
 function DeleteDocumentDialog({
   title,
+  derivedCount,
   onClose,
   onDelete
 }: {
   title: string;
+  derivedCount: number;
   onClose: () => void;
   onDelete: () => Promise<void>;
 }) {
@@ -761,7 +779,11 @@ function DeleteDocumentDialog({
         }}
       >
         <h2>Delete “{title}”?</h2>
-        <p>It will be removed from Passage, and its share link will stop working.</p>
+        <p>
+          {derivedCount === 0
+            ? "It will be removed from Passage, and its share link will stop working."
+            : `It and its ${derivedCount === 1 ? "1 derived doc" : `${derivedCount} derived docs`} will be removed from Passage, and their share links will stop working.`}
+        </p>
         <footer>
           <button ref={cancelButton} type="button" onClick={onClose}>Cancel</button>
           <button type="submit" data-danger>Delete</button>

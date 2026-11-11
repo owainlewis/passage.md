@@ -174,6 +174,9 @@ export function useEditorDocuments({
     if (!userId || leftId === activeId) return;
     const left = docsRef.current.find((doc) => doc.id === leftId);
     if (!left || !isBlankDoc(left) || isShared(left)) return;
+    // Archiving a parent takes its derived docs with it, and that must only
+    // ever happen because the writer asked for it.
+    if (docsRef.current.some((doc) => doc.parentId === leftId)) return;
     const generation = accountGeneration.current;
     setDocs((prev) => prev.filter((doc) => doc.id !== leftId));
     apiArchiveDoc(leftId).catch(() => {
@@ -380,9 +383,10 @@ export function useEditorDocuments({
     }
   }
 
-  async function createDoc(body = "") {
+  // With a parentId the new document is a derived doc of that document.
+  async function createDoc(body = "", parentId?: string) {
     // A blank page is already open: write there instead of making another.
-    if (!body && active && userId && isBlankDoc(active) && !isShared(active)) {
+    if (!parentId && !body && active && userId && isBlankDoc(active) && !isShared(active)) {
       requestAnimationFrame(focusEditor);
       return active;
     }
@@ -393,7 +397,7 @@ export function useEditorDocuments({
     setBillingNotice("");
     setSaveState("saving");
     try {
-      const doc = await apiCreateDoc(body);
+      const doc = await apiCreateDoc(body, parentId);
       setDocs((prev) => [doc, ...prev]);
       setActiveId(doc.id);
       updateEditorURL(doc, "push");
@@ -452,9 +456,13 @@ export function useEditorDocuments({
       setSaveState("error");
       return false;
     }
-    const next = docs.filter((candidate) => candidate.id !== id);
-    const replacement = next.find((candidate) => candidate.id === activeId) ?? next[0] ?? null;
-    setDocs((current) => current.filter((candidate) => candidate.id !== id));
+    // The server archived any derived docs along with their parent.
+    const next = docs.filter((candidate) => candidate.id !== id && candidate.parentId !== id);
+    const replacement = next.find((candidate) => candidate.id === activeId)
+      ?? next.find((candidate) => candidate.id === doc.parentId)
+      ?? next[0]
+      ?? null;
+    setDocs((current) => current.filter((candidate) => candidate.id !== id && candidate.parentId !== id));
     if (id === activeId) setActiveId(replacement?.id ?? "");
     setSaveState("saved");
     return replacement;

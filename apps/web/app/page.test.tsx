@@ -51,10 +51,15 @@ type TestDoc = {
   version?: number;
   shareToken?: string | null;
   sharedAt?: string | null;
+  parentId?: string;
+  createdAt?: string;
   updatedAt?: string;
 };
 
-function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody }]) {
+function stubSignedInFetch(
+  initialDocs: TestDoc[] = [{ id: "doc-welcome", body: defaultDocBody }],
+  account: typeof proAccount | typeof freeAccount = proAccount
+) {
   let docs: Array<TestDoc & { publicId: string }> = initialDocs.map((doc, index) => ({
     publicId: `public-${index + 1}`,
     ...doc
@@ -65,7 +70,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     const method = init?.method ?? "GET";
     if (url === "/api/v1/me") {
       return new Response(
-        JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account: proAccount }),
+        JSON.stringify({ authenticated: true, user: { id: "user-1", email: "writer@example.com" }, account }),
         { status: 200 }
       );
     }
@@ -84,11 +89,22 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
       return new Response(JSON.stringify({ documents: matches }), { status: 200 });
     }
     if (url.startsWith("/api/v1/docs?") && method === "GET") {
-      return new Response(JSON.stringify({ documents: docs }), { status: 200 });
+      // Like the server: top-level documents, each carrying its derived docs.
+      const documents = docs.filter((doc) => !doc.parentId).map((doc) => {
+        const children = docs.filter((child) => child.parentId === doc.id);
+        return children.length > 0 ? { ...doc, children } : doc;
+      });
+      return new Response(JSON.stringify({ documents }), { status: 200 });
     }
     if (url === "/api/v1/docs" && method === "POST") {
-      const body = JSON.parse(String(init?.body ?? "{}")).body ?? "";
-      const doc: TestDoc & { publicId: string } = { id: `doc-${nextDoc}`, publicId: `public-${nextDoc}`, body };
+      const input = JSON.parse(String(init?.body ?? "{}"));
+      const body = input.body ?? "";
+      const doc: TestDoc & { publicId: string } = {
+        id: `doc-${nextDoc}`,
+        publicId: `public-${nextDoc}`,
+        body,
+        ...(input.parentId ? { parentId: input.parentId } : {})
+      };
       nextDoc += 1;
       docs = [doc, ...docs];
       return new Response(JSON.stringify(doc), { status: 201 });
@@ -109,7 +125,7 @@ function stubSignedInFetch(initialDocs: TestDoc[] = [{ id: "doc-welcome", body: 
     }
     if (url.startsWith("/api/v1/docs/") && method === "DELETE") {
       const id = url.split("/")[4];
-      docs = docs.filter((doc) => doc.id !== id);
+      docs = docs.filter((doc) => doc.id !== id && doc.parentId !== id);
       return new Response(null, { status: 204 });
     }
     if (url.startsWith("/api/v1/docs/") && url.endsWith("/share") && method === "POST") {
@@ -2605,5 +2621,178 @@ describe("Writer", () => {
     await openDocumentNamed("Existing");
     await waitFor(() => expect(requests).toEqual(["POST /api/v1/docs", "DELETE /api/v1/docs/doc-2"]));
     expect(within(openDrawer()).queryByRole("button", { name: /^Untitled/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("Derived docs", () => {
+  const longTitle = "A LinkedIn post that opens with a very long hook, the kind that runs well past the edge of a narrow list of documents";
+  const library: TestDoc[] = [
+    { id: "doc-other", publicId: "other", body: "# Standalone", updatedAt: "2026-08-04T10:00:00Z" },
+    { id: "doc-source", publicId: "source", body: "# Source piece\n\nThe idea.", updatedAt: "2026-08-03T10:00:00Z" },
+    // Listed newest first here; the drawer must still show the oldest first.
+    {
+      id: "doc-post",
+      publicId: "post",
+      parentId: "doc-source",
+      body: `# ${longTitle}`,
+      createdAt: "2026-08-03T12:00:00Z",
+      updatedAt: "2026-08-03T12:00:00Z"
+    },
+    {
+      id: "doc-news",
+      publicId: "news",
+      parentId: "doc-source",
+      body: "# Newsletter\n\nThe weekly edition.",
+      sharedAt: "2026-08-05T09:00:00Z",
+      createdAt: "2026-08-03T11:00:00Z",
+      updatedAt: "2026-08-05T10:00:00Z"
+    }
+  ];
+
+  function topLevelTitles() {
+    return Array.from(openDrawer().querySelectorAll(".wDocRow:not(.wDocChild) .wDocTitle")).map((title) => title.textContent);
+  }
+
+  it("keeps derived docs under their parent in a group that is closed until opened", async () => {
+    stubSignedInFetch(library);
+    await renderWrite();
+
+    const drawer = openDrawer();
+    // A child edited after everything else does not move its parent, and is
+    // not a row of its own.
+    expect(topLevelTitles()).toEqual(["Standalone", "Source piece"]);
+    expect(within(drawer).queryByRole("group", { name: "Derived from Source piece" })).not.toBeInTheDocument();
+
+    const toggle = within(drawer).getByRole("button", { name: "2 derived docs of Source piece" });
+    expect(toggle).toHaveTextContent("2");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const group = within(drawer).getByRole("group", { name: "Derived from Source piece" });
+    expect(toggle).toHaveAttribute("aria-controls", group.id);
+    const children = within(group).getAllByRole("button");
+    expect(children.map((child) => child.querySelector(".wDocTitle")?.textContent)).toEqual(["Newsletter", longTitle]);
+    // One line each: the title, the full title on hover, and no date.
+    expect(children[1]).toHaveAttribute("title", longTitle);
+    expect(children[1].textContent).toBe(longTitle);
+    expect(children[0].textContent).toBe("NewsletterShared");
+    for (const child of children) {
+      child.focus();
+      expect(child).toHaveFocus();
+    }
+
+    fireEvent.click(toggle);
+    expect(within(drawer).queryByRole("group", { name: "Derived from Source piece" })).not.toBeInTheDocument();
+  });
+
+  it("opens the group that holds the open document, and offers no derived doc on a child", async () => {
+    stubSignedInFetch(library);
+    window.history.replaceState(null, "", "/write/news");
+    await renderWrite();
+
+    expect((await screen.findAllByRole("heading", { name: "Newsletter", level: 1 })).length).toBeGreaterThan(0);
+    const group = within(openDrawer()).getByRole("group", { name: "Derived from Source piece" });
+    expect(within(group).getByRole("button", { name: /^Newsletter/ })).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+    expect(screen.getByRole("menuitem", { name: "Copy Markdown" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "New derived doc" })).not.toBeInTheDocument();
+  });
+
+  it("opens a child chosen from search and opens its group", async () => {
+    stubSignedInFetch(library);
+    await renderWrite();
+    expect(within(openDrawer()).queryByRole("group", { name: "Derived from Source piece" })).not.toBeInTheDocument();
+
+    openWorkspaceSearch();
+    const search = screen.getByRole("searchbox", { name: "Search documents" });
+    fireEvent.change(search, { target: { value: "weekly edition" } });
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Search results" })).getAllByRole("button")).toHaveLength(1));
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    await waitFor(() => expect(window.location.pathname).toBe("/write/news"));
+    const group = within(openDrawer()).getByRole("group", { name: "Derived from Source piece" });
+    expect(within(group).getByRole("button", { name: /^Newsletter/ })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("lets a Free account create a derived doc and opens it under its parent", async () => {
+    const fetchMock = stubSignedInFetch(
+      [{ id: "doc-source", publicId: "source", body: "# Source piece" }],
+      { ...freeAccount, limits: { maxSavedDocs: 5 } }
+    );
+    await renderWrite();
+
+    openDocumentAction("New derived doc");
+
+    await waitFor(() => expect(window.location.pathname).toBe("/write/public-2"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/docs",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ body: "", parentId: "doc-source" }) })
+    );
+    const editor = await screen.findByRole("textbox", { name: "Visual editor" });
+    expect(editor.textContent).toBe("");
+    const drawer = openDrawer();
+    expect(within(drawer).getByRole("button", { name: "1 derived doc of Source piece" })).toHaveAttribute("aria-expanded", "true");
+    const group = within(drawer).getByRole("group", { name: "Derived from Source piece" });
+    expect(within(group).getByRole("button", { name: "Untitled" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("names the derived docs a parent takes with it, and removes them all", async () => {
+    const fetchMock = stubSignedInFetch(library.filter((doc) => doc.id !== "doc-other").concat(library[0]));
+    await renderWrite();
+    expect((await screen.findAllByRole("heading", { name: "Source piece", level: 1 })).length).toBeGreaterThan(0);
+
+    openDocumentAction("Delete");
+    const dialog = screen.getByRole("dialog", { name: "Delete document" });
+    expect(within(dialog).getByText(
+      "It and its 2 derived docs will be removed from Passage, and their share links will stop working."
+    )).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect((await screen.findAllByRole("heading", { name: "Standalone", level: 1 })).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-source", expect.objectContaining({ method: "DELETE" }));
+    expect(topLevelTitles()).toEqual(["Standalone"]);
+    expect(screen.queryByRole("button", { name: /derived doc/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Newsletter/ })).not.toBeInTheDocument();
+
+    openDocumentAction("Delete");
+    expect(within(screen.getByRole("dialog", { name: "Delete document" })).getByText(
+      "It will be removed from Passage, and its share link will stop working."
+    )).toBeInTheDocument();
+  });
+
+  it("returns to the parent after deleting one of its derived docs", async () => {
+    stubSignedInFetch(library.map((doc) => (doc.id === "doc-news" ? { ...doc, sharedAt: null } : doc)));
+    window.history.replaceState(null, "", "/write/news");
+    await renderWrite();
+    expect((await screen.findAllByRole("heading", { name: "Newsletter", level: 1 })).length).toBeGreaterThan(0);
+
+    deleteActiveDocument();
+
+    expect((await screen.findAllByRole("heading", { name: "Source piece", level: 1 })).length).toBeGreaterThan(0);
+    expect(within(openDrawer()).getByRole("button", { name: "1 derived doc of Source piece" })).toBeInTheDocument();
+  });
+
+  it("never discards an emptied parent on the way out, because that would take its derived docs", async () => {
+    const requests: string[] = [];
+    const baseFetch = stubSignedInFetch([
+      { id: "doc-source", publicId: "source", body: "" },
+      { id: "doc-news", publicId: "news", parentId: "doc-source", body: "# Newsletter" },
+      { id: "doc-other", publicId: "other", body: "# Standalone" }
+    ]);
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "DELETE") requests.push(String(input));
+      return baseFetch(input, init);
+    }));
+    await renderWrite();
+
+    await openDocumentNamed("Standalone");
+    await waitFor(() => expect(window.location.pathname).toBe("/write/other"));
+
+    expect(requests).toEqual([]);
+    expect(within(openDrawer()).getByRole("button", { name: "1 derived doc of Untitled" })).toBeInTheDocument();
   });
 });

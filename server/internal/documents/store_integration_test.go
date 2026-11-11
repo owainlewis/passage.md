@@ -244,7 +244,7 @@ func TestStoreSearchUsesDeterministicKeysetPaginationAndTracksWrites(t *testing.
 		}
 	}
 
-	document, err := store.Create(ctx, ownerID, "# Generated vector\n\nOriginal marker.", NoSavedDocumentLimit, Actor{})
+	document, err := store.Create(ctx, ownerID, "# Generated vector\n\nOriginal marker.", "", NoSavedDocumentLimit, Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestStoreContentVersionGuardsConcurrentWrites(t *testing.T) {
 	store := NewStore(db)
 	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("version-%d@example.com", time.Now().UnixNano()))
 
-	created, err := store.Create(ctx, ownerID, "# Start", NoSavedDocumentLimit, Actor{})
+	created, err := store.Create(ctx, ownerID, "# Start", "", NoSavedDocumentLimit, Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +461,7 @@ func TestStoreAttributesContentWritesToTheActingIdentity(t *testing.T) {
 	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("attribution-%d@example.com", time.Now().UnixNano()))
 	agent := Actor{TokenID: "11111111-1111-1111-1111-111111111111", TokenName: "Nightly runner"}
 
-	created, err := store.Create(ctx, ownerID, "# Shared", NoSavedDocumentLimit, Actor{})
+	created, err := store.Create(ctx, ownerID, "# Shared", "", NoSavedDocumentLimit, Actor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,5 +554,262 @@ func TestStoreAttributesContentWritesToTheActingIdentity(t *testing.T) {
 	}
 	if len(foreign) != 0 {
 		t.Fatalf("contributors leaked to another owner: %#v", foreign)
+	}
+}
+
+func TestStoreDerivedDocsNestOneLevelUnderAParent(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	db, err := database.Open(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	if _, err := migrations.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	store := NewStore(db)
+	stamp := time.Now().UnixNano()
+	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("derived-%d@example.com", stamp))
+	otherID := insertDocumentTestUser(t, db, fmt.Sprintf("derived-other-%d@example.com", stamp))
+	marker := fmt.Sprintf("derivedmarker%d", stamp)
+
+	parent, err := store.Create(ctx, ownerID, "# Source piece", "", NoSavedDocumentLimit, Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parent.ParentID != nil {
+		t.Fatalf("top-level parentId = %v", *parent.ParentID)
+	}
+	alone, err := store.Create(ctx, ownerID, "# Standalone", "", NoSavedDocumentLimit, Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var children []Document
+	for _, body := range []string{"# Newsletter\n\n" + marker, "# LinkedIn post", "# Video script"} {
+		child, err := store.Create(ctx, ownerID, body, parent.ID, NoSavedDocumentLimit, Actor{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if child.ParentID == nil || *child.ParentID != parent.ID {
+			t.Fatalf("child parentId = %v, want %s", child.ParentID, parent.ID)
+		}
+		children = append(children, child)
+	}
+
+	// The parent must be the owner's, active, and top-level.
+	otherDoc, err := store.Create(ctx, otherID, "# Someone else's", "", NoSavedDocumentLimit, Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedParent, err := store.Create(ctx, ownerID, "# Gone", "", NoSavedDocumentLimit, Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, ownerID, archivedParent.ID); err != nil {
+		t.Fatal(err)
+	}
+	for name, parentID := range map[string]string{
+		"missing":     "99999999-9999-9999-9999-999999999999",
+		"malformed":   "not-a-uuid",
+		"other owner": otherDoc.ID,
+		"archived":    archivedParent.ID,
+	} {
+		if _, err := store.Create(ctx, ownerID, "# Child", parentID, NoSavedDocumentLimit, Actor{}); !errors.Is(err, ErrParentNotFound) {
+			t.Fatalf("%s parent error = %v, want ErrParentNotFound", name, err)
+		}
+	}
+	if _, err := store.Create(ctx, ownerID, "# Grandchild", children[0].ID, NoSavedDocumentLimit, Actor{}); !errors.Is(err, ErrParentIsDerived) {
+		t.Fatalf("nested child error = %v, want ErrParentIsDerived", err)
+	}
+	// Children count toward the saved document limit like any other document.
+	if _, err := store.Create(ctx, ownerID, "# Over", parent.ID, 5, Actor{}); !errors.Is(err, ErrLimitReached) {
+		t.Fatalf("child at the limit error = %v, want ErrLimitReached", err)
+	}
+
+	// Editing a child must not move its parent in the list.
+	edited := "# Video script\n\nrevised"
+	if _, err := store.Update(ctx, ownerID, children[2].ID, DocumentUpdate{Body: &edited}); err != nil {
+		t.Fatal(err)
+	}
+
+	// One row per page still keeps every child with its parent.
+	first, err := store.ListPage(ctx, ownerID, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].ID != alone.ID || len(first[0].Children) != 0 {
+		t.Fatalf("first page = %v, children %d", metadataIDs(first), len(first[0].Children))
+	}
+	second, err := store.ListPage(ctx, ownerID, 1, &ListCursor{UpdatedAt: first[0].UpdatedAt, ID: first[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].ID != parent.ID || second[0].ParentID != nil {
+		t.Fatalf("second page = %v", metadataIDs(second))
+	}
+	gotChildren := metadataIDs(second[0].Children)
+	wantChildren := []string{children[0].ID, children[1].ID, children[2].ID}
+	if strings.Join(gotChildren, ",") != strings.Join(wantChildren, ",") {
+		t.Fatalf("children = %v, want oldest first %v", gotChildren, wantChildren)
+	}
+	for _, child := range second[0].Children {
+		if child.ParentID == nil || *child.ParentID != parent.ID {
+			t.Fatalf("listed child parentId = %v", child.ParentID)
+		}
+	}
+	if second[0].Children[0].Title != "Newsletter" {
+		t.Fatalf("child title = %q", second[0].Children[0].Title)
+	}
+	third, err := store.ListPage(ctx, ownerID, 1, &ListCursor{UpdatedAt: second[0].UpdatedAt, ID: second[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(third) != 0 {
+		t.Fatalf("a child was listed as a top-level row: %v", metadataIDs(third))
+	}
+
+	// The legacy list stays flat for released CLI clients.
+	all, err := store.List(ctx, ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withParent := 0
+	for _, doc := range all {
+		if doc.ParentID != nil {
+			if *doc.ParentID != parent.ID {
+				t.Fatalf("legacy parentId = %s", *doc.ParentID)
+			}
+			withParent++
+		}
+	}
+	if len(all) != 5 || withParent != 3 {
+		t.Fatalf("legacy list = %d documents, %d with a parent", len(all), withParent)
+	}
+
+	results, err := store.Search(ctx, ownerID, marker, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].ID != children[0].ID || results[0].ParentID == nil || *results[0].ParentID != parent.ID {
+		t.Fatalf("search results = %v", searchResultIDs(results))
+	}
+
+	// Archiving a child leaves its parent and siblings alone.
+	if err := store.Archive(ctx, ownerID, children[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{parent.ID, children[0].ID, children[2].ID} {
+		if _, err := store.Get(ctx, ownerID, id); err != nil {
+			t.Fatalf("document %s after archiving a sibling: %v", id, err)
+		}
+	}
+
+	// A shared child does not block its parent. It goes with it, and its
+	// public URL stops resolving.
+	sharedChild, err := store.Share(ctx, ownerID, children[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sharedChild.ParentID == nil {
+		t.Fatal("share dropped the child's parentId")
+	}
+	if _, err := store.GetPublic(ctx, sharedChild.PublicID); err != nil {
+		t.Fatalf("shared child public lookup: %v", err)
+	}
+
+	// The document being deleted must still be unshared first, and a refused
+	// delete leaves the children where they were.
+	if _, err := store.Share(ctx, ownerID, parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, ownerID, parent.ID); !errors.Is(err, ErrShared) {
+		t.Fatalf("shared parent archive error = %v, want ErrShared", err)
+	}
+	if _, err := store.Get(ctx, ownerID, children[2].ID); err != nil {
+		t.Fatalf("child after refused parent archive: %v", err)
+	}
+	if err := store.Unshare(ctx, ownerID, parent.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Archive(ctx, ownerID, parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{parent.ID, children[0].ID, children[2].ID} {
+		if _, err := store.Get(ctx, ownerID, id); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("document %s after parent archive: %v, want ErrNotFound", id, err)
+		}
+	}
+	if _, err := store.GetPublic(ctx, sharedChild.PublicID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived child public lookup error = %v, want ErrNotFound", err)
+	}
+	if results, err := store.Search(ctx, ownerID, marker, 10, nil); err != nil || len(results) != 0 {
+		t.Fatalf("search after parent archive = %v, %v", searchResultIDs(results), err)
+	}
+	remaining, err := store.ListPage(ctx, ownerID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != alone.ID {
+		t.Fatalf("list after parent archive = %v", metadataIDs(remaining))
+	}
+	if _, err := store.Get(ctx, otherID, otherDoc.ID); err != nil {
+		t.Fatalf("another owner's document was touched: %v", err)
+	}
+}
+
+// A child created while its parent is being archived must not survive as an
+// active document under an archived parent.
+func TestStoreArchiveAndDerivedCreateDoNotLeaveOrphans(t *testing.T) {
+	databaseURL := os.Getenv("PASSAGE_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("PASSAGE_TEST_DATABASE_URL is not set")
+	}
+	db, err := database.Open(context.Background(), databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	if _, err := migrations.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	store := NewStore(db)
+	ownerID := insertDocumentTestUser(t, db, fmt.Sprintf("derived-race-%d@example.com", time.Now().UnixNano()))
+
+	for round := range 20 {
+		parent, err := store.Create(ctx, ownerID, "# Source", "", NoSavedDocumentLimit, Actor{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		createErr := make(chan error, 1)
+		archiveErr := make(chan error, 1)
+		go func() {
+			_, err := store.Create(ctx, ownerID, "# Child", parent.ID, NoSavedDocumentLimit, Actor{})
+			createErr <- err
+		}()
+		go func() { archiveErr <- store.Archive(ctx, ownerID, parent.ID) }()
+		if err := <-archiveErr; err != nil {
+			t.Fatalf("round %d archive: %v", round, err)
+		}
+		if err := <-createErr; err != nil && !errors.Is(err, ErrParentNotFound) {
+			t.Fatalf("round %d create: %v", round, err)
+		}
+		var orphans int
+		if err := db.QueryRow(ctx, `
+			SELECT count(*) FROM documents
+			WHERE parent_id = $1 AND archived_at IS NULL
+		`, parent.ID).Scan(&orphans); err != nil {
+			t.Fatal(err)
+		}
+		if orphans != 0 {
+			t.Fatalf("round %d left %d active children under an archived parent", round, orphans)
+		}
 	}
 }

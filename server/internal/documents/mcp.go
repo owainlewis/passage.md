@@ -230,7 +230,7 @@ func (t *mcpTools) create(ctx context.Context, _ *mcp.CallToolRequest, in mcpCre
 		}
 		maxSavedDocs = limit
 	}
-	doc, err := t.store.Create(ctx, t.ownerID, in.Markdown, maxSavedDocs, t.actor)
+	doc, err := t.store.Create(ctx, t.ownerID, in.Markdown, "", maxSavedDocs, t.actor)
 	if errors.Is(err, ErrLimitReached) {
 		return nil, mcpWriteResult{}, errors.New("saved document limit reached")
 	}
