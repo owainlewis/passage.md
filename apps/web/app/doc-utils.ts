@@ -1,4 +1,4 @@
-import { Lexer, type Token } from "marked";
+import { Lexer, type Token, type Tokens } from "marked";
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---(?:\n|$)/;
 
@@ -58,11 +58,44 @@ export function withoutLeadingTitle(excerpt: string, title: string): string {
 // Readable plain text from any Markdown fragment, including the bounded
 // excerpts the server returns in place of a full body.
 export function plainSummary(markdown: string): string {
-  const parts: string[] = [];
-  collectText(new Lexer({ gfm: true }).lex(markdown), parts);
-  const text = parts.join("").replace(/\s+/g, " ").trim();
+  const text = plainBlocks(markdown).join(" ");
   if (!text) return NO_SUMMARY;
   return text.length > SUMMARY_LIMIT ? `${text.slice(0, SUMMARY_LIMIT).trimEnd()}…` : text;
+}
+
+// The prose of each paragraph, heading and list item, in order. Code is left
+// out, so this is the text a reader reads.
+export function plainBlocks(markdown: string): string[] {
+  return inlineText(new Lexer({ gfm: true }).lex(markdown), true);
+}
+
+// The document as plain text for places that take no formatting: paragraphs
+// stay apart, lists keep their bullets, and the Markdown marks are gone.
+export function plainDocument(markdown: string): string {
+  const blocks: string[] = [];
+  for (const token of new Lexer({ gfm: true }).lex(bodyWithoutFrontmatter(markdown))) {
+    if (token.type === "code") blocks.push(token.text);
+    else if (token.type === "list") blocks.push(listLines(token as Tokens.List, "").join("\n"));
+    else blocks.push(...inlineText([token], false));
+  }
+  return blocks.join("\n\n");
+}
+
+function listLines(list: Tokens.List, indent: string): string[] {
+  const lines: string[] = [];
+  list.items.forEach((item, index) => {
+    const marker = item.task ? (item.checked ? "☑ " : "☐ ") : list.ordered ? `${Number(list.start || 1) + index}. ` : "• ";
+    const nested = item.tokens.filter((token): token is Tokens.List => token.type === "list");
+    lines.push(`${indent}${marker}${inlineText(item.tokens.filter((token) => token.type !== "list"), false).join(" ")}`);
+    for (const child of nested) lines.push(...listLines(child, `${indent}  `));
+  });
+  return lines;
+}
+
+function inlineText(tokens: Token[], splitBlocks: boolean): string[] {
+  const parts: string[] = [];
+  collectText(tokens, parts);
+  return parts.join("").split(splitBlocks ? /\n+/ : /\n{2,}/).map((text) => text.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 
 function collectText(tokens: Token[], parts: string[]) {
@@ -97,7 +130,7 @@ function collectText(tokens: Token[], parts: string[]) {
     if ("tokens" in token && token.tokens) {
       collectText(token.tokens, parts);
       // Block boundaries separate words even when the source had no space.
-      if (BLOCKS.has(token.type)) parts.push(" ");
+      if (BLOCKS.has(token.type)) parts.push("\n");
     } else if ("text" in token && typeof token.text === "string") {
       parts.push(decodeEntities(token.text));
     }

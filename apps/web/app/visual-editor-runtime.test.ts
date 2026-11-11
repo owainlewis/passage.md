@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, waitFor } from "@testing-library/react";
-import { createVisualEditor, splitFrontmatter, UnsupportedMarkdown, type VisualEditorHandle, type BlockMenuOptions } from "./visual-editor-runtime";
+import {
+  createVisualEditor, splitFrontmatter, UnsupportedMarkdown,
+  type BlockMenuOptions, type EditorObservers, type VisualEditorHandle
+} from "./visual-editor-runtime";
 
 // jsdom has no layout; ProseMirror scrolls its selection after commands.
 // Real selection geometry is covered by the browser checks.
@@ -11,13 +14,23 @@ beforeAll(() => {
 
 let handle: VisualEditorHandle | undefined;
 afterEach(async () => { await handle?.destroy(); handle = undefined; document.body.innerHTML = ""; });
-async function open(source: string, blocks?: BlockMenuOptions) {
+async function open(source: string, blocks?: BlockMenuOptions, observers?: EditorObservers) {
   const root = document.createElement("div");
   document.body.append(root);
   const change = vi.fn();
   const error = vi.fn();
-  handle = await createVisualEditor(root, source, change, error, blocks);
+  handle = await createVisualEditor(root, source, change, error, blocks, observers);
   return { root, change, error, handle };
+}
+
+function placeCaret(root: HTMLElement, node: Node, offset: number) {
+  root.querySelector<HTMLElement>('[role="textbox"]')!.focus();
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  window.getSelection()!.removeAllRanges();
+  window.getSelection()!.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
 }
 
 describe("visual Markdown storage", () => {
@@ -130,5 +143,92 @@ describe("slash block insertion", () => {
     expect(error).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(handle.source()).toContain("/Keep this text");
+  });
+});
+
+describe("focus", () => {
+  const source = "# Draft\n\nFirst sentence here. Second sentence here.\n";
+
+  it("lights only the sentence the caret is in", async () => {
+    const { root, handle } = await open(source);
+    handle.setModes({ focus: true });
+    const content = root.querySelector('[role="textbox"]')!;
+    expect(content).toHaveClass("wFocusOn");
+
+    placeCaret(root, root.querySelector("p")!.firstChild!, 3);
+    await waitFor(() => expect(root.querySelector(".wFocusText")).toHaveTextContent("First sentence here."));
+    expect(root.querySelector(".wFocusBlock")).toBe(root.querySelector("p"));
+
+    handle.setModes({ focus: false });
+    expect(content).not.toHaveClass("wFocusOn");
+    expect(root.querySelector(".wFocusText")).toBeNull();
+  });
+
+  it("never changes or saves the Markdown", async () => {
+    const { handle, change, error } = await open(source);
+    handle.setModes({ focus: true });
+    handle.setModes({ focus: false });
+    expect(handle.source()).toBe(source);
+    expect(change).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus when the document is replaced from outside", async () => {
+    const { root, handle } = await open(source);
+    handle.setModes({ focus: true });
+    handle.setSource("# Remote\n\nThis was changed.\n");
+    expect(root.querySelector('[role="textbox"]')).toHaveClass("wFocusOn");
+  });
+
+  it("starts in the mode it is given", async () => {
+    const { root } = await open(source, undefined, { modes: { focus: true } });
+    expect(root.querySelector('[role="textbox"]')).toHaveClass("wFocusOn");
+  });
+});
+
+describe("document reports", () => {
+  it("reports the outline with the words in each section", async () => {
+    const onOutline = vi.fn();
+    await open("# Title\n\nOne two.\n\n## Part\n\nThree four five.\n\n### Detail\n\nSix.\n\n## Next\n\nSeven eight.\n", undefined, { onOutline });
+    expect(onOutline).toHaveBeenLastCalledWith([
+      { level: 1, text: "Title", words: 11 },
+      { level: 2, text: "Part", words: 5 },
+      { level: 3, text: "Detail", words: 1 },
+      { level: 2, text: "Next", words: 2 }
+    ]);
+  });
+
+  it("reports the outline again only when it changes", async () => {
+    const onOutline = vi.fn();
+    const { handle } = await open("# Title\n\nBody.\n", undefined, { onOutline });
+    expect(onOutline).toHaveBeenCalledTimes(1);
+    handle.setModes({ focus: true });
+    expect(onOutline).toHaveBeenCalledTimes(1);
+    handle.setSource("# Title\n\nBody.\n\n## More\n");
+    expect(onOutline).toHaveBeenLastCalledWith([
+      { level: 1, text: "Title", words: 2 },
+      { level: 2, text: "More", words: 0 }
+    ]);
+  });
+
+  it("moves the caret to a heading chosen from the outline", async () => {
+    const { root, handle } = await open("# Title\n\nBody.\n\n## Part\n\nMore.\n");
+    handle.setModes({ focus: true });
+    handle.revealHeading(1);
+    expect(root.querySelector(".wFocusBlock")).toBe(root.querySelector("h2"));
+  });
+
+  it("reports the words in the selection", async () => {
+    const onSelection = vi.fn();
+    const { root } = await open("One two three four.\n", undefined, { onSelection });
+    const text = root.querySelector("p")!.firstChild!;
+    root.querySelector<HTMLElement>('[role="textbox"]')!.focus();
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 7);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent(document, new Event("selectionchange"));
+    await waitFor(() => expect(onSelection).toHaveBeenLastCalledWith(2));
   });
 });

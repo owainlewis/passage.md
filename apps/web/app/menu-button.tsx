@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ReactNode, useEffect, useId, useRef, useState } from "react";
 
 export type MenuItem =
-  | { kind?: "action"; label: string; hint?: string; badge?: string; danger?: boolean; disabled?: boolean; onSelect: () => void }
+  | { kind?: "action"; label: string; hint?: string; badge?: string; checked?: boolean; danger?: boolean; disabled?: boolean; onSelect: () => void }
   | { kind: "link"; label: string; href: string }
   | { kind: "separator" }
   | { kind: "note"; label: string; detail?: string };
@@ -121,7 +121,8 @@ export function MenuButton({
               <button
                 key={index}
                 type="button"
-                role="menuitem"
+                role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                aria-checked={item.checked}
                 className="wMenuItem"
                 data-danger={item.danger || undefined}
                 disabled={item.disabled}

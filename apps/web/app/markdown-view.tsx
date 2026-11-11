@@ -8,7 +8,7 @@ marked.setOptions({ gfm: true, breaks: false });
 
 // Rendered Markdown can contain raw HTML, and shared documents are arbitrary
 // input from whoever crafted the link, so sanitize before it ever hits the DOM.
-function renderMarkdown(source: string): string {
+export function renderMarkdown(source: string): string {
   const html = marked.parse(source) as string;
   return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
 }
