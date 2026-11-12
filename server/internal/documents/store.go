@@ -18,17 +18,33 @@ var ErrEmptySearchQuery = errors.New("search query has no searchable terms")
 var ErrShared = errors.New("shared document cannot be archived")
 var ErrLimitReached = errors.New("saved document limit reached")
 var ErrVersionConflict = errors.New("document changed since it was loaded")
+var ErrParentNotFound = errors.New("parent document not found")
+var ErrParentIsDerived = errors.New("parent document is itself a derived doc")
 var errPublicIDCollision = errors.New("public id collision")
+
+// ChildrenChangedError reports that a document has a different number of
+// derived docs than the caller expected, so nothing was archived. Children is
+// the number it has now.
+type ChildrenChangedError struct {
+	Children int
+}
+
+func (e *ChildrenChangedError) Error() string {
+	return "derived docs changed since the document was loaded"
+}
 
 const NoSavedDocumentLimit = -1
 
 type Document struct {
-	ID           string        `json:"id"`
-	PublicID     string        `json:"publicId"`
-	Title        string        `json:"title"`
-	Body         string        `json:"body"`
-	Starred      bool          `json:"starred"`
-	Version      int           `json:"version"`
+	ID       string `json:"id"`
+	PublicID string `json:"publicId"`
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	Starred  bool   `json:"starred"`
+	Version  int    `json:"version"`
+	// ParentID is set on a derived doc: the document it sits under. It is
+	// fixed at creation.
+	ParentID     *string       `json:"parentId,omitempty"`
 	LastEditor   *LastEditor   `json:"lastEditor,omitempty"`
 	Contributors []Contributor `json:"contributors,omitempty"`
 	ShareToken   *string       `json:"shareToken,omitempty"`
@@ -46,11 +62,15 @@ type DocumentMetadata struct {
 	Tags       []string    `json:"tags"`
 	Starred    bool        `json:"starred"`
 	Version    int         `json:"version"`
+	ParentID   *string     `json:"parentId,omitempty"`
 	LastEditor *LastEditor `json:"lastEditor,omitempty"`
 	ShareToken *string     `json:"shareToken,omitempty"`
 	SharedAt   *time.Time  `json:"sharedAt,omitempty"`
 	CreatedAt  time.Time   `json:"createdAt"`
 	UpdatedAt  time.Time   `json:"updatedAt"`
+	// Children are a top-level document's derived docs, oldest first. They
+	// travel with their parent so a page boundary never separates them.
+	Children []DocumentMetadata `json:"children,omitempty"`
 }
 
 type SearchResult struct {
@@ -60,6 +80,7 @@ type SearchResult struct {
 	MatchExcerpt string     `json:"matchExcerpt"`
 	Tags         []string   `json:"tags"`
 	Starred      bool       `json:"starred"`
+	ParentID     *string    `json:"parentId,omitempty"`
 	ShareToken   *string    `json:"shareToken,omitempty"`
 	SharedAt     *time.Time `json:"sharedAt,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
@@ -144,7 +165,7 @@ func NewStore(db *database.Pool) *Store {
 func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT d.id::text, d.public_id, d.title, d.body,
-		       d.starred, d.content_version,
+		       d.starred, d.content_version, d.parent_id::text,
 		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM documents d
@@ -168,6 +189,9 @@ func (s *Store) List(ctx context.Context, ownerID string) ([]Document, error) {
 	return docs, rows.Err()
 }
 
+// ListPage returns one page of top-level documents, each carrying its derived
+// docs. A derived doc is never a row of its own here, so the cursor only ever
+// walks parents and a child cannot be split from its parent by a page.
 func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error) {
 	var cursorUpdatedAt *time.Time
 	var cursorID *string
@@ -177,12 +201,13 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT d.id::text, d.public_id, left(d.body, 4096),
-		       d.starred, d.content_version,
+		       d.starred, d.content_version, d.parent_id::text,
 		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at
 		FROM documents d
 		WHERE d.owner_user_id = $1
 		  AND d.archived_at IS NULL
+		  AND d.parent_id IS NULL
 		  AND ($2::timestamptz IS NULL OR (d.updated_at, d.id) < ($2, $3::uuid))
 		ORDER BY d.updated_at DESC, d.id DESC
 		LIMIT $4
@@ -190,8 +215,44 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	docs, err := scanMetadataRows(rows)
+	if err != nil || len(docs) == 0 {
+		return docs, err
+	}
 
+	ids := make([]string, len(docs))
+	index := make(map[string]int, len(docs))
+	for i, doc := range docs {
+		ids[i] = doc.ID
+		index[doc.ID] = i
+	}
+	rows, err = s.db.Query(ctx, `
+		SELECT d.id::text, d.public_id, left(d.body, 4096),
+		       d.starred, d.content_version, d.parent_id::text,
+		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
+		       d.share_token, d.shared_at, d.created_at, d.updated_at
+		FROM documents d
+		WHERE d.owner_user_id = $1
+		  AND d.archived_at IS NULL
+		  AND d.parent_id = ANY($2::uuid[])
+		ORDER BY d.created_at, d.id
+	`, ownerID, ids)
+	if err != nil {
+		return nil, err
+	}
+	children, err := scanMetadataRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	for _, child := range children {
+		parent := &docs[index[*child.ParentID]]
+		parent.Children = append(parent.Children, child)
+	}
+	return docs, nil
+}
+
+func scanMetadataRows(rows pgx.Rows) ([]DocumentMetadata, error) {
+	defer rows.Close()
 	docs := []DocumentMetadata{}
 	for rows.Next() {
 		var doc DocumentMetadata
@@ -203,6 +264,7 @@ func (s *Store) ListPage(ctx context.Context, ownerID string, limit int, cursor 
 			&doc.Excerpt,
 			&doc.Starred,
 			&doc.Version,
+			&doc.ParentID,
 			&editorKey,
 			&editorName,
 			&editedAt,
@@ -251,6 +313,7 @@ func (s *Store) Search(ctx context.Context, ownerID string, query string, limit 
 				d.body,
 				left(d.body, 4096) AS body_start,
 				d.starred,
+				d.parent_id,
 				d.share_token,
 				d.shared_at,
 				d.created_at,
@@ -292,6 +355,7 @@ func (s *Store) Search(ctx context.Context, ownerID string, query string, limit 
 				240
 			) AS match_excerpt,
 			page.starred,
+			page.parent_id::text,
 			page.share_token,
 			page.shared_at,
 			page.created_at,
@@ -317,6 +381,7 @@ func (s *Store) Search(ctx context.Context, ownerID string, query string, limit 
 			&bodyStart,
 			&result.MatchExcerpt,
 			&result.Starred,
+			&result.ParentID,
 			&result.ShareToken,
 			&result.SharedAt,
 			&result.CreatedAt,
@@ -332,13 +397,18 @@ func (s *Store) Search(ctx context.Context, ownerID string, query string, limit 
 	return results, rows.Err()
 }
 
-func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error) {
+// Create saves a new document. A non-empty parentID makes it a derived doc of
+// that document, which must be the owner's, active, and top-level.
+func (s *Store) Create(ctx context.Context, ownerID string, body string, parentID string, maxSavedDocs int, actor Actor) (Document, error) {
+	if parentID != "" && !validUUID(parentID) {
+		return Document{}, ErrParentNotFound
+	}
 	for range 5 {
 		publicID, err := randomPublicID()
 		if err != nil {
 			return Document{}, err
 		}
-		doc, err := s.createWithPublicID(ctx, ownerID, body, publicID, maxSavedDocs, actor)
+		doc, err := s.createWithPublicID(ctx, ownerID, body, parentID, publicID, maxSavedDocs, actor)
 		if errors.Is(err, errPublicIDCollision) {
 			continue
 		}
@@ -347,7 +417,7 @@ func (s *Store) Create(ctx context.Context, ownerID string, body string, maxSave
 	return Document{}, errPublicIDCollision
 }
 
-func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body string, publicID string, maxSavedDocs int, actor Actor) (Document, error) {
+func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body string, parentID string, publicID string, maxSavedDocs int, actor Actor) (Document, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Document{}, err
@@ -358,6 +428,29 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 	if err := tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id = $1 FOR UPDATE`, ownerID).Scan(&lockedUserID); err != nil {
 		return Document{}, err
 	}
+	var parent *string
+	if parentID != "" {
+		// The share lock holds the parent still until this commits. Archive
+		// takes the same row for update first, so a parent cannot be archived
+		// between this check and the insert and leave an active child behind.
+		var parentIsDerived bool
+		err := tx.QueryRow(ctx, `
+			SELECT parent_id IS NOT NULL FROM documents
+			WHERE owner_user_id = $1 AND id = $2 AND archived_at IS NULL
+			FOR SHARE
+		`, ownerID, parentID).Scan(&parentIsDerived)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Document{}, ErrParentNotFound
+		}
+		if err != nil {
+			return Document{}, err
+		}
+		if parentIsDerived {
+			return Document{}, ErrParentIsDerived
+		}
+		parent = &parentID
+	}
+
 	if maxSavedDocs != NoSavedDocumentLimit {
 		var savedDocs int
 		if err := tx.QueryRow(ctx, `
@@ -376,19 +469,20 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 	var editedAt *time.Time
 	err = tx.QueryRow(ctx, `
 		INSERT INTO documents (owner_user_id, public_id, title, body,
-		                       last_editor_key, last_editor_name, last_edited_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())
+		                       last_editor_key, last_editor_name, last_edited_at, parent_id)
+		VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
 		RETURNING id::text, public_id, title, body,
-		          starred, content_version,
+		          starred, content_version, parent_id::text,
 		          last_editor_key, last_editor_name, last_edited_at,
 		          share_token, shared_at, created_at, updated_at, archived_at
-	`, ownerID, publicID, titleOf(body), body, actor.key(), actor.name()).Scan(
+	`, ownerID, publicID, titleOf(body), body, actor.key(), actor.name(), parent).Scan(
 		&doc.ID,
 		&doc.PublicID,
 		&doc.Title,
 		&doc.Body,
 		&doc.Starred,
 		&doc.Version,
+		&doc.ParentID,
 		&editorKey,
 		&editorName,
 		&editedAt,
@@ -480,7 +574,7 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, e
 	var editedAt *time.Time
 	err := s.db.QueryRow(ctx, `
 		SELECT d.id::text, d.public_id, d.title, d.body,
-		       d.starred, d.content_version,
+		       d.starred, d.content_version, d.parent_id::text,
 		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM documents d
@@ -494,6 +588,7 @@ func (s *Store) Get(ctx context.Context, ownerID string, id string) (Document, e
 		&doc.Body,
 		&doc.Starred,
 		&doc.Version,
+		&doc.ParentID,
 		&editorKey,
 		&editorName,
 		&editedAt,
@@ -559,7 +654,7 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 			    actor_name = COALESCE(EXCLUDED.actor_name, document_contributors.actor_name)
 		)
 		SELECT d.id::text, d.public_id, d.title, d.body,
-		       d.starred, d.content_version,
+		       d.starred, d.content_version, d.parent_id::text,
 		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM updated d
@@ -570,6 +665,7 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 		&doc.Body,
 		&doc.Starred,
 		&doc.Version,
+		&doc.ParentID,
 		&editorKey,
 		&editorName,
 		&editedAt,
@@ -618,49 +714,68 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 	return doc, nil
 }
 
-func (s *Store) Archive(ctx context.Context, ownerID string, id string) error {
+// Archive removes a document from the owner's library. A parent takes its
+// derived docs with it in the same transaction. Only the document named here
+// must be unshared first: a shared child goes with its parent, and its public
+// URLs stop resolving because public lookups skip archived rows.
+//
+// A caller that shows the derived docs before archiving passes how many it
+// showed as expectChildren. If the document has a different number, nothing is
+// archived and the error is a *ChildrenChangedError, so docs the caller never
+// saw are not removed without a word. A nil expectChildren archives whatever
+// is there.
+func (s *Store) Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error {
 	if !validUUID(id) {
 		return ErrNotFound
 	}
-	var archived bool
-	var found bool
-	var shared bool
-	err := s.db.QueryRow(ctx, `
-		WITH target AS (
-			SELECT shared_at
-			FROM documents
-			WHERE owner_user_id = $1
-			  AND id = $2
-			  AND archived_at IS NULL
-		),
-		archived AS (
-			UPDATE documents
-			SET archived_at = now(),
-			    updated_at = now()
-			WHERE owner_user_id = $1
-			  AND id = $2
-			  AND archived_at IS NULL
-			  AND shared_at IS NULL
-			RETURNING 1
-		)
-		SELECT
-			EXISTS (SELECT 1 FROM archived),
-			EXISTS (SELECT 1 FROM target),
-			EXISTS (SELECT 1 FROM target WHERE shared_at IS NOT NULL)
-	`, ownerID, id).Scan(&archived, &found, &shared)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if archived {
-		return nil
+	defer tx.Rollback(ctx)
+
+	// Locking the target first means a child being created under it either
+	// commits before this and is archived below, or waits and finds no parent.
+	var shared bool
+	err = tx.QueryRow(ctx, `
+		SELECT shared_at IS NOT NULL FROM documents
+		WHERE owner_user_id = $1 AND id = $2 AND archived_at IS NULL
+		FOR UPDATE
+	`, ownerID, id).Scan(&shared)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
 	}
 	if shared {
 		return ErrShared
 	}
-	if !found {
-		return ErrNotFound
+	if expectChildren != nil {
+		// The lock above keeps this count true until the commit: a derived doc
+		// cannot be created under a parent that is locked for update.
+		var children int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM documents
+			WHERE owner_user_id = $1 AND parent_id = $2 AND archived_at IS NULL
+		`, ownerID, id).Scan(&children); err != nil {
+			return err
+		}
+		if children != *expectChildren {
+			return &ChildrenChangedError{Children: children}
+		}
 	}
-	return ErrNotFound
+	if _, err := tx.Exec(ctx, `
+		UPDATE documents
+		SET archived_at = now(),
+		    updated_at = now()
+		WHERE owner_user_id = $1
+		  AND (id = $2 OR parent_id = $2)
+		  AND archived_at IS NULL
+	`, ownerID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document, error) {
@@ -681,7 +796,7 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 		RETURNING *
 		)
 		SELECT d.id::text, d.public_id, d.title, d.body,
-		       d.starred, d.content_version,
+		       d.starred, d.content_version, d.parent_id::text,
 		       d.last_editor_key, d.last_editor_name, d.last_edited_at,
 		       d.share_token, d.shared_at, d.created_at, d.updated_at, d.archived_at
 		FROM updated d
@@ -692,6 +807,7 @@ func (s *Store) Share(ctx context.Context, ownerID string, id string) (Document,
 		&doc.Body,
 		&doc.Starred,
 		&doc.Version,
+		&doc.ParentID,
 		&editorKey,
 		&editorName,
 		&editedAt,
@@ -735,7 +851,7 @@ func (s *Store) GetPublic(ctx context.Context, token string) (Document, error) {
 	}
 	doc, err := scanDocument(s.db.QueryRow(ctx, `
 		SELECT id::text, public_id, title, body,
-		       false, content_version,
+		       false, content_version, NULL::text,
 		       NULL::text, NULL::text, NULL::timestamptz,
 		       share_token, shared_at, created_at, updated_at, archived_at
 		FROM documents
@@ -764,6 +880,7 @@ func scanDocument(row scanner) (Document, error) {
 		&doc.Body,
 		&doc.Starred,
 		&doc.Version,
+		&doc.ParentID,
 		&editorKey,
 		&editorName,
 		&editedAt,

@@ -66,11 +66,11 @@ type documentStore interface {
 	List(ctx context.Context, ownerID string) ([]Document, error)
 	ListPage(ctx context.Context, ownerID string, limit int, cursor *ListCursor) ([]DocumentMetadata, error)
 	Search(ctx context.Context, ownerID string, query string, limit int, cursor *SearchCursor) ([]SearchResult, error)
-	Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error)
+	Create(ctx context.Context, ownerID string, body string, parentID string, maxSavedDocs int, actor Actor) (Document, error)
 	Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error)
-	Archive(ctx context.Context, ownerID string, id string) error
+	Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error
 	Share(ctx context.Context, ownerID string, id string) (Document, error)
 	Unshare(ctx context.Context, ownerID string, id string) error
 	GetPublic(ctx context.Context, token string) (Document, error)
@@ -276,16 +276,24 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request, user auth.User,
 	if !validateJSONMutation(w, r) {
 		return
 	}
-	var input bodyInput
+	var input createInput
 	if !decodeJSON(w, r, &input) {
 		return
 	}
 	if !validateDocumentBody(w, input.Body) {
 		return
 	}
-	doc, err := h.store.Create(r.Context(), user.ID, input.Body, maxSavedDocs, h.actorFor(r))
+	doc, err := h.store.Create(r.Context(), user.ID, input.Body, input.ParentID, maxSavedDocs, h.actorFor(r))
 	if errors.Is(err, ErrLimitReached) {
 		writeError(w, http.StatusPaymentRequired, "saved document limit reached")
+		return
+	}
+	if errors.Is(err, ErrParentNotFound) {
+		writeError(w, http.StatusNotFound, "parent document not found")
+		return
+	}
+	if errors.Is(err, ErrParentIsDerived) {
+		writeError(w, http.StatusBadRequest, "a derived doc cannot have derived docs of its own")
 		return
 	}
 	if err != nil {
@@ -396,9 +404,27 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request, user auth.User
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
-	err := h.store.Archive(r.Context(), user.ID, id)
+	// children is the number of derived docs the caller showed the writer.
+	var expectChildren *int
+	if raw := r.URL.Query().Get("children"); raw != "" {
+		children, err := strconv.Atoi(raw)
+		if err != nil || children < 0 {
+			writeError(w, http.StatusBadRequest, "children must be a whole number")
+			return
+		}
+		expectChildren = &children
+	}
+	err := h.store.Archive(r.Context(), user.ID, id, expectChildren)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	var changed *ChildrenChangedError
+	if errors.As(err, &changed) {
+		writeJSON(w, http.StatusConflict, childrenChangedResponse{
+			Error:    "this document's derived docs changed; check them before deleting it",
+			Children: changed.Children,
+		})
 		return
 	}
 	if errors.Is(err, ErrShared) {
@@ -497,8 +523,16 @@ func (h *Handler) Public(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(html)
 }
 
-type bodyInput struct {
+type childrenChangedResponse struct {
+	Error string `json:"error"`
+	// Children is how many derived docs the document has now.
+	Children int `json:"children"`
+}
+
+type createInput struct {
 	Body string `json:"body"`
+	// ParentID makes the new document a derived doc of an existing one.
+	ParentID string `json:"parentId"`
 }
 
 type documentUpdateInput struct {

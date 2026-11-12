@@ -18,7 +18,7 @@ const tools = [
   ["search_documents", "Search every word you have written. Title matches come first."],
   ["list_documents", "List your documents, newest first."],
   ["read_document", "Read one document's Markdown."],
-  ["create_document", "Start a new private document."],
+  ["create_document", "Start a new private document, or save a piece under the one it was made from."],
   ["edit_document", "Replace one exact passage and leave the rest alone."],
   ["append_to_document", "Add Markdown to the end of a document."]
 ];
@@ -26,7 +26,8 @@ const tools = [
 const prompts = [
   "Find my notes on pricing and summarise them.",
   "Tighten the intro of my launch post.",
-  "Append today's meeting notes to my weekly log."
+  "Append today's meeting notes to my weekly log.",
+  "Turn my launch post into a newsletter and save it under the post."
 ];
 
 export default function AgentsPage() {

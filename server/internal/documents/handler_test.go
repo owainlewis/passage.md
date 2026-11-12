@@ -379,6 +379,125 @@ func TestHandlerReportsSavedDocumentLimit(t *testing.T) {
 	}
 }
 
+func TestHandlerCreatesDerivedDocUnderParent(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store, nil)
+	parentID := "22222222-2222-2222-2222-222222222222"
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"# Newsletter","parentId":"`+parentID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.Create(rec, req, auth.User{ID: "user-1"}, 5)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if store.parentID != parentID || store.ownerID != "user-1" || store.maxSavedDocs != 5 {
+		t.Fatalf("create parent/owner/limit = %q/%q/%d", store.parentID, store.ownerID, store.maxSavedDocs)
+	}
+	var doc Document
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.ParentID == nil || *doc.ParentID != parentID {
+		t.Fatalf("response parentId = %v", doc.ParentID)
+	}
+}
+
+func TestHandlerOmitsParentIDOnTopLevelDocuments(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewHandler(store, nil)
+	req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"# One"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.Create(rec, req, auth.User{ID: "user-1"}, NoSavedDocumentLimit)
+
+	if rec.Code != http.StatusCreated || store.parentID != "" {
+		t.Fatalf("status/parent = %d/%q", rec.Code, store.parentID)
+	}
+	if strings.Contains(rec.Body.String(), "parentId") {
+		t.Fatalf("top-level document carried a parentId: %s", rec.Body.String())
+	}
+}
+
+func TestHandlerRefusesDerivedDocsUnderMissingOrDerivedParents(t *testing.T) {
+	for _, test := range []struct {
+		err     error
+		status  int
+		message string
+	}{
+		{ErrParentNotFound, http.StatusNotFound, "parent document not found"},
+		{ErrParentIsDerived, http.StatusBadRequest, "a derived doc cannot have derived docs of its own"},
+		{ErrLimitReached, http.StatusPaymentRequired, "saved document limit reached"},
+	} {
+		handler := NewHandler(&fakeStore{createErr: test.err}, nil)
+		req := httptest.NewRequest(http.MethodPost, "http://passage.test/api/v1/docs", strings.NewReader(`{"body":"# Child","parentId":"22222222-2222-2222-2222-222222222222"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		handler.Create(rec, req, auth.User{ID: "user-1"}, 5)
+
+		if rec.Code != test.status || !strings.Contains(rec.Body.String(), test.message) {
+			t.Fatalf("%v: status/body = %d/%s", test.err, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestHandlerListsChildrenWithTheirParentAndFlatInTheLegacyForm(t *testing.T) {
+	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	parentID := "11111111-1111-1111-1111-111111111113"
+	store := &fakeStore{page: []DocumentMetadata{
+		{ID: parentID, Title: "Source", UpdatedAt: now, Children: []DocumentMetadata{
+			{ID: "11111111-1111-1111-1111-111111111114", Title: "Newsletter", ParentID: &parentID, UpdatedAt: now},
+		}},
+		{ID: "11111111-1111-1111-1111-111111111112", Title: "Alone", UpdatedAt: now.Add(-time.Minute)},
+	}}
+	handler := NewHandler(store, nil)
+	rec := httptest.NewRecorder()
+	handler.List(rec, httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs?limit=2", nil), auth.User{ID: "user-1"})
+
+	var response struct {
+		Documents []struct {
+			ID       string `json:"id"`
+			ParentID string `json:"parentId"`
+			Children []struct {
+				ID       string `json:"id"`
+				ParentID string `json:"parentId"`
+			} `json:"children"`
+		} `json:"documents"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Documents) != 2 || response.Documents[0].ParentID != "" {
+		t.Fatalf("documents = %+v", response.Documents)
+	}
+	children := response.Documents[0].Children
+	if len(children) != 1 || children[0].ParentID != parentID {
+		t.Fatalf("children = %+v", children)
+	}
+	if strings.Count(rec.Body.String(), `"children"`) != 1 {
+		t.Fatalf("a document without children carried the field: %s", rec.Body.String())
+	}
+
+	store.list = []Document{
+		{ID: parentID, Body: "# Source"},
+		{ID: "11111111-1111-1111-1111-111111111114", Body: "# Newsletter", ParentID: &parentID},
+	}
+	legacy := httptest.NewRecorder()
+	handler.List(legacy, httptest.NewRequest(http.MethodGet, "http://passage.test/api/v1/docs", nil), auth.User{ID: "user-1"})
+	var flat struct {
+		Documents []Document `json:"documents"`
+	}
+	if err := json.Unmarshal(legacy.Body.Bytes(), &flat); err != nil {
+		t.Fatal(err)
+	}
+	if len(flat.Documents) != 2 || flat.Documents[0].ParentID != nil || flat.Documents[1].ParentID == nil || *flat.Documents[1].ParentID != parentID {
+		t.Fatalf("legacy list = %s", legacy.Body.String())
+	}
+}
+
 func TestHandlerRejectsOversizedDocumentRequests(t *testing.T) {
 	store := &fakeStore{}
 	handler := NewHandler(store, nil)
@@ -457,6 +576,37 @@ func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 
 	if unshare.Code != http.StatusNoContent {
 		t.Fatalf("unshare status = %d, body = %s", unshare.Code, unshare.Body.String())
+	}
+}
+
+func TestHandlerArchiveChecksTheDerivedDocCountWhenAsked(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	archive := func(store *fakeStore, query string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "http://passage.test/api/v1/docs/"+id+query, nil)
+		req.Header.Set("Origin", "http://passage.test")
+		req.SetPathValue("id", id)
+		NewHandler(store, nil).Archive(rec, req, auth.User{ID: "user-1"})
+		return rec
+	}
+
+	store := &fakeStore{}
+	if rec := archive(store, ""); rec.Code != http.StatusNoContent || store.archiveExpect != nil {
+		t.Fatalf("plain archive = %d, expect = %v", rec.Code, store.archiveExpect)
+	}
+	if rec := archive(store, "?children=2"); rec.Code != http.StatusNoContent || store.archiveExpect == nil || *store.archiveExpect != 2 {
+		t.Fatalf("counted archive = %d, expect = %v", rec.Code, store.archiveExpect)
+	}
+	for _, query := range []string{"?children=-1", "?children=two"} {
+		if rec := archive(store, query); rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d", query, rec.Code)
+		}
+	}
+
+	store = &fakeStore{archiveErr: &ChildrenChangedError{Children: 3}}
+	rec := archive(store, "?children=0")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"children":3`) {
+		t.Fatalf("changed = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -624,27 +774,30 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 }
 
 type fakeStore struct {
-	actor        Actor
-	contributors []Contributor
-	ownerID      string
-	body         string
-	update       DocumentUpdate
-	maxSavedDocs int
-	createErr    error
-	getErr       error
-	archiveErr   error
-	publicID     string
-	shareToken   *string
-	publicDoc    Document
-	page         []DocumentMetadata
-	pageLimit    int
-	pageCursor   *ListCursor
-	search       []SearchResult
-	searchErr    error
-	searchQuery  string
-	searchLimit  int
-	searchCursor *SearchCursor
-	updated      bool
+	actor         Actor
+	contributors  []Contributor
+	ownerID       string
+	body          string
+	parentID      string
+	update        DocumentUpdate
+	maxSavedDocs  int
+	createErr     error
+	getErr        error
+	archiveErr    error
+	archiveExpect *int
+	publicID      string
+	shareToken    *string
+	publicDoc     Document
+	list          []Document
+	page          []DocumentMetadata
+	pageLimit     int
+	pageCursor    *ListCursor
+	search        []SearchResult
+	searchErr     error
+	searchQuery   string
+	searchLimit   int
+	searchCursor  *SearchCursor
+	updated       bool
 }
 
 func (s *fakeStore) Search(ctx context.Context, ownerID string, query string, limit int, cursor *SearchCursor) ([]SearchResult, error) {
@@ -657,6 +810,9 @@ func (s *fakeStore) Search(ctx context.Context, ownerID string, query string, li
 
 func (s *fakeStore) List(ctx context.Context, ownerID string) ([]Document, error) {
 	s.ownerID = ownerID
+	if s.list != nil {
+		return s.list, nil
+	}
 	return []Document{{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: "# One"}}, nil
 }
 
@@ -671,15 +827,20 @@ func (s *fakeStore) Contributors(ctx context.Context, ownerID string, id string)
 	return s.contributors, nil
 }
 
-func (s *fakeStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor Actor) (Document, error) {
+func (s *fakeStore) Create(ctx context.Context, ownerID string, body string, parentID string, maxSavedDocs int, actor Actor) (Document, error) {
 	s.actor = actor
 	s.ownerID = ownerID
 	s.body = body
+	s.parentID = parentID
 	s.maxSavedDocs = maxSavedDocs
 	if s.createErr != nil {
 		return Document{}, s.createErr
 	}
-	return Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: body}, nil
+	doc := Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Body: body}
+	if parentID != "" {
+		doc.ParentID = &parentID
+	}
+	return doc, nil
 }
 
 func (s *fakeStore) Get(ctx context.Context, ownerID string, id string) (Document, error) {
@@ -700,8 +861,9 @@ func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, updat
 	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: s.body}, nil
 }
 
-func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) error {
+func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error {
 	s.ownerID = ownerID
+	s.archiveExpect = expectChildren
 	return s.archiveErr
 }
 

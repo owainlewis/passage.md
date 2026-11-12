@@ -161,7 +161,7 @@ func (s *routeDocumentStore) Contributors(ctx context.Context, ownerID string, i
 	return nil, nil
 }
 
-func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, maxSavedDocs int, actor documents.Actor) (documents.Document, error) {
+func (s *routeDocumentStore) Create(ctx context.Context, ownerID string, body string, parentID string, maxSavedDocs int, actor documents.Actor) (documents.Document, error) {
 	s.ownerID = ownerID
 	s.body = body
 	return documents.Document{ID: "11111111-1111-1111-1111-111111111111", PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: body}, nil
@@ -186,7 +186,7 @@ func (s *routeDocumentStore) Update(ctx context.Context, ownerID string, id stri
 	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body}, nil
 }
 
-func (s *routeDocumentStore) Archive(ctx context.Context, ownerID string, id string) error {
+func (s *routeDocumentStore) Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error {
 	s.ownerID = ownerID
 	if ownerID != "user-1" || id != "11111111-1111-1111-1111-111111111111" {
 		return documents.ErrNotFound
