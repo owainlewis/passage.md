@@ -610,7 +610,7 @@ func TestStoreDerivedDocsNestOneLevelUnderAParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Archive(ctx, ownerID, archivedParent.ID); err != nil {
+	if err := store.Archive(ctx, ownerID, archivedParent.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	for name, parentID := range map[string]string{
@@ -629,6 +629,11 @@ func TestStoreDerivedDocsNestOneLevelUnderAParent(t *testing.T) {
 	// Children count toward the saved document limit like any other document.
 	if _, err := store.Create(ctx, ownerID, "# Over", parent.ID, 5, Actor{}); !errors.Is(err, ErrLimitReached) {
 		t.Fatalf("child at the limit error = %v, want ErrLimitReached", err)
+	}
+
+	// A bad parent is named as the problem even when the account is full.
+	if _, err := store.Create(ctx, ownerID, "# Over", "99999999-9999-9999-9999-999999999999", 1, Actor{}); !errors.Is(err, ErrParentNotFound) {
+		t.Fatalf("missing parent at the limit error = %v, want ErrParentNotFound", err)
 	}
 
 	// Editing a child must not move its parent in the list.
@@ -700,7 +705,7 @@ func TestStoreDerivedDocsNestOneLevelUnderAParent(t *testing.T) {
 	}
 
 	// Archiving a child leaves its parent and siblings alone.
-	if err := store.Archive(ctx, ownerID, children[1].ID); err != nil {
+	if err := store.Archive(ctx, ownerID, children[1].ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{parent.ID, children[0].ID, children[2].ID} {
@@ -727,7 +732,7 @@ func TestStoreDerivedDocsNestOneLevelUnderAParent(t *testing.T) {
 	if _, err := store.Share(ctx, ownerID, parent.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Archive(ctx, ownerID, parent.ID); !errors.Is(err, ErrShared) {
+	if err := store.Archive(ctx, ownerID, parent.ID, nil); !errors.Is(err, ErrShared) {
 		t.Fatalf("shared parent archive error = %v, want ErrShared", err)
 	}
 	if _, err := store.Get(ctx, ownerID, children[2].ID); err != nil {
@@ -737,7 +742,19 @@ func TestStoreDerivedDocsNestOneLevelUnderAParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.Archive(ctx, ownerID, parent.ID); err != nil {
+	// A caller that counted the derived docs wrong archives nothing, and is
+	// told how many there are.
+	stale := 0
+	var changed *ChildrenChangedError
+	if err := store.Archive(ctx, ownerID, parent.ID, &stale); !errors.As(err, &changed) || changed.Children != 2 {
+		t.Fatalf("stale count archive error = %v, want ChildrenChangedError with 2 children", err)
+	}
+	if _, err := store.Get(ctx, ownerID, parent.ID); err != nil {
+		t.Fatalf("parent after refused archive: %v", err)
+	}
+
+	counted := 2
+	if err := store.Archive(ctx, ownerID, parent.ID, &counted); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{parent.ID, children[0].ID, children[2].ID} {
@@ -794,7 +811,7 @@ func TestStoreArchiveAndDerivedCreateDoNotLeaveOrphans(t *testing.T) {
 			_, err := store.Create(ctx, ownerID, "# Child", parent.ID, NoSavedDocumentLimit, Actor{})
 			createErr <- err
 		}()
-		go func() { archiveErr <- store.Archive(ctx, ownerID, parent.ID) }()
+		go func() { archiveErr <- store.Archive(ctx, ownerID, parent.ID, nil) }()
 		if err := <-archiveErr; err != nil {
 			t.Fatalf("round %d archive: %v", round, err)
 		}

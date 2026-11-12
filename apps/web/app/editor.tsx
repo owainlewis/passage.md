@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { PendingStatus, useAuth } from "./auth";
 import { bodyWithoutFrontmatter, plainDocument, titleOf, wordCount } from "./doc-utils";
 import { formatDocumentCount, isNearDocumentLimit } from "./document-limits";
+import { DerivedDocsChangedError } from "./editor-api";
 import { DocumentDrawer } from "./editor-drawer";
 import { SearchDialog } from "./editor-search-dialog";
 import { Doc, isShared, publicIdFromPath, saveLabel } from "./editor-model";
@@ -84,6 +85,9 @@ export default function Editor() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [deleteDialogDocId, setDeleteDialogDocId] = useState("");
+  // Set when a delete was refused because the document has derived docs this
+  // list has not loaded: the server's count, for when the dialog asks again.
+  const [serverDerivedCount, setServerDerivedCount] = useState<number | null>(null);
   const [shareDialogDocId, setShareDialogDocId] = useState("");
   const [copied, setCopied] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -374,8 +378,18 @@ export default function Editor() {
     focusEditor();
   }
 
-  async function deleteDoc(id: string) {
-    const replacement = await archiveDocument(id);
+  async function deleteDoc(id: string, derivedCount: number) {
+    let replacement: Doc | null | false;
+    try {
+      replacement = await archiveDocument(id, derivedCount);
+    } catch (err) {
+      if (!(err instanceof DerivedDocsChangedError)) throw err;
+      // Nothing was deleted. Ask again, this time naming every derived doc
+      // that would go.
+      setServerDerivedCount(err.children);
+      setDeleteDialogDocId(id);
+      return;
+    }
     if (replacement === false) return;
     setRoutePublicId(replacement ? replacement.publicId ?? "" : "");
     if (replacement) {
@@ -438,6 +452,8 @@ export default function Editor() {
   const savedDocs = auth.account?.usage.savedDocs ?? 0;
   const nearDocumentLimit = entitlements.plan === "pro" && isNearDocumentLimit(savedDocs, entitlements.maxSavedDocs);
   const canDeleteActive = Boolean(active && !activeShared);
+  // What the delete dialog says will go with the open document.
+  const deleteDerivedCount = serverDerivedCount ?? (active ? docs.filter((doc) => doc.parentId === active.id).length : 0);
   const status = copied || shareState === "copied"
     ? "Copied"
     : shareState === "unshared"
@@ -452,8 +468,11 @@ export default function Editor() {
     { label: "Focus", hint: `${mod}D`, checked: focusMode && !source, onSelect: toggleFocus },
     { label: "Teleprompter", disabled: words === 0, onSelect: () => setPrompterOpen(true) },
     { label: source ? "Show formatted" : "Show Markdown", hint: `${mod}/`, onSelect: () => setSource(!source) },
-    // Nesting is one level deep, so a derived doc cannot have its own.
-    ...(userId && !active.parentId ? [{ label: "New derived doc", onSelect: () => newDerivedDocument(active.id) }] : []),
+    // For a saved, top-level document: nesting is one level deep, so a
+    // derived doc cannot have its own. An empty page has nothing to derive from.
+    ...(userId && active.publicId && !active.parentId
+      ? [{ label: "New derived doc", disabled: words === 0, onSelect: () => newDerivedDocument(active.id) }]
+      : []),
     { kind: "separator" },
     { label: "Copy Markdown", onSelect: () => void copyDocument() },
     { label: "Copy rich text", onSelect: () => void copyRichText() },
@@ -466,7 +485,14 @@ export default function Editor() {
     ...(activeShared ? [{ label: "Sharing settings…", onSelect: () => setShareDialogDocId(active.id) }] : []),
     ...(canDeleteActive ? [
       { kind: "separator" as const },
-      { label: "Delete", danger: true, onSelect: () => setDeleteDialogDocId(active.id) }
+      {
+        label: "Delete",
+        danger: true,
+        onSelect: () => {
+          setServerDerivedCount(null);
+          setDeleteDialogDocId(active.id);
+        }
+      }
     ] : [])
   ] : [];
 
@@ -685,9 +711,10 @@ export default function Editor() {
       {deleteDialogDocId === active?.id && active && !activeShared && (
         <DeleteDocumentDialog
           title={titleOf(active.body)}
-          derivedCount={docs.filter((doc) => doc.parentId === active.id).length}
+          derivedCount={deleteDerivedCount}
+          recounted={serverDerivedCount !== null}
           onClose={() => setDeleteDialogDocId("")}
-          onDelete={() => deleteDoc(deleteDialogDocId)}
+          onDelete={() => deleteDoc(deleteDialogDocId, deleteDerivedCount)}
         />
       )}
     </div>
@@ -759,11 +786,14 @@ function DocumentShareDialog({
 function DeleteDocumentDialog({
   title,
   derivedCount,
+  recounted,
   onClose,
   onDelete
 }: {
   title: string;
   derivedCount: number;
+  /** The count came from the server after it refused a delete with a stale one. */
+  recounted: boolean;
   onClose: () => void;
   onDelete: () => Promise<void>;
 }) {
@@ -780,6 +810,7 @@ function DeleteDocumentDialog({
       >
         <h2>Delete “{title}”?</h2>
         <p>
+          {recounted && "Its derived docs changed while this page was open. "}
           {derivedCount === 0
             ? "It will be removed from Passage, and its share link will stop working."
             : `It and its ${derivedCount === 1 ? "1 derived doc" : `${derivedCount} derived docs`} will be removed from Passage, and their share links will stop working.`}

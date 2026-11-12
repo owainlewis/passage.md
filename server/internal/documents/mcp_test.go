@@ -192,6 +192,60 @@ func TestMCPListPagesWithACursor(t *testing.T) {
 	}
 }
 
+func TestMCPListPutsDerivedDocsAfterTheirParent(t *testing.T) {
+	store := newMCPStore("# One")
+	now := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	parentID := mcpDocID
+	store.page = []DocumentMetadata{
+		{ID: mcpDocID, Title: "Launch post", UpdatedAt: now, Children: []DocumentMetadata{
+			{ID: "33333333-3333-3333-3333-333333333333", Title: "Newsletter", ParentID: &parentID, UpdatedAt: now},
+			{ID: "44444444-4444-4444-4444-444444444444", Title: "LinkedIn post", ParentID: &parentID, UpdatedAt: now},
+		}},
+		{ID: "22222222-2222-2222-2222-222222222222", Title: "Two", UpdatedAt: now},
+	}
+	session := connectMCP(t, store, MCPOptions{})
+
+	out, text, isError := callTool(t, session, "list_documents", nil)
+	if isError {
+		t.Fatalf("error: %s", text)
+	}
+	var got []string
+	for _, doc := range out["documents"].([]any) {
+		entry := doc.(map[string]any)
+		parent, _ := entry["parentId"].(string)
+		got = append(got, entry["title"].(string)+"/"+parent)
+	}
+	want := "Launch post/,Newsletter/" + mcpDocID + ",LinkedIn post/" + mcpDocID + ",Two/"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("documents = %v", got)
+	}
+}
+
+func TestMCPCreateSavesADerivedDocUnderItsParent(t *testing.T) {
+	store := newMCPStore("# One")
+	session := connectMCP(t, store, MCPOptions{})
+	parentID := "22222222-2222-2222-2222-222222222222"
+
+	out, text, isError := callTool(t, session, "create_document", map[string]any{"markdown": "# Newsletter", "parentId": parentID})
+	if isError {
+		t.Fatalf("error: %s", text)
+	}
+	if store.parentID != parentID || out["parentId"] != parentID {
+		t.Fatalf("parent = %q out = %v", store.parentID, out)
+	}
+
+	for err, want := range map[error]string{
+		ErrParentNotFound:  "parent document not found",
+		ErrParentIsDerived: "one level deep",
+	} {
+		store.createErr = err
+		_, text, isError = callTool(t, session, "create_document", map[string]any{"markdown": "# Post", "parentId": parentID})
+		if !isError || !strings.Contains(text, want) {
+			t.Fatalf("%v = %v %s", err, isError, text)
+		}
+	}
+}
+
 func TestMCPCreateAttributesTheTokenAndKeepsTheDocumentLimit(t *testing.T) {
 	store := newMCPStore("# One")
 	session := connectMCP(t, store, MCPOptions{MaxSavedDocs: func(context.Context) (int, error) { return 5, nil }})

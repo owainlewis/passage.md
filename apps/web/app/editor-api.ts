@@ -129,14 +129,36 @@ function normalizeDoc(doc: Doc, bodyLoaded: boolean): Doc {
   return { ...doc, body: typeof doc.body === "string" ? doc.body : "", bodyLoaded };
 }
 
-export async function apiArchiveDoc(id: string): Promise<void> {
-  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}`, {
+/**
+ * The document has a different number of derived docs than this page knew
+ * of, so nothing was archived. Carries the real number, so the writer can be
+ * asked again with it.
+ */
+export class DerivedDocsChangedError extends Error {
+  readonly children: number;
+
+  constructor(message: string, children: number) {
+    super(message);
+    this.name = "DerivedDocsChangedError";
+    this.children = children;
+  }
+}
+
+// Archiving a document takes its derived docs with it. children is how many
+// this page knows of: the server refuses if there are more or fewer, so a
+// derived doc an agent added a moment ago is never removed unseen.
+export async function apiArchiveDoc(id: string, children: number): Promise<void> {
+  const res = await fetch(`/api/v1/docs/${encodeURIComponent(id)}?children=${children}`, {
     method: "DELETE",
     credentials: "include"
   });
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
-    throw new Error(typeof payload.error === "string" ? payload.error : "Document could not be archived");
+    const message = typeof payload.error === "string" ? payload.error : "Document could not be archived";
+    if (res.status === 409 && typeof payload.children === "number") {
+      throw new DerivedDocsChangedError(message, payload.children);
+    }
+    throw new Error(message);
   }
 }
 

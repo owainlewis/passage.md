@@ -113,7 +113,7 @@ export function DocumentDrawer({
                     type="button"
                     className="wDocToggle"
                     aria-expanded={expanded}
-                    aria-controls={`derived-${doc.id}`}
+                    aria-controls={expanded ? `derived-${doc.id}` : undefined}
                     aria-label={`${count} of ${title}`}
                     title={count}
                     onClick={() => toggleGroup(doc.id)}

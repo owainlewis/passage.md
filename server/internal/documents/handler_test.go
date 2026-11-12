@@ -579,6 +579,37 @@ func TestHandlerSharesAndUnsharesOwnedDocument(t *testing.T) {
 	}
 }
 
+func TestHandlerArchiveChecksTheDerivedDocCountWhenAsked(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	archive := func(store *fakeStore, query string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "http://passage.test/api/v1/docs/"+id+query, nil)
+		req.Header.Set("Origin", "http://passage.test")
+		req.SetPathValue("id", id)
+		NewHandler(store, nil).Archive(rec, req, auth.User{ID: "user-1"})
+		return rec
+	}
+
+	store := &fakeStore{}
+	if rec := archive(store, ""); rec.Code != http.StatusNoContent || store.archiveExpect != nil {
+		t.Fatalf("plain archive = %d, expect = %v", rec.Code, store.archiveExpect)
+	}
+	if rec := archive(store, "?children=2"); rec.Code != http.StatusNoContent || store.archiveExpect == nil || *store.archiveExpect != 2 {
+		t.Fatalf("counted archive = %d, expect = %v", rec.Code, store.archiveExpect)
+	}
+	for _, query := range []string{"?children=-1", "?children=two"} {
+		if rec := archive(store, query); rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d", query, rec.Code)
+		}
+	}
+
+	store = &fakeStore{archiveErr: &ChildrenChangedError{Children: 3}}
+	rec := archive(store, "?children=0")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"children":3`) {
+		t.Fatalf("changed = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandlerRequiresUnshareBeforeArchive(t *testing.T) {
 	store := &fakeStore{archiveErr: ErrShared}
 	handler := NewHandler(store, nil)
@@ -743,29 +774,30 @@ func TestPublicRendersMermaidBlocks(t *testing.T) {
 }
 
 type fakeStore struct {
-	actor        Actor
-	contributors []Contributor
-	ownerID      string
-	body         string
-	parentID     string
-	update       DocumentUpdate
-	maxSavedDocs int
-	createErr    error
-	getErr       error
-	archiveErr   error
-	publicID     string
-	shareToken   *string
-	publicDoc    Document
-	list         []Document
-	page         []DocumentMetadata
-	pageLimit    int
-	pageCursor   *ListCursor
-	search       []SearchResult
-	searchErr    error
-	searchQuery  string
-	searchLimit  int
-	searchCursor *SearchCursor
-	updated      bool
+	actor         Actor
+	contributors  []Contributor
+	ownerID       string
+	body          string
+	parentID      string
+	update        DocumentUpdate
+	maxSavedDocs  int
+	createErr     error
+	getErr        error
+	archiveErr    error
+	archiveExpect *int
+	publicID      string
+	shareToken    *string
+	publicDoc     Document
+	list          []Document
+	page          []DocumentMetadata
+	pageLimit     int
+	pageCursor    *ListCursor
+	search        []SearchResult
+	searchErr     error
+	searchQuery   string
+	searchLimit   int
+	searchCursor  *SearchCursor
+	updated       bool
 }
 
 func (s *fakeStore) Search(ctx context.Context, ownerID string, query string, limit int, cursor *SearchCursor) ([]SearchResult, error) {
@@ -829,8 +861,9 @@ func (s *fakeStore) Update(ctx context.Context, ownerID string, id string, updat
 	return Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Body: s.body}, nil
 }
 
-func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string) error {
+func (s *fakeStore) Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error {
 	s.ownerID = ownerID
+	s.archiveExpect = expectChildren
 	return s.archiveErr
 }
 

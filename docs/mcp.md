@@ -44,15 +44,29 @@ For local development, use `http://localhost:3000/mcp`.
 | Tool | Input | Does |
 | --- | --- | --- |
 | `search_documents` | `query`, optional `limit` (1 to 50) | Ranked full-text search. Title matches first. Returns ids, titles and a short excerpt. |
-| `list_documents` | optional `cursor`, `limit` (1 to 100) | Documents by most recent update, without bodies. Pass `nextCursor` back for the next page. |
+| `list_documents` | optional `cursor`, `limit` (1 to 100) | Documents by most recent update, without bodies. Each document is followed by its derived docs. Pass `nextCursor` back for the next page. |
 | `read_document` | `id` | The full Markdown body. |
-| `create_document` | `markdown` | A new private document. The first line becomes the title. |
+| `create_document` | `markdown`, optional `parentId` | A new private document. The first line becomes the title. With `parentId`, it is saved as a derived doc under that document. |
 | `edit_document` | `id`, `oldText`, `newText` | Replaces one exact passage. Fails if `oldText` is missing or appears more than once. |
 | `append_to_document` | `id`, `markdown` | Adds Markdown to the end, after a blank line. |
 
 Results that point at a document include a `url` that opens it in the writer.
 
 Errors come back as tool errors with a plain message the agent can act on, such as "oldText appears 2 times; include more surrounding text so it matches once".
+
+## Derived docs
+
+A document can hold derived docs: pieces made from it, such as a newsletter, a post, or a script.
+
+To save one, pass the source document's `id` as `parentId` to `create_document`.
+
+Nesting is one level deep, so the parent must be a top-level document.
+
+A derived doc carries `parentId` in list, search, read, and write results.
+
+In `list_documents`, derived docs follow their parent and do not count toward `limit`.
+
+A prompt such as "turn my launch post into a newsletter and a LinkedIn post, and save them under it" is enough.
 
 ## Behavior
 

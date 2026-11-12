@@ -42,7 +42,9 @@ func (h *Handler) MCPServer(user auth.User, actor Actor, opts MCPOptions) *mcp.S
 	server := mcp.NewServer(&mcp.Implementation{Name: "passage", Title: "Passage"}, &mcp.ServerOptions{
 		Instructions: "Passage holds the user's private Markdown documents. " +
 			"Search or list to find a document, read it before changing it, and prefer edit_document " +
-			"for small changes so the rest of the document stays exactly as the user wrote it.",
+			"for small changes so the rest of the document stays exactly as the user wrote it. " +
+			"A document can hold derived docs: pieces made from it, such as a newsletter or a post. " +
+			"To save one, pass the source document's id as parentId to create_document.",
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_documents",
@@ -50,8 +52,10 @@ func (h *Handler) MCPServer(user auth.User, actor Actor, opts MCPOptions) *mcp.S
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.search)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_documents",
-		Description: "List the user's documents, most recently updated first. Returns ids and titles, not bodies. Pass nextCursor back to get the next page.",
+		Name: "list_documents",
+		Description: "List the user's documents, most recently updated first. Returns ids and titles, not bodies. " +
+			"A derived doc is listed right after the document it was made from and carries that document's id as parentId. " +
+			"Pass nextCursor back to get the next page.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.list)
 	mcp.AddTool(server, &mcp.Tool{
@@ -60,8 +64,9 @@ func (h *Handler) MCPServer(user auth.User, actor Actor, opts MCPOptions) *mcp.S
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, t.read)
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "create_document",
-		Description: "Create a new private document from Markdown. The first line becomes the title, so start with a heading.",
+		Name: "create_document",
+		Description: "Create a new private document from Markdown. The first line becomes the title, so start with a heading. " +
+			"Pass parentId to save it as a derived doc under the document it was made from.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false)},
 	}, t.create)
 	mcp.AddTool(server, &mcp.Tool{
@@ -87,10 +92,12 @@ type mcpTools struct {
 	opts    MCPOptions
 }
 
+// ParentID is set on a derived doc: the id of the document it sits under.
 type mcpDocumentSummary struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	Excerpt   string    `json:"excerpt,omitempty"`
+	ParentID  string    `json:"parentId,omitempty"`
 	URL       string    `json:"url,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -99,14 +106,16 @@ type mcpDocument struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
+	ParentID  string    `json:"parentId,omitempty"`
 	URL       string    `json:"url,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type mcpWriteResult struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	URL   string `json:"url,omitempty"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	ParentID string `json:"parentId,omitempty"`
+	URL      string `json:"url,omitempty"`
 }
 
 type mcpSearchInput struct {
@@ -143,6 +152,7 @@ func (t *mcpTools) search(ctx context.Context, _ *mcp.CallToolRequest, in mcpSea
 			ID:        result.ID,
 			Title:     result.Title,
 			Excerpt:   result.MatchExcerpt,
+			ParentID:  deref(result.ParentID),
 			URL:       t.url(result.PublicID),
 			UpdatedAt: result.UpdatedAt,
 		})
@@ -179,13 +189,13 @@ func (t *mcpTools) list(ctx context.Context, _ *mcp.CallToolRequest, in mcpListI
 		last := docs[len(docs)-1]
 		out.NextCursor = encodeListCursor(ListCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
 	}
+	// The list is flat: each document is followed by its derived docs, which
+	// do not count toward limit.
 	for _, doc := range docs {
-		out.Documents = append(out.Documents, mcpDocumentSummary{
-			ID:        doc.ID,
-			Title:     doc.Title,
-			URL:       t.url(doc.PublicID),
-			UpdatedAt: doc.UpdatedAt,
-		})
+		out.Documents = append(out.Documents, t.summary(doc))
+		for _, child := range doc.Children {
+			out.Documents = append(out.Documents, t.summary(child))
+		}
 	}
 	return nil, out, nil
 }
@@ -203,6 +213,7 @@ func (t *mcpTools) read(ctx context.Context, _ *mcp.CallToolRequest, in mcpIDInp
 		ID:        doc.ID,
 		Title:     doc.Title,
 		Body:      doc.Body,
+		ParentID:  deref(doc.ParentID),
 		URL:       t.url(doc.PublicID),
 		UpdatedAt: doc.UpdatedAt,
 	}, nil
@@ -210,6 +221,7 @@ func (t *mcpTools) read(ctx context.Context, _ *mcp.CallToolRequest, in mcpIDInp
 
 type mcpCreateInput struct {
 	Markdown string `json:"markdown" jsonschema:"the document body in Markdown"`
+	ParentID string `json:"parentId,omitempty" jsonschema:"id of the document this one was made from; saves it as a derived doc under that document"`
 }
 
 func (t *mcpTools) create(ctx context.Context, _ *mcp.CallToolRequest, in mcpCreateInput) (*mcp.CallToolResult, mcpWriteResult, error) {
@@ -230,9 +242,15 @@ func (t *mcpTools) create(ctx context.Context, _ *mcp.CallToolRequest, in mcpCre
 		}
 		maxSavedDocs = limit
 	}
-	doc, err := t.store.Create(ctx, t.ownerID, in.Markdown, "", maxSavedDocs, t.actor)
+	doc, err := t.store.Create(ctx, t.ownerID, in.Markdown, in.ParentID, maxSavedDocs, t.actor)
 	if errors.Is(err, ErrLimitReached) {
 		return nil, mcpWriteResult{}, errors.New("saved document limit reached")
+	}
+	if errors.Is(err, ErrParentNotFound) {
+		return nil, mcpWriteResult{}, errors.New("parent document not found")
+	}
+	if errors.Is(err, ErrParentIsDerived) {
+		return nil, mcpWriteResult{}, errors.New("that document is itself a derived doc; derived docs nest one level deep, so use its parentId as the parent instead")
 	}
 	if err != nil {
 		return nil, mcpWriteResult{}, t.internal(ctx, "create document", err)
@@ -338,7 +356,24 @@ func (t *mcpTools) allow(ctx context.Context, kind string) error {
 }
 
 func (t *mcpTools) written(doc Document) mcpWriteResult {
-	return mcpWriteResult{ID: doc.ID, Title: doc.Title, URL: t.url(doc.PublicID)}
+	return mcpWriteResult{ID: doc.ID, Title: doc.Title, ParentID: deref(doc.ParentID), URL: t.url(doc.PublicID)}
+}
+
+func (t *mcpTools) summary(doc DocumentMetadata) mcpDocumentSummary {
+	return mcpDocumentSummary{
+		ID:        doc.ID,
+		Title:     doc.Title,
+		ParentID:  deref(doc.ParentID),
+		URL:       t.url(doc.PublicID),
+		UpdatedAt: doc.UpdatedAt,
+	}
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (t *mcpTools) url(publicID string) string {

@@ -478,6 +478,8 @@ A `parentId` that names a derived doc returns `400`, because nesting is one leve
 
 A derived doc created at the saved document limit is refused like any other create.
 
+The parent is checked first, so a bad `parentId` returns `404` or `400` even when the account is at its limit.
+
 ## Read Document
 
 ```http
@@ -576,6 +578,20 @@ Archiving a derived doc leaves its parent and the parent's other derived docs un
 
 Archived documents are hidden from list, read, update, share, and public lookup.
 
+Query parameters:
+
+- `children`: optional. The number of derived docs the caller believes the document has.
+
+When `children` is sent and the document has a different number of derived docs, nothing is archived and the response is `409` with the current number.
+
+A client that shows a person what will be removed should send it, so a derived doc added a moment ago by an agent is never archived unseen.
+
+Without `children`, the document and all of its derived docs are archived.
+
+```http
+DELETE /api/v1/docs/{id}?children=2
+```
+
 Response:
 
 ```http
@@ -583,6 +599,14 @@ HTTP/1.1 204 No Content
 ```
 
 Shared documents return `409`.
+
+A `children` mismatch returns `409` with the current count:
+
+```json
+{"error":"this document's derived docs changed; check them before deleting it","children":3}
+```
+
+A `children` value that is not a whole number returns `400`.
 
 Malformed UUIDs, archived documents, missing documents, and documents owned by another user all return `404`.
 

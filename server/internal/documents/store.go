@@ -22,6 +22,17 @@ var ErrParentNotFound = errors.New("parent document not found")
 var ErrParentIsDerived = errors.New("parent document is itself a derived doc")
 var errPublicIDCollision = errors.New("public id collision")
 
+// ChildrenChangedError reports that a document has a different number of
+// derived docs than the caller expected, so nothing was archived. Children is
+// the number it has now.
+type ChildrenChangedError struct {
+	Children int
+}
+
+func (e *ChildrenChangedError) Error() string {
+	return "derived docs changed since the document was loaded"
+}
+
 const NoSavedDocumentLimit = -1
 
 type Document struct {
@@ -417,19 +428,6 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 	if err := tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id = $1 FOR UPDATE`, ownerID).Scan(&lockedUserID); err != nil {
 		return Document{}, err
 	}
-	if maxSavedDocs != NoSavedDocumentLimit {
-		var savedDocs int
-		if err := tx.QueryRow(ctx, `
-			SELECT count(*) FROM documents
-			WHERE owner_user_id = $1 AND archived_at IS NULL
-		`, ownerID).Scan(&savedDocs); err != nil {
-			return Document{}, err
-		}
-		if savedDocs >= maxSavedDocs {
-			return Document{}, ErrLimitReached
-		}
-	}
-
 	var parent *string
 	if parentID != "" {
 		// The share lock holds the parent still until this commits. Archive
@@ -451,6 +449,19 @@ func (s *Store) createWithPublicID(ctx context.Context, ownerID string, body str
 			return Document{}, ErrParentIsDerived
 		}
 		parent = &parentID
+	}
+
+	if maxSavedDocs != NoSavedDocumentLimit {
+		var savedDocs int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM documents
+			WHERE owner_user_id = $1 AND archived_at IS NULL
+		`, ownerID).Scan(&savedDocs); err != nil {
+			return Document{}, err
+		}
+		if savedDocs >= maxSavedDocs {
+			return Document{}, ErrLimitReached
+		}
 	}
 
 	var doc Document
@@ -707,7 +718,13 @@ func (s *Store) Update(ctx context.Context, ownerID string, id string, update Do
 // derived docs with it in the same transaction. Only the document named here
 // must be unshared first: a shared child goes with its parent, and its public
 // URLs stop resolving because public lookups skip archived rows.
-func (s *Store) Archive(ctx context.Context, ownerID string, id string) error {
+//
+// A caller that shows the derived docs before archiving passes how many it
+// showed as expectChildren. If the document has a different number, nothing is
+// archived and the error is a *ChildrenChangedError, so docs the caller never
+// saw are not removed without a word. A nil expectChildren archives whatever
+// is there.
+func (s *Store) Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error {
 	if !validUUID(id) {
 		return ErrNotFound
 	}
@@ -733,6 +750,20 @@ func (s *Store) Archive(ctx context.Context, ownerID string, id string) error {
 	}
 	if shared {
 		return ErrShared
+	}
+	if expectChildren != nil {
+		// The lock above keeps this count true until the commit: a derived doc
+		// cannot be created under a parent that is locked for update.
+		var children int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM documents
+			WHERE owner_user_id = $1 AND parent_id = $2 AND archived_at IS NULL
+		`, ownerID, id).Scan(&children); err != nil {
+			return err
+		}
+		if children != *expectChildren {
+			return &ChildrenChangedError{Children: children}
+		}
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE documents

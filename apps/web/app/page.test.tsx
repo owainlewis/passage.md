@@ -124,7 +124,12 @@ function stubSignedInFetch(
       return new Response(null, { status: 204 });
     }
     if (url.startsWith("/api/v1/docs/") && method === "DELETE") {
-      const id = url.split("/")[4];
+      const [id, query = ""] = url.split("/")[4].split("?");
+      const expected = new URLSearchParams(query).get("children");
+      const children = docs.filter((doc) => doc.parentId === id).length;
+      if (expected !== null && Number(expected) !== children) {
+        return new Response(JSON.stringify({ error: "derived docs changed", children }), { status: 409 });
+      }
       docs = docs.filter((doc) => doc.id !== id && doc.parentId !== id);
       return new Response(null, { status: 204 });
     }
@@ -1323,7 +1328,7 @@ describe("Write (editor)", () => {
     expect(await screen.findByRole("heading", { name: "A blank page." })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Only note/ })).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/write");
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-only", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-only?children=0", {
       method: "DELETE",
       credentials: "include"
     });
@@ -1368,7 +1373,7 @@ describe("Write (editor)", () => {
       resolveDelete = resolve;
     });
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/v1/docs/doc-first" && init?.method === "DELETE") {
+      if (String(input) === "/api/v1/docs/doc-first?children=0" && init?.method === "DELETE") {
         return deleteResponse;
       }
       return defaultFetch!(input, init);
@@ -2619,7 +2624,7 @@ describe("Writer", () => {
     expect(requests).toEqual(["POST /api/v1/docs"]);
 
     await openDocumentNamed("Existing");
-    await waitFor(() => expect(requests).toEqual(["POST /api/v1/docs", "DELETE /api/v1/docs/doc-2"]));
+    await waitFor(() => expect(requests).toEqual(["POST /api/v1/docs", "DELETE /api/v1/docs/doc-2?children=0"]));
     expect(within(openDrawer()).queryByRole("button", { name: /^Untitled/ })).not.toBeInTheDocument();
   });
 });
@@ -2740,6 +2745,15 @@ describe("Derived docs", () => {
     expect(within(group).getByRole("button", { name: "Untitled" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("does not offer a derived doc from an empty page", async () => {
+    stubSignedInFetch([{ id: "doc-empty", publicId: "empty", body: "" }]);
+    await renderWrite();
+
+    fireEvent.click(screen.getByRole("button", { name: "Document actions" }));
+
+    expect(screen.getByRole("menuitem", { name: "New derived doc" })).toBeDisabled();
+  });
+
   it("names the derived docs a parent takes with it, and removes them all", async () => {
     const fetchMock = stubSignedInFetch(library.filter((doc) => doc.id !== "doc-other").concat(library[0]));
     await renderWrite();
@@ -2753,7 +2767,7 @@ describe("Derived docs", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     expect((await screen.findAllByRole("heading", { name: "Standalone", level: 1 })).length).toBeGreaterThan(0);
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-source", expect.objectContaining({ method: "DELETE" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/docs/doc-source?children=2", expect.objectContaining({ method: "DELETE" }));
     expect(topLevelTitles()).toEqual(["Standalone"]);
     expect(screen.queryByRole("button", { name: /derived doc/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Newsletter/ })).not.toBeInTheDocument();
@@ -2762,6 +2776,38 @@ describe("Derived docs", () => {
     expect(within(screen.getByRole("dialog", { name: "Delete document" })).getByText(
       "It will be removed from Passage, and its share link will stop working."
     )).toBeInTheDocument();
+  });
+
+  it("asks again before deleting derived docs this page had not loaded", async () => {
+    const requests: string[] = [];
+    const baseFetch = stubSignedInFetch(library);
+    let unseen = true;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "DELETE") return baseFetch(input, init);
+      requests.push(String(input));
+      // An agent added a third derived doc after this page loaded its list.
+      if (unseen && String(input) === "/api/v1/docs/doc-source?children=2") {
+        unseen = false;
+        return Promise.resolve(new Response(JSON.stringify({ error: "derived docs changed", children: 3 }), { status: 409 }));
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }));
+    window.history.replaceState(null, "", "/write/source");
+    await renderWrite();
+    expect((await screen.findAllByRole("heading", { name: "Source piece", level: 1 })).length).toBeGreaterThan(0);
+
+    deleteActiveDocument();
+
+    const dialog = await screen.findByRole("dialog", { name: "Delete document" });
+    expect(within(dialog).getByText(
+      "Its derived docs changed while this page was open. It and its 3 derived docs will be removed from Passage, and their share links will stop working."
+    )).toBeInTheDocument();
+    expect(topLevelTitles()).toContain("Source piece");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(requests).toEqual(["/api/v1/docs/doc-source?children=2", "/api/v1/docs/doc-source?children=3"]));
+    await waitFor(() => expect(topLevelTitles()).not.toContain("Source piece"));
   });
 
   it("returns to the parent after deleting one of its derived docs", async () => {

@@ -186,7 +186,7 @@ func (s *routeDocumentStore) Update(ctx context.Context, ownerID string, id stri
 	return documents.Document{ID: id, PublicID: "abcdefghijklmnopqrstuv", Title: "Token doc", Body: s.body}, nil
 }
 
-func (s *routeDocumentStore) Archive(ctx context.Context, ownerID string, id string) error {
+func (s *routeDocumentStore) Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error {
 	s.ownerID = ownerID
 	if ownerID != "user-1" || id != "11111111-1111-1111-1111-111111111111" {
 		return documents.ErrNotFound

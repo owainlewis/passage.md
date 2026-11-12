@@ -1,7 +1,7 @@
 "use client";
 
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
-import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc, DocumentConflictError } from "./editor-api";
+import { apiArchiveDoc, apiCreateDoc, apiDoc, apiDocsPage, apiUpdateDoc, DerivedDocsChangedError, DocumentConflictError } from "./editor-api";
 import {
   Doc,
   isBlankDoc,
@@ -175,11 +175,12 @@ export function useEditorDocuments({
     const left = docsRef.current.find((doc) => doc.id === leftId);
     if (!left || !isBlankDoc(left) || isShared(left)) return;
     // Archiving a parent takes its derived docs with it, and that must only
-    // ever happen because the writer asked for it.
+    // ever happen because the writer asked for it. The server holds the same
+    // line for derived docs this list has not loaded.
     if (docsRef.current.some((doc) => doc.parentId === leftId)) return;
     const generation = accountGeneration.current;
     setDocs((prev) => prev.filter((doc) => doc.id !== leftId));
-    apiArchiveDoc(leftId).catch(() => {
+    apiArchiveDoc(leftId, 0).catch(() => {
       // Still on the server: put it back so the list tells the truth.
       if (accountGeneration.current === generation) setDocs((prev) => (prev.some((doc) => doc.id === leftId) ? prev : [left, ...prev]));
     });
@@ -427,15 +428,18 @@ export function useEditorDocuments({
     );
   }
 
-  async function deleteDoc(id: string): Promise<Doc | null | false> {
+  // derivedCount is the number of derived docs the writer was told would go
+  // with the document. Throws DerivedDocsChangedError, having deleted
+  // nothing, when the document has a different number.
+  async function deleteDoc(id: string, derivedCount: number): Promise<Doc | null | false> {
     const doc = docs.find((candidate) => candidate.id === id);
     if (!doc || isShared(doc)) return false;
     const cancelledSave = pendingSave?.id === id ? pendingSave : null;
     if (cancelledSave) setPendingSave(null);
     setSaveState("saving");
     try {
-      await apiArchiveDoc(id);
-    } catch {
+      await apiArchiveDoc(id, derivedCount);
+    } catch (err) {
       if (cancelledSave) {
         try {
           const saved = await apiUpdateDoc(cancelledSave.id, cancelledSave.body);
@@ -452,6 +456,10 @@ export function useEditorDocuments({
         } catch {
           // The error state below covers both the failed deletion and failed save recovery.
         }
+      }
+      if (err instanceof DerivedDocsChangedError) {
+        setSaveState("saved");
+        throw err;
       }
       setSaveState("error");
       return false;

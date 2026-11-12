@@ -70,7 +70,7 @@ type documentStore interface {
 	Contributors(ctx context.Context, ownerID string, id string) ([]Contributor, error)
 	Get(ctx context.Context, ownerID string, id string) (Document, error)
 	Update(ctx context.Context, ownerID string, id string, update DocumentUpdate) (Document, error)
-	Archive(ctx context.Context, ownerID string, id string) error
+	Archive(ctx context.Context, ownerID string, id string, expectChildren *int) error
 	Share(ctx context.Context, ownerID string, id string) (Document, error)
 	Unshare(ctx context.Context, ownerID string, id string) error
 	GetPublic(ctx context.Context, token string) (Document, error)
@@ -404,9 +404,27 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request, user auth.User
 		writeError(w, http.StatusNotFound, "document not found")
 		return
 	}
-	err := h.store.Archive(r.Context(), user.ID, id)
+	// children is the number of derived docs the caller showed the writer.
+	var expectChildren *int
+	if raw := r.URL.Query().Get("children"); raw != "" {
+		children, err := strconv.Atoi(raw)
+		if err != nil || children < 0 {
+			writeError(w, http.StatusBadRequest, "children must be a whole number")
+			return
+		}
+		expectChildren = &children
+	}
+	err := h.store.Archive(r.Context(), user.ID, id, expectChildren)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	var changed *ChildrenChangedError
+	if errors.As(err, &changed) {
+		writeJSON(w, http.StatusConflict, childrenChangedResponse{
+			Error:    "this document's derived docs changed; check them before deleting it",
+			Children: changed.Children,
+		})
 		return
 	}
 	if errors.Is(err, ErrShared) {
@@ -503,6 +521,12 @@ func (h *Handler) Public(w http.ResponseWriter, r *http.Request) {
 	setPublicSecurityHeaders(w)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(html)
+}
+
+type childrenChangedResponse struct {
+	Error string `json:"error"`
+	// Children is how many derived docs the document has now.
+	Children int `json:"children"`
 }
 
 type createInput struct {
