@@ -92,7 +92,7 @@ func TestRemoveCollectionsMigrationKeepsEveryDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "028_remove_collections,029_remove_templates" {
+	if strings.Join(applied, ",") != "028_remove_collections,029_remove_templates,030_document_parent" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	if after := snapshot(); after != before {
@@ -152,7 +152,7 @@ func TestDocumentSearchMigrationAppliesToFreshAndPopulatedDatabases(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors,028_remove_collections,029_remove_templates" {
+		if strings.Join(applied, ",") != "024_document_full_text_search,025_remove_seeded_collections,026_document_content_version,027_document_contributors,028_remove_collections,029_remove_templates,030_document_parent" {
 			t.Fatalf("applied migrations = %q", applied)
 		}
 		assertDocumentSearchSchema(t, db)
@@ -277,7 +277,7 @@ func TestRemoveTemplatesMigrationTurnsTemplatesIntoDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(applied, ",") != "029_remove_templates" {
+	if strings.Join(applied, ",") != "029_remove_templates,030_document_parent" {
 		t.Fatalf("applied migrations = %q", applied)
 	}
 	rows, err := db.Query(ctx, `
@@ -318,6 +318,64 @@ func TestRemoveTemplatesMigrationTurnsTemplatesIntoDocuments(t *testing.T) {
 	}
 	if table {
 		t.Fatal("templates table still exists")
+	}
+	if again, err := Apply(ctx, db); err != nil || len(again) != 0 {
+		t.Fatalf("second apply = %q, %v", again, err)
+	}
+}
+
+func TestDocumentParentMigrationLeavesExistingDocumentsUnchanged(t *testing.T) {
+	db := isolatedMigrationDatabase(t)
+	ctx := context.Background()
+	applyBeforeMigration(t, db, "030_document_parent.sql")
+
+	var ownerID string
+	if err := db.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash)
+		VALUES ('document-parent@example.com', 'hash')
+		RETURNING id::text
+	`).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO documents (owner_user_id, public_id, title, body, starred, shared_at, archived_at, created_at, updated_at) VALUES
+		  ($1, 'documentparent00000', 'Active', '# Active', true, '2026-08-14T08:30:00Z', NULL, '2026-08-13T08:00:00Z', '2026-08-14T08:00:00Z'),
+		  ($1, 'documentparent00001', 'Archived', '# Archived', false, NULL, '2026-08-14T09:00:00Z', '2026-08-13T08:00:00Z', '2026-08-14T08:00:00Z')
+	`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := func() string {
+		t.Helper()
+		var value string
+		if err := db.QueryRow(ctx, `
+			SELECT string_agg(concat_ws('|', id, public_id, title, md5(body), starred,
+			                            share_token, shared_at, archived_at,
+			                            created_at, updated_at, content_version), E'\n' ORDER BY public_id)
+			FROM documents
+			WHERE owner_user_id = $1
+		`, ownerID).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := snapshot()
+
+	applied, err := Apply(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(applied, ",") != "030_document_parent" {
+		t.Fatalf("applied migrations = %q", applied)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("documents changed:\nbefore %s\nafter  %s", before, after)
+	}
+	var withParent int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM documents WHERE parent_id IS NOT NULL`).Scan(&withParent); err != nil {
+		t.Fatal(err)
+	}
+	if withParent != 0 {
+		t.Fatalf("existing documents given a parent = %d", withParent)
 	}
 	if again, err := Apply(ctx, db); err != nil || len(again) != 0 {
 		t.Fatalf("second apply = %q, %v", again, err)
