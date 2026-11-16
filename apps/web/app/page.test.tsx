@@ -288,7 +288,7 @@ describe("Landing", () => {
 
     expect(await screen.findByText("Free includes five saved documents.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Upgrade" })).toHaveAttribute("href", "/account");
-    expect(screen.getByRole("link", { name: "Go Pro" })).toHaveAttribute("href", "#pricing");
+    expect(screen.getByRole("link", { name: "Go Pro" })).toHaveAttribute("href", "/#pricing");
   });
 
   it("shows public signup actions only when the server enables them", async () => {

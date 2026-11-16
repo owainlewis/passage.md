@@ -7,7 +7,7 @@ import { PLAN_FEATURES } from "./features";
 import { MoonIcon, MoreIcon, PanelIcon, PlusIcon, SearchIcon, SunIcon, UserIcon } from "./icons";
 import { MerchantLink, SupportLink } from "./legal";
 import { claudeCodeCommandLines } from "./mcp";
-import { useTheme } from "./theme";
+import { SiteNav } from "./site-nav";
 import styles from "./landing.module.css";
 import paper from "./paper.module.css";
 
@@ -64,7 +64,6 @@ export default function Landing() {
 
 function LandingContent() {
   const auth = useAuth();
-  const { darkActive, toggleDarkMode } = useTheme();
   const sessionReady = auth.sessionStatus === "authenticated" || auth.sessionStatus === "anonymous";
   const signedIn = Boolean(auth.user);
   const isPro = auth.account?.plan === "pro";
@@ -117,32 +116,7 @@ function LandingContent() {
 
   return (
     <div className={`${paper.paper} ${styles.landing}`}>
-      <header className={styles.nav}>
-        <Brand />
-        <nav className={styles.navLinks} aria-label="Main navigation">
-          <Link className={`${paper.barLink} ${styles.navLink}`} href="/agents">Agents</Link>
-          {isPro
-            ? <Link className={`${paper.barLink} ${styles.navLink}`} href="/account">Account</Link>
-            : <a className={`${paper.barLink} ${styles.navLink}`} href="#pricing">Go Pro</a>}
-          {showSignIn && <Link className={`${paper.barLink} ${styles.navLink}`} href="/login">Sign in</Link>}
-          <button
-            type="button"
-            className={styles.iconButton}
-            aria-label="Dark mode"
-            aria-pressed={darkActive}
-            title="Dark mode"
-            onClick={toggleDarkMode}
-          >
-            {/* Both icons render and CSS picks one from the document theme,
-                as in the writer, so a dark reader never sees the moon flash. */}
-            <span className={styles.themeIcon} data-icon="moon"><MoonIcon /></span>
-            <span className={styles.themeIcon} data-icon="sun"><SunIcon /></span>
-          </button>
-          <Link className={styles.navCta} href={primaryHref}>
-            {primaryLabel}
-          </Link>
-        </nav>
-      </header>
+      <SiteNav />
 
       <main>
         <section className={styles.hero}>

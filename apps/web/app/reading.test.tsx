@@ -1,10 +1,17 @@
 import { readFileSync } from "node:fs";
-import { render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { render as renderBare, screen, within } from "@testing-library/react";
 import AgentsPage from "./agents/page";
 import Cancellation from "./cancellation/page";
 import Privacy from "./privacy/page";
 import Refunds from "./refunds/page";
 import Terms from "./terms/page";
+import { ThemeProvider } from "./theme";
+
+// The agents guide carries the site nav, which needs the theme.
+function render(ui: ReactNode) {
+  return renderBare(<ThemeProvider>{ui}</ThemeProvider>);
+}
 
 const readingStyles = readFileSync("app/reading.module.css", "utf8");
 const globalStyles = readFileSync("app/globals.css", "utf8");
@@ -18,7 +25,6 @@ function rule(selector: string) {
 
 describe("reading pages", () => {
   it.each([
-    ["the agents guide", <AgentsPage key="agents" />, "Connect your agents to Passage.", "Write", "/write"],
     ["the terms", <Terms key="terms" />, "Terms of Service", "Start writing", "/write"],
     ["the privacy policy", <Privacy key="privacy" />, "Privacy Policy", "Start writing", "/write"],
     ["the refund policy", <Refunds key="refunds" />, "Refund Policy", "Start writing", "/write"],
@@ -32,12 +38,24 @@ describe("reading pages", () => {
     expect(screen.getByRole("heading", { level: 1, name: title })).toBeInTheDocument();
   });
 
+  it("frames the agents guide with the site's main nav", () => {
+    render(<AgentsPage />);
+
+    const nav = screen.getByRole("navigation", { name: "Main navigation" });
+    expect(within(screen.getByRole("banner")).getByRole("link", { name: "passage.md home" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
+    expect(within(nav).getByRole("link", { name: "Go Pro" })).toHaveAttribute("href", "/#pricing");
+    expect(within(nav).getByRole("link", { name: "Start writing" })).toHaveAttribute("href", "/write");
+    expect(screen.getByRole("heading", { level: 1, name: "Connect your agents to Passage." })).toBeInTheDocument();
+  });
+
   it("drops the kickers and keeps the setup steps in order", () => {
     render(<AgentsPage />);
 
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument();
-    expect(screen.queryByText("Tools")).not.toBeInTheDocument();
-    expect(screen.queryByText("Safety")).not.toBeInTheDocument();
+    const main = within(screen.getByRole("main"));
+    expect(main.queryByText("Agents")).not.toBeInTheDocument();
+    expect(main.queryByText("Tools")).not.toBeInTheDocument();
+    expect(main.queryByText("Safety")).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
       "Create an API token",
       "Add Passage to your agent",

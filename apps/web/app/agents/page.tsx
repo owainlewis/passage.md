@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Brand } from "../brand";
 import { claudeCodeCommandLines, MCP_URL } from "../mcp";
+import landing from "../landing.module.css";
 import paper from "../paper.module.css";
+import { SiteNav } from "../site-nav";
 import styles from "../reading.module.css";
 
 const clientConfig = `{
@@ -31,14 +32,8 @@ const prompts = [
 
 export default function AgentsPage() {
   return (
-    <div className={paper.paper}>
-      <header className={paper.bar}>
-        <Brand href="/" />
-        <nav className={paper.barGroup} aria-label="Agents navigation">
-          <Link className={paper.barLink} href="/write">Write</Link>
-          <Link className={paper.barLink} href="/account">Account</Link>
-        </nav>
-      </header>
+    <div className={`${paper.paper} ${landing.landing}`}>
+      <SiteNav brandHref="/" />
 
       <main className={styles.column}>
         <h1 className={styles.title}>Connect your agents to Passage.</h1>
