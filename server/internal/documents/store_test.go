@@ -43,7 +43,7 @@ func TestStoreRejectsMalformedDocumentIDsWithoutDatabase(t *testing.T) {
 	if _, err := store.Update(context.Background(), "user-1", "not-a-uuid", DocumentUpdate{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Update error = %v, want %v", err, ErrNotFound)
 	}
-	if err := store.Archive(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {
+	if err := store.Archive(context.Background(), "user-1", "not-a-uuid", nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Archive error = %v, want %v", err, ErrNotFound)
 	}
 	if _, err := store.Share(context.Background(), "user-1", "not-a-uuid"); !errors.Is(err, ErrNotFound) {

@@ -55,6 +55,7 @@ type Document struct {
 	PublicID   string     `json:"publicId"`
 	Title      string     `json:"title"`
 	Path       string     `json:"path"`
+	ParentID   *string    `json:"parentId,omitempty"`
 	SharedAt   *time.Time `json:"sharedAt,omitempty"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	UpdatedAt  time.Time  `json:"updatedAt"`
@@ -424,7 +425,7 @@ func loadAccount(ctx context.Context, tx pgx.Tx, email string, lock string) (Acc
 
 func writeDocuments(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID string) ([]Document, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, public_id, title, body, shared_at, created_at, updated_at, archived_at
+		SELECT id::text, public_id, title, body, parent_id::text, shared_at, created_at, updated_at, archived_at
 		FROM documents
 		WHERE owner_user_id = $1
 		ORDER BY created_at, id
@@ -442,6 +443,7 @@ func writeDocuments(ctx context.Context, tx pgx.Tx, writer *zip.Writer, userID s
 			&document.PublicID,
 			&document.Title,
 			&body,
+			&document.ParentID,
 			&document.SharedAt,
 			&document.CreatedAt,
 			&document.UpdatedAt,
